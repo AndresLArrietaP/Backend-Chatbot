@@ -1,6 +1,7 @@
+#librerías
 import json
 import logging
-#import os
+import os
 import database
 import llm
 from fastapi import FastAPI
