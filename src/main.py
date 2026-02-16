@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(servers = [{"url":"#######################"}])
+app = FastAPI(servers = [{"url":"https://augustus-nonanimating-boyd.ngrok-free.dev"}])
 
 class PostHumanQueryPayload(BaseModel):
     human_query: str

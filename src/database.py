@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import text
 
 DB_URL = os.getenv("DATABASE_URL","default")
-engine = create_engine(DB_URL, poolclass=QueuePool, pool_size=5, max_orverflow=10)
+engine = create_engine(DB_URL, poolclass=QueuePool, pool_size=5, max_overflow=10)
 Session = sessionmaker(bind=engine)
 
 def get_schema() -> LiteralString:
