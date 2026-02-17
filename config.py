@@ -55,6 +55,12 @@ class Config:
     ALLOW_ORIGINS = env("ALLOW_ORIGINS", default="*")
     PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="")
 
+    
+    # --- Gemini (Google AI Studio) ---
+    GOOGLE_API_KEY = env("GOOGLE_API_KEY", default=None)
+    GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-1.5-flash")
+
+
     # OpenAI
     OPENAI_API_KEY = env("OPENAI_API_KEY", default=None)
     OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o")
