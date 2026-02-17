@@ -60,7 +60,7 @@ async def human_query(payload: PostHumanQueryPayload) -> Dict[str, str]:
 # src/main.py
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Request, Query
 from pydantic import BaseModel
@@ -103,7 +103,7 @@ def get_schema(
     request: Request,
     schemas: Optional[List[str]] = Query(default=None),
     tables: Optional[List[str]] = Query(default=None),
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     settings = request.app.state.settings
     if not schemas:
         schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
@@ -128,7 +128,7 @@ def refresh_schema() -> Dict[str, str]:
     description="Transforma lenguaje natural a SQL, valida y ejecuta (opcional).",
     dependencies=[Depends(api_key_guard)],
 )
-async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[str, any]:
+async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[str, Any]:
     try:
         settings = request.app.state.settings
 

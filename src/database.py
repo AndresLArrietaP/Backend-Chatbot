@@ -57,12 +57,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.sql import text
 
-DATABASE_URL = env("DATABASE_URL", default=None)
+# Recorta espacios accidentales y valida presencia
+DATABASE_URL = (env("DATABASE_URL", default=None) or "").strip()
 if not DATABASE_URL:
     raise RuntimeError("Falta la variable de entorno DATABASE_URL.")
 
+# Fuerza SSL con Supabase (recomendado)
+# Nota: también puedes añadir ?sslmode=require al DSN en .env
 engine = create_engine(
     DATABASE_URL,
+    connect_args={"sslmode": "require"},
     poolclass=QueuePool,
     pool_size=5,
     max_overflow=10,
@@ -116,7 +120,7 @@ def get_schema_json(
             out_tables.append({
                 "schema": sch,
                 "table": t,
-                "fq_name": f'{sch}."{t}"',  # para Postgres; sigue siendo informativo
+                "fq_name": f'{sch}."{t}"',  # para Postgres; informativo y útil para validación
                 "columns": cols,
             })
             col_count += len(cols)
