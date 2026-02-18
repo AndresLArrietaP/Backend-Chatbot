@@ -1,5 +1,6 @@
+# test_gemini.py
 import os
-import google.generativeai as genai
+from google import genai as genai
 
 key = (os.environ.get("GOOGLE_API_KEY") or "").strip()
 print("GOOGLE_API_KEY starts with:", key[:6], "..." if key else "(empty)")

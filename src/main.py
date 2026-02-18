@@ -82,6 +82,21 @@ async def llm_ping(request: Request) -> Dict[str, Any]:
         # Devuelve el error del SDK tal cual para diagnosticar
         return {"status": "error", "detail": str(e)}
     
+@router.get("/configz", dependencies=[Depends(api_key_guard)])
+def configz(request: Request):
+    s = request.app.state.settings
+    k = (getattr(s, "GOOGLE_API_KEY", "") or "")
+    return {
+        "GOOGLE_API_KEY_prefix": (k[:6] + "...") if k else "(empty)",
+        "GEMINI_MODEL": getattr(s, "GEMINI_MODEL", ""),
+    }
+
+@router.get("/llm/models", dependencies=[Depends(api_key_guard)])
+def llm_models() -> Dict[str, Any]:
+    try:
+        return llm.list_models()
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 @router.post("/schema/refresh", dependencies=[Depends(api_key_guard)])
 def refresh_schema() -> Dict[str, str]:
