@@ -63,6 +63,25 @@ def get_schema(
     )
     return schema_json
 
+"""
+@router.get("/llm/ping", dependencies=[Depends(api_key_guard)])
+async def llm_ping(request: Request) -> Dict[str, Any]:
+    try:
+        txt = await llm.build_answer([{"ok": True}], "ping")
+        return {"status": "ok", "gemini_reply": txt[:200]}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+""" 
+
+@router.get("/llm/ping", dependencies=[Depends(api_key_guard)])
+async def llm_ping(request: Request) -> Dict[str, Any]:
+    try:
+        txt = await llm.ping()
+        return {"status": "ok", "gemini_reply": (txt or "")[:200]}
+    except Exception as e:
+        # Devuelve el error del SDK tal cual para diagnosticar
+        return {"status": "error", "detail": str(e)}
+    
 
 @router.post("/schema/refresh", dependencies=[Depends(api_key_guard)])
 def refresh_schema() -> Dict[str, str]:

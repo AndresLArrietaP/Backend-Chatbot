@@ -1,30 +1,3 @@
-"""# config.py
-from decouple import config as env
-
-
-class Config:
-    # decouple toma valores de .env y del entorno
-    APP_NAME = env("APP_NAME", default="NL→SQL API")
-    DEBUG = env("DEBUG", default=False, cast=bool)
-
-    # Variables sensibles
-    OPENAI_API_KEY = env("OPENAI_API_KEY", default=None)
-    DATABASE_URL = env("DATABASE_URL", default=None)
-
-    # CORS y OpenAPI servers
-    ALLOW_ORIGINS = env("ALLOW_ORIGINS", default="*")
-    PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="")  # p. ej. https://<subdominio>.ngrok-free.dev
-
-
-class DevelopmentConfig(Config):
-    DEBUG = True
-
-
-config = {
-    "development": DevelopmentConfig,
-    # "production": ProductionConfig,  # si luego quieres añadir otro perfil
-}"""
-
 # config.py
 import os
 from decouple import config as env

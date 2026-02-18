@@ -1,110 +1,3 @@
-# import os
-# from typing import Any
-# import openai
-# import database 
-# openai.api_key = os.getenv("OPEN_AI_API_KEY")
-# async def human_query_to_sql(human_query: str) -> str | None:
-# # Obtenemos el esquema de la base de datos
-# database_schema = database.get_schema()
-# system_message = f"""
-# Given the following schema, write a SQL query that retrieves the requested information. 
-# Return the SQL query inside a JSON structure with the key "sql_query".
-# <example>{{
-    # "sql_query": "SELECT * FROM users WHERE age > 18;"
-    # "original_query": "Show me all users older than 18 years old."
-    # }}
-    # </example>
-    # <schema>
-    # {database_schema}
-    # </schema>
-    # """
-    # user_message = human_query
-
-    # Enviamos el esquema completo con la consulta al LLM
-    # response = openai.chat.completions.create(
-        # model="gpt-4o",
-        # response_format={"type": "json_object"},
-        # messages=[
-            # {"role": "system", "content": system_message},
-            # {"role": "user", "content": user_message},
-            # ],
-            # max_tokens=4000,
-            # )
-            # return response.choices[0].message.content
-# async def build_answer(result: list[dict[str, Any]], human_query: str) -> str | None:
-# system_message = f"""
-# Given a users question and the SQL rows response from the database from which the user wants to get the answer,
-# write a response to the user's question.
-# <user_question> 
-# {human_query}
-# </user_question>
-# <sql_response>
-# ${result} 
-# </sql_response>
-# """
-# response = openai.chat.completions.create(
-    # model="gpt-4o",
-    # messages=[
-        # {"role": "system", "content": system_message},
-        # ],
-        # max_tokens=4000,
-        # )
-        # return response.choices[0].message.content
-    
-    
-# src/llm.py
-# from typing import Any, List, Dict, Optional
-# from decouple import config as env
-# from openai import OpenAI
-# from . import database
-# OPENAI_API_KEY = env("OPENAI_API_KEY", default=None)
-# if not OPENAI_API_KEY:
-# raise RuntimeError("Falta OPENAI_API_KEY en .env o entorno.")
-# client = OpenAI(api_key=OPENAI_API_KEY)
-# async def human_query_to_sql(human_query: str) -> Optional[str]:
-    # Obtén el esquema actual
-    # database_schema = database.get_schema()
-# system_message = f"""
-# Given the following schema, write a SQL query that retrieves the requested information.
-# Return the SQL query inside a JSON structure with the key "sql_query", and include the original query in "original_query".
-# <example>{{
-    # "sql_query": "SELECT * FROM users WHERE age > 18;",
-    # "original_query": "Show me all users older than 18 years old."
-    # }}
-    # </example>
-    # <schema>
-    # {database_schema}
-    # </schema>
-    # """
-    # resp = client.chat.completions.create(
-        # model="gpt-4o",
-        # response_format={"type": "json_object"},
-        # messages=[
-            # {"role": "system", "content": system_message},
-            # {"role": "user", "content": human_query},
-            # ],
-            # max_tokens=4000,
-            # temperature=0.2,
-            # )
-        # return resp.choices[0].message.content
-# async def build_answer(result: List[Dict[str, Any]], human_query: str) -> Optional[str]:
-    # system_message = f"""
-    # Given a user's question and the SQL rows response from the database, write a helpful and concise answer.
-    # <user_question>
-    # {human_query}
-    # </user_question>
-    # <sql_response>
-    # {result}
-    # </sql_response>
-    # """
-    # resp = client.chat.completions.create(
-        # model="gpt-4o",
-        # messages=[{"role": "system", "content": system_message}],
-        # max_tokens=4000,
-        # temperature=0.2,
-        # )
-        # return resp.choices[0].message.content
-        
 # src/llm.py
 from typing import Any, List, Dict, Optional
 from decouple import config as env
@@ -208,6 +101,7 @@ Rules:
 </schema_json>
 """.strip()
 
+    """
     resp = client.chat.completions.create(
         model="gpt-4o",
         response_format={"type": "json_object"},
@@ -219,6 +113,22 @@ Rules:
         temperature=0.1,
     )
     return resp.choices[0].message.content
+    """
+    
+    mdl = (model or env("GEMINI_MODEL", default="gemini-1.5-flash")).strip()
+
+    try:
+        json_str = await _gen_json(mdl, system_message, human_query)
+        # Validar que parsea a JSON y contiene sql_query
+        parsed = json.loads(json_str)
+        if not isinstance(parsed, dict) or "sql_query" not in parsed:
+            raise RuntimeError(f"GEMINI devolvió un JSON inesperado: {json_str[:200]}")
+        return json_str
+    except GoogleAPIError as e:
+        raise RuntimeError(f"GEMINI GoogleAPIError: {e.message}") from e
+    except Exception as e:
+        raise RuntimeError(f"GEMINI error: {str(e)}") from e
+
 
 # async def build_answer(result: List[Dict[str, Any]], human_query: str) -> Optional[str]:
 async def build_answer(result: List[Dict[str, Any]], human_query: str, model: Optional[str]=None) -> Optional[str]:
@@ -252,4 +162,12 @@ Incluye cifras clave y filtros si son relevantes. Si no hay datos, dilo explíci
         raise RuntimeError(f"GEMINI GoogleAPIError: {e.message}") from e
     except Exception as e:
         raise RuntimeError(f"GEMINI error: {str(e)}") from e
+
+
+# --------- Ping rápido (útil para /llm/ping) ---------
+async def ping(model: Optional[str] = None) -> str:
+    mdl = (model or env("GEMINI_MODEL", default="gemini-1.5-flash")).strip()
+    model = genai.GenerativeModel(model_name=mdl)
+    resp = await asyncio.to_thread(model.generate_content, "ping")
+    return resp.text or ""
 
