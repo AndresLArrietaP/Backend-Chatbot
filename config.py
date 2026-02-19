@@ -48,10 +48,21 @@ class Config:
     # Alcance por defecto de introspección (se puede sobreescribir por query)
     # Coma-separado; tipicamente "public"
     ALLOWED_SCHEMAS = [s.strip() for s in env("ALLOWED_SCHEMAS", default="public").split(",")]
+    
+    # Alias para compatibilidad con tu main.py
+    TARGET_SCHEMAS = env("TARGET_SCHEMAS", default="public")
 
-    # Límite de filas por defecto
+    # Límite de filas por defecto  
+    # Dialecto DB y límites
+    DB_DIALECT = env("DB_DIALECT", default="postgresql")
     MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
     MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=2000, cast=int)
+    
+    
+    # Límites de introspección
+    MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
+    MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
+
 
 
 class DevelopmentConfig(Config):

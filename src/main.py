@@ -53,6 +53,7 @@ def get_schema(
 ) -> Dict[str, Any]:
     settings = request.app.state.settings
     if not schemas:
+        # Compatibilidad con config.py (TARGET_SCHEMAS cadena comma-separada)
         schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
 
     schema_json = database.get_schema_json(
@@ -82,14 +83,18 @@ async def llm_ping(request: Request) -> Dict[str, Any]:
         # Devuelve el error del SDK tal cual para diagnosticar
         return {"status": "error", "detail": str(e)}
     
+
 @router.get("/configz", dependencies=[Depends(api_key_guard)])
 def configz(request: Request):
     s = request.app.state.settings
     k = (getattr(s, "GOOGLE_API_KEY", "") or "")
     return {
+        "LLM_PROVIDER": getattr(s, "LLM_PROVIDER", "gemini"),
         "GOOGLE_API_KEY_prefix": (k[:6] + "...") if k else "(empty)",
         "GEMINI_MODEL": getattr(s, "GEMINI_MODEL", ""),
+        "OPENAI_MODEL": getattr(s, "OPENAI_MODEL", ""),
     }
+
 
 @router.get("/llm/models", dependencies=[Depends(api_key_guard)])
 def llm_models() -> Dict[str, Any]:
@@ -123,10 +128,12 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
 
         allowed_fqn = [f'{t["schema"]}."{t["table"]}"' for t in schema_json.get("tables", [])]
 
+        
         dialect = payload.dialect or getattr(settings, "DB_DIALECT", "postgresql")
-        default_limit = payload.limit or 100
-        max_limit = getattr(settings, "MAX_QUERY_LIMIT", 1000)
+        default_limit = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
+        max_limit = getattr(settings, "MAX_ROWS_HARD", 1000)
         llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+
 
         # 2) Obtener SQL (override → LLM)
         if payload.sql_query_override:
@@ -172,6 +179,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             return {
                 "answer": answer,
                 "rows": rows[:50],
+                "row_count": len(rows),
                 "sql_query": sql_query
             }
         except Exception:
@@ -180,7 +188,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                 "rows": rows,
                 "row_count": len(rows),
                 "sql_query": sql_query,
-                "warning": "Fallo al generar el resumen con OpenAI"
+                "warning": "Fallo al generar el resumen con OpenAI/GEMINI"
             }
 
     except Exception as e:

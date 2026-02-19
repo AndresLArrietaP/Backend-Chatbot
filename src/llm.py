@@ -175,47 +175,148 @@
 #"""
 
 # src/llm.py
+# from typing import Any, List, Dict, Optional
+# from decouple import config as env
+# import json
+# import asyncio
+# from google import genai
+
+# API_KEY = (env("GOOGLE_API_KEY", default="") or "").strip()
+# if not API_KEY:
+#     raise RuntimeError("Falta GOOGLE_API_KEY en .env")
+
+# client = genai.Client(api_key=API_KEY)
+
+# # src/llm.py (parte superior, después de crear client)
+# def _resolve_model(name: Optional[str]) -> str:
+#     nm = (name or env("GEMINI_MODEL", default="gemini-1.5-flash")).strip()
+#     return nm if nm.startswith("models/") else f"models/{nm}"
+
+# def _dialect_quote(dialect: str) -> str:
+#     d = (dialect or "postgresql").lower()
+#     if d in ("postgresql","sqlite"):
+#         return 'Use double quotes for identifiers.'
+#     if d == "mysql":
+#         return 'Use backticks for identifiers.'
+#     if d in ("mssql","sqlserver"):
+#         return 'Use square brackets for identifiers.'
+#     return 'Use double quotes by default.'
+
+
+# def list_models() -> Dict[str, Any]:
+#     items = []
+#     for m in client.models.list():
+#         # Atributo puede variar por versión; intentamos ambos
+#         methods = getattr(m, "supported_generation_methods", None)
+#         if methods is None:
+#             methods = getattr(m, "generation_methods", None)
+#         items.append({
+#             "name": m.name,                        # p.ej., "models/gemini-1.5-flash"
+#             "methods": methods                     # p.ej., ["generateContent", "countTokens", ...]
+#         })
+#     return {"status": "ok", "models": items}
+
+
+# async def human_query_to_sql(
+#     human_query: str,
+#     schema_json: Dict[str,Any],
+#     dialect: str="postgresql",
+#     default_limit: int=100,
+#     model: Optional[str]=None
+# ) -> str:
+
+#     schema_compact = [
+#         {"schema": t["schema"], "table": t["table"],
+#          "columns": [c["name"] for c in t["columns"]]}
+#         for t in schema_json.get("tables", [])
+#     ]
+
+#     system_prompt = f"""
+# You are a careful SQL generator for {dialect.upper()}.
+
+# Rules:
+# - Use ONLY tables/columns from the schema.
+# - {_dialect_quote(dialect)}
+# - Add LIMIT {default_limit} if missing.
+# - Return a JSON with: "sql_query" and "original_query".
+
+# <schema_json>
+# {json.dumps(schema_compact, ensure_ascii=False)}
+# </schema_json>
+# """.strip()
+#     """
+#     mdl = model or env("GEMINI_MODEL", default="gemini-1.5-flash")
+
+#     resp = client.models.generate_content(
+#         model=mdl,
+#         contents=[
+#             {"role": "system", "parts": [{"text": system_prompt}]},
+#             {"role": "user", "parts": [{"text": human_query}]}
+#         ],
+#         config={"response_mime_type": "application/json"}
+#     )"""
+      
+#     mdl = _resolve_model(model)
+#     resp = client.models.generate_content(
+#         model=mdl,
+#         contents=[
+#             {"role": "system", "parts": [{"text": system_prompt}]},
+#             {"role": "user",   "parts": [{"text": human_query}]}
+#         ],
+#         config={"response_mime_type": "application/json"}
+#     )
+
+#     return resp.text
+
+# async def build_answer(rows: List[Dict[str,Any]],
+#                        human_query: str,
+#                        model: Optional[str]=None) -> str:
+
+#     prompt = f"""
+# Eres un analista. Resume en español la respuesta a la pregunta:
+
+# {human_query}
+
+# Basado en estas filas:
+# {json.dumps(rows, ensure_ascii=False)[:15000]}
+# """.strip()
+#     """
+#     mdl = model or env("GEMINI_MODEL", default="gemini-1.5-flash")
+#     resp = client.models.generate_content(
+#         model=mdl,
+#         contents=prompt
+#     )"""
+    
+#     mdl = _resolve_model(model)
+#     resp = client.models.generate_content(model=mdl, contents=prompt)
+
+    
+#     return resp.text
+
+# async def ping(model: Optional[str]=None) -> str:
+#     """
+#     mdl = model or env("GEMINI_MODEL", default="gemini-1.5-flash")
+#     resp = client.models.generate_content(
+#         model=mdl,
+#         contents="ping"
+#     )"""   
+    
+#     mdl = _resolve_model(model)
+#     resp = client.models.generate_content(model=mdl, contents="ping")
+
+#     return resp.text or ""
+
 from typing import Any, List, Dict, Optional
-from decouple import config as env
-import json
-import asyncio
-from google import genai
+from .providers.factory import get_provider
 
-API_KEY = (env("GOOGLE_API_KEY", default="") or "").strip()
-if not API_KEY:
-    raise RuntimeError("Falta GOOGLE_API_KEY en .env")
-
-client = genai.Client(api_key=API_KEY)
-
-# src/llm.py (parte superior, después de crear client)
-def _resolve_model(name: Optional[str]) -> str:
-    nm = (name or env("GEMINI_MODEL", default="gemini-1.5-flash")).strip()
-    return nm if nm.startswith("models/") else f"models/{nm}"
-
-def _dialect_quote(dialect: str) -> str:
-    d = (dialect or "postgresql").lower()
-    if d in ("postgresql","sqlite"):
-        return 'Use double quotes for identifiers.'
-    if d == "mysql":
-        return 'Use backticks for identifiers.'
-    if d in ("mssql","sqlserver"):
-        return 'Use square brackets for identifiers.'
-    return 'Use double quotes by default.'
-
+# Creamos una única instancia de provider (singleton simple)
+_provider = get_provider()
 
 def list_models() -> Dict[str, Any]:
-    items = []
-    for m in client.models.list():
-        # Atributo puede variar por versión; intentamos ambos
-        methods = getattr(m, "supported_generation_methods", None)
-        if methods is None:
-            methods = getattr(m, "generation_methods", None)
-        items.append({
-            "name": m.name,                        # p.ej., "models/gemini-1.5-flash"
-            "methods": methods                     # p.ej., ["generateContent", "countTokens", ...]
-        })
-    return {"status": "ok", "models": items}
+    return _provider.list_models()
 
+async def ping(model: Optional[str] = None) -> str:
+    return await _provider.ping(model=model)
 
 async def human_query_to_sql(
     human_query: str,
@@ -224,86 +325,23 @@ async def human_query_to_sql(
     default_limit: int=100,
     model: Optional[str]=None
 ) -> str:
-
-    schema_compact = [
-        {"schema": t["schema"], "table": t["table"],
-         "columns": [c["name"] for c in t["columns"]]}
-        for t in schema_json.get("tables", [])
-    ]
-
-    system_prompt = f"""
-You are a careful SQL generator for {dialect.upper()}.
-
-Rules:
-- Use ONLY tables/columns from the schema.
-- {_dialect_quote(dialect)}
-- Add LIMIT {default_limit} if missing.
-- Return a JSON with: "sql_query" and "original_query".
-
-<schema_json>
-{json.dumps(schema_compact, ensure_ascii=False)}
-</schema_json>
-""".strip()
-    """
-    mdl = model or env("GEMINI_MODEL", default="gemini-1.5-flash")
-
-    resp = client.models.generate_content(
-        model=mdl,
-        contents=[
-            {"role": "system", "parts": [{"text": system_prompt}]},
-            {"role": "user", "parts": [{"text": human_query}]}
-        ],
-        config={"response_mime_type": "application/json"}
-    )"""
-      
-    mdl = _resolve_model(model)
-    resp = client.models.generate_content(
-        model=mdl,
-        contents=[
-            {"role": "system", "parts": [{"text": system_prompt}]},
-            {"role": "user",   "parts": [{"text": human_query}]}
-        ],
-        config={"response_mime_type": "application/json"}
+    return await _provider.human_query_to_sql(
+        human_query=human_query,
+        schema_json=schema_json,
+        dialect=dialect,
+        default_limit=default_limit,
+        model=model
     )
 
-    return resp.text
-
-async def build_answer(rows: List[Dict[str,Any]],
-                       human_query: str,
-                       model: Optional[str]=None) -> str:
-
-    prompt = f"""
-Eres un analista. Resume en español la respuesta a la pregunta:
-
-{human_query}
-
-Basado en estas filas:
-{json.dumps(rows, ensure_ascii=False)[:15000]}
-""".strip()
-    """
-    mdl = model or env("GEMINI_MODEL", default="gemini-1.5-flash")
-    resp = client.models.generate_content(
-        model=mdl,
-        contents=prompt
-    )"""
-    
-    mdl = _resolve_model(model)
-    resp = client.models.generate_content(model=mdl, contents=prompt)
-
-    
-    return resp.text
-
-async def ping(model: Optional[str]=None) -> str:
-    """
-    mdl = model or env("GEMINI_MODEL", default="gemini-1.5-flash")
-    resp = client.models.generate_content(
-        model=mdl,
-        contents="ping"
-    )"""   
-    
-    mdl = _resolve_model(model)
-    resp = client.models.generate_content(model=mdl, contents="ping")
-
-    return resp.text or ""
+async def build_answer(
+    rows: List[Dict[str,Any]],
+    human_query: str,
+    model: Optional[str]=None
+) -> str:
+    return await _provider.build_answer(
+        rows=rows,
+        human_query=human_query,
+        model=model
+    )
 
 
