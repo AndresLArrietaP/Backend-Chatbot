@@ -154,17 +154,16 @@ async def debug_llm_sql(request: Request, payload: PostHumanQueryPayload):
         "raw_llm_sql_json": sql_json
     }
 
+
 @router.post("/debug/llm_sql_full")
 async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
     settings = request.app.state.settings
 
-    # 1) Construir schema enviado al LLM
     schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
     schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
 
     allowed_fqn = [f'{t["schema"]}."{t["table"]}"' for t in schema_json.get("tables", [])]
 
-    # 2) LLM raw
     llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
     raw_json = await llm.human_query_to_sql(
         payload.human_query,
@@ -174,7 +173,6 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
         model=llm_model,
     )
 
-    # 3) Parse JSON recibido
     try:
         parsed = json.loads(raw_json)
     except Exception:
@@ -183,9 +181,9 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
     sql_raw = parsed.get("sql_query", "")
     sql_clean = database.clean_sql(sql_raw)
 
-    # 4) Validaciones
     safe = database.is_safe_select(sql_clean)
     allowed = database.restrict_to_allowed_tables(sql_clean, allowed_fqn)
+    forbidden_hits = database.find_forbidden_tokens(sql_clean)
 
     return {
         "LLM_raw_JSON": raw_json,
@@ -194,6 +192,7 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
         "allowed_fqn": allowed_fqn,
         "is_safe_select": safe,
         "restrict_ok": allowed,
+        "forbidden_hits": forbidden_hits,
         "schema_used": schema_json,
     }
     

@@ -148,8 +148,22 @@ def unwrap_explain(sql: str) -> str:
     s = re.sub(r"^\s*explain\b(?:\s+\w+(?:\s+\w+)*)*\s*", "", s, flags=re.IGNORECASE)
     return s.strip()
 
+# --- Ignorar literales de texto al buscar tokens prohibidos ---
+_SINGLE_QUOTED_RE = re.compile(r"('([^']|'')*')", re.DOTALL)
+_DOLLAR_QUOTED_RE = re.compile(r"(\$\$.*?\$\$)", re.DOTALL)  # simplificado para $$...$$
+
+def _mask_string_literals(sql: str) -> str:
+    """
+    Reemplaza literales de texto por comillas vacías para evitar falsos positivos:
+    '... DROP ...' dentro de un string NO debe bloquear.
+    """
+    s = sql or ""
+    s = _DOLLAR_QUOTED_RE.sub("$$''$$", s)  # conserva delimitadores
+    s = _SINGLE_QUOTED_RE.sub("''", s)
+    return s
+
 # ⚠️ Tokens peligrosos como palabras completas (no subcadenas)
-#    REPLACE fue removido para no bloquear REGEXP_REPLACE
+#    (no bloqueamos REPLACE para no interferir con REGEXP_REPLACE)
 _base_forbidden = [
     r"\bDROP\b", r"\bDELETE\b", r"\bTRUNCATE\b", r"\bALTER\b",
     r"\bINSERT\b", r"\bUPDATE\b", r"\bCREATE\b", r"\bMERGE\b",
@@ -158,17 +172,29 @@ _base_forbidden = [
 if not ALLOW_SQL_CALL:
     _base_forbidden.append(r"\bCALL\b")
 
-# Comentarios/puntuación peligrosos
-_forbidden_misc = [r";", r"--", r"/\*", r"\*/"]
+_FORBIDDEN_PATTERNS = [re.compile(pat, re.IGNORECASE) for pat in _base_forbidden]
 
-# Compilamos patrones
-_FORBIDDEN_PATTERNS = [re.compile(pat, re.IGNORECASE) for pat in (_base_forbidden + _forbidden_misc)]
-
-def _contains_forbidden(sql: str) -> bool:
+def _contains_forbidden(sql: str) -> Optional[str]:
+    """
+    Devuelve el patrón que matcheó (para debug) o None si está limpio.
+    Ignora literales de texto.
+    """
+    s = _mask_string_literals(sql or "")
     for pat in _FORBIDDEN_PATTERNS:
-        if pat.search(sql or ""):
-            return True
-    return False
+        if pat.search(s):
+            return pat.pattern
+    return None
+
+def find_forbidden_tokens(sql: str) -> List[str]:
+    """
+    Útil para /debug: lista los patrones que matchean.
+    """
+    hits: List[str] = []
+    s = _mask_string_literals(sql or "")
+    for pat in _FORBIDDEN_PATTERNS:
+        if pat.search(s):
+            hits.append(pat.pattern)
+    return hits
 
 def is_safe_select(sql: str) -> bool:
     """
@@ -176,17 +202,16 @@ def is_safe_select(sql: str) -> bool:
       - SELECT / WITH ... SELECT
       - (opcional) EXPLAIN ... SELECT (sin ANALYZE por defecto)
       - (opcional) VALUES (...)
-    Rechazamos si aparecen tokens peligrosos (palabras completas).
+    Rechazamos si aparecen tokens peligrosos (palabras completas, ignorando strings).
     """
     s = sql or ""
 
-    # VALUES puro (lectura, sin tablas)
     if is_values_only(s):
-        ok = ALLOW_SQL_VALUES and not _contains_forbidden(s)
-        logger.debug("[database.is_safe_select] VALUES -> %s", ok)
+        bad = _contains_forbidden(s)
+        ok = ALLOW_SQL_VALUES and (bad is None)
+        logger.debug("[database.is_safe_select] VALUES -> %s (bad=%s)", ok, bad)
         return ok
 
-    # EXPLAIN SELECT ...
     if is_explain(s):
         if not ALLOW_SQL_EXPLAIN:
             logger.debug("[database.is_safe_select] EXPLAIN no permitido")
@@ -195,16 +220,18 @@ def is_safe_select(sql: str) -> bool:
             logger.debug("[database.is_safe_select] EXPLAIN ANALYZE no permitido")
             return False
         inner = unwrap_explain(s)
-        ok = (_SELECT_RE.match(inner or "") is not None) and not _contains_forbidden(inner)
-        logger.debug("[database.is_safe_select] EXPLAIN(inner) -> %s", ok)
+        bad = _contains_forbidden(inner)
+        ok = (_SELECT_RE.match(inner or "") is not None) and (bad is None)
+        logger.debug("[database.is_safe_select] EXPLAIN(inner) -> %s (bad=%s)", ok, bad)
         return ok
 
-    # SELECT / WITH ... SELECT
     if not _SELECT_RE.match(s or ""):
         logger.debug("[database.is_safe_select] No es SELECT/CTE")
         return False
-    ok = not _contains_forbidden(s)
-    logger.debug("[database.is_safe_select] SELECT -> %s", ok)
+
+    bad = _contains_forbidden(s)
+    ok = (bad is None)
+    logger.debug("[database.is_safe_select] SELECT -> %s (bad=%s)", ok, bad)
     return ok
 
 def enforce_limit(sql: str, default_limit: int = 100, max_limit: int = 1000) -> str:
@@ -237,8 +264,7 @@ def restrict_to_allowed_tables(sql: str, allowed_fqn: List[str]) -> bool:
     for fqn in allowed_fqn:
         schema, _, table = fqn.partition(".")
         schema = schema.strip().strip('"').lower()
-        table_raw = table.strip()
-        table_unquoted = table_raw.replace('"', "")
+        table_unquoted = table.strip().replace('"', "")
 
         # 1) FQN con comillas exacto
         patterns.append(rf'{re.escape(schema)}\s*\.\s*"{re.escape(table_unquoted)}"')
