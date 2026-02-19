@@ -92,6 +92,7 @@ def configz(request: Request):
         "LLM_PROVIDER": getattr(s, "LLM_PROVIDER", "gemini"),
         "GOOGLE_API_KEY_prefix": (k[:6] + "...") if k else "(empty)",
         "GEMINI_MODEL": getattr(s, "GEMINI_MODEL", ""),
+        "GEMINI_MODEL_ANSWER": getattr(s, "GEMINI_MODEL_ANSWER", ""),
         "OPENAI_MODEL": getattr(s, "OPENAI_MODEL", ""),
     }
 
@@ -102,7 +103,100 @@ def llm_models() -> Dict[str, Any]:
         return llm.list_models()
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+    
+@router.get("/debug/schema")
+def debug_schema(request: Request):
+    settings = request.app.state.settings
+    schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
 
+    schema_json = database.get_schema_json(
+        schemas=schemas,
+        tables=None,
+        max_tables=200,
+        max_columns=5000,
+    )
+
+    return {
+        "schemas_requested": schemas,
+        "schema_json": schema_json
+    }
+
+@router.get("/debug/tables")
+def debug_tables(request: Request):
+    settings = request.app.state.settings
+    schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
+
+    schema_json = database.get_schema_json(schemas=schemas)
+    tables = [t["table"] for t in schema_json.get("tables", [])]
+
+    return {
+        "tables_detected": tables
+    }
+    
+@router.post("/debug/llm_sql")
+async def debug_llm_sql(request: Request, payload: PostHumanQueryPayload):
+    settings = request.app.state.settings
+
+    schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
+    schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
+
+    llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+
+    sql_json = await llm.human_query_to_sql(
+        payload.human_query,
+        schema_json=schema_json,
+        dialect=payload.dialect or "postgresql",
+        default_limit=payload.limit or 100,
+        model=llm_model,
+    )
+
+    return {
+        "raw_llm_sql_json": sql_json
+    }
+
+@router.post("/debug/llm_sql_full")
+async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
+    settings = request.app.state.settings
+
+    # 1) Construir schema enviado al LLM
+    schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
+    schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
+
+    allowed_fqn = [f'{t["schema"]}."{t["table"]}"' for t in schema_json.get("tables", [])]
+
+    # 2) LLM raw
+    llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+    raw_json = await llm.human_query_to_sql(
+        payload.human_query,
+        schema_json=schema_json,
+        dialect=payload.dialect or "postgresql",
+        default_limit=payload.limit or 100,
+        model=llm_model,
+    )
+
+    # 3) Parse JSON recibido
+    try:
+        parsed = json.loads(raw_json)
+    except Exception:
+        parsed = {"error": "No se pudo parsear JSON", "raw": raw_json}
+
+    sql_raw = parsed.get("sql_query", "")
+    sql_clean = database.clean_sql(sql_raw)
+
+    # 4) Validaciones
+    safe = database.is_safe_select(sql_clean)
+    allowed = database.restrict_to_allowed_tables(sql_clean, allowed_fqn)
+
+    return {
+        "LLM_raw_JSON": raw_json,
+        "sql_raw": sql_raw,
+        "sql_clean": sql_clean,
+        "allowed_fqn": allowed_fqn,
+        "is_safe_select": safe,
+        "restrict_ok": allowed,
+        "schema_used": schema_json,
+    }
+    
 @router.post("/schema/refresh", dependencies=[Depends(api_key_guard)])
 def refresh_schema() -> Dict[str, str]:
     database.refresh_schema_cache()
@@ -128,6 +222,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
 
         allowed_fqn = [f'{t["schema"]}."{t["table"]}"' for t in schema_json.get("tables", [])]
 
+        logger.debug("[/human_query] allowed_fqn=%s", allowed_fqn)  # [DEBUG]
         
         dialect = payload.dialect or getattr(settings, "DB_DIALECT", "postgresql")
         default_limit = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
@@ -139,6 +234,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         if payload.sql_query_override:
             sql_query = payload.sql_query_override
             result_dict = {"sql_query": sql_query, "original_query": payload.human_query}
+            logger.debug("[/human_query] using sql_query_override=%r", sql_query)  # [DEBUG]
         else:
             sql_json = await llm.human_query_to_sql(
                 payload.human_query,
@@ -147,6 +243,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                 default_limit=default_limit,
                 model=llm_model,
             )
+            logger.debug("[/human_query] LLM raw JSON=%s", (sql_json[:500] if sql_json else None))  # [DEBUG
             if not sql_json:
                 raise HTTPException(status_code=500, detail="Falló la generación de la consulta SQL")
 
@@ -155,9 +252,18 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             if not sql_query:
                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
 
+        
+        # Limpieza antes de dry-run / ejecución
+        sql_query = database.clean_sql(sql_query)
+
         # 3) Dry-run
         if not payload.execute:
             if not database.is_safe_select(sql_query) or not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
+                
+                logger.debug("[/human_query] FAIL dry-run safe=%s allowed=%s",
+                             database.is_safe_select(sql_query),
+                             database.restrict_to_allowed_tables(sql_query, allowed_fqn))  # [DEBUG]
+
                 raise HTTPException(status_code=400, detail="SQL insegura o fuera de las tablas permitidas.")
             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
 
@@ -175,20 +281,20 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
 
         try:
             answer = await llm.build_answer(rows, payload.human_query, model=llm_model)
-            #answer = await llm.build_answer(rows, payload.human_query)
             return {
                 "answer": answer,
                 "rows": rows[:50],
                 "row_count": len(rows),
                 "sql_query": sql_query
             }
-        except Exception:
+        except Exception as ex:
             logger.exception("Fallo al generar 'answer'.")
             return {
-                "rows": rows,
+                "rows": rows[:50],
                 "row_count": len(rows),
                 "sql_query": sql_query,
-                "warning": "Fallo al generar el resumen con OpenAI/GEMINI"
+                "warning": f"No se pudo generar el resumen (LLM): {str(ex)[:180]}",
+                "can_retry_summary": True
             }
 
     except Exception as e:

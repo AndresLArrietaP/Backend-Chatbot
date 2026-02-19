@@ -30,9 +30,12 @@ class Config:
 
     
     # --- Gemini (Google AI Studio) ---
+    
+    # LLM
+    LLM_PROVIDER = env("LLM_PROVIDER", default="gemini").lower()
     GOOGLE_API_KEY = env("GOOGLE_API_KEY", default=None)
     GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-1.5-flash")
-
+    GEMINI_MODEL_ANSWER = env("GEMINI_MODEL_ANSWER", default=None)
 
     # OpenAI
     OPENAI_API_KEY = env("OPENAI_API_KEY", default=None)
@@ -58,11 +61,15 @@ class Config:
     MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
     MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=2000, cast=int)
     
-    
     # Límites de introspección
     MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
     MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
-
+    
+    # Seguridad SQL opcional (reflejo de lo que lee database.py)
+    ALLOW_SQL_EXPLAIN = env("ALLOW_SQL_EXPLAIN", default=True, cast=bool)
+    ALLOW_EXPLAIN_ANALYZE = env("ALLOW_EXPLAIN_ANALYZE", default=False, cast=bool)
+    ALLOW_SQL_VALUES = env("ALLOW_SQL_VALUES", default=True, cast=bool)
+    ALLOW_SQL_CALL = env("ALLOW_SQL_CALL", default=False, cast=bool)
 
 
 class DevelopmentConfig(Config):
