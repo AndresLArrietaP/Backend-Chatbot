@@ -4,39 +4,53 @@ from decouple import config as env
 import json
 import re
 import time
+from decimal import Decimal
+from datetime import date, datetime
 from google import genai
 from google.genai import errors as genai_errors
 from logging import getLogger
 
 log = getLogger(__name__)
 
+# ---------------- JSON-safe helpers ----------------
+
+def _to_json_safe(v: Any) -> Any:
+    if isinstance(v, Decimal):
+        return float(v)  # usa str(v) si prefieres precisión textual absoluta
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    if isinstance(v, list):
+        return [_to_json_safe(x) for x in v]
+    if isinstance(v, tuple):
+        return tuple(_to_json_safe(x) for x in v)
+    if isinstance(v, dict):
+        return {k: _to_json_safe(val) for k, val in v.items()}
+    return v
+
 def _compact_rows_for_summary(rows: List[Dict[str, Any]], max_chars: int = 8000) -> str:
-    """
-    Compacta filas a un JSON con tamaño acotado:
-      - Trunca strings > 200 chars.
-      - Si aún excede max_chars, reduce filas por binary search.
-    """
     if not rows:
         return "[]"
-    out: List[Dict[str, Any]] = []
-    for r in rows:
+
+    def _normalize_row(r: Dict[str, Any]) -> Dict[str, Any]:
         nr: Dict[str, Any] = {}
         for k, v in (r or {}).items():
-            if isinstance(v, str) and len(v) > 200:
-                nr[k] = v[:200] + "…"
+            v2 = _to_json_safe(v)
+            if isinstance(v2, str) and len(v2) > 200:
+                nr[k] = v2[:200] + "…"
             else:
-                nr[k] = v
-        out.append(nr)
+                nr[k] = v2
+        return nr
 
-    s = json.dumps(out, ensure_ascii=False)
+    normalized = [_normalize_row(r) for r in rows]
+    s = json.dumps(normalized, ensure_ascii=False)
     if len(s) <= max_chars:
         return s
 
-    lo, hi = 0, len(out)
+    lo, hi = 0, len(normalized)
     best = "[]"
     while lo < hi:
         mid = (lo + hi) // 2
-        s2 = json.dumps(out[:max(1, mid)], ensure_ascii=False)
+        s2 = json.dumps(normalized[:max(1, mid)], ensure_ascii=False)
         if len(s2) <= max_chars:
             best = s2
             lo = mid + 1
@@ -44,6 +58,7 @@ def _compact_rows_for_summary(rows: List[Dict[str, Any]], max_chars: int = 8000)
             hi = mid
     return best
 
+# ---------------- Provider ----------------
 
 class GeminiProvider:
     def __init__(self) -> None:
@@ -57,20 +72,16 @@ class GeminiProvider:
         return nm if nm.startswith("models/") else f"models/{nm}"
 
     def _resolve_answer_model(self, name: Optional[str]) -> str:
-        """
-        Permite un modelo distinto para el RESUMEN (si no se define, usa GEMINI_MODEL).
-        Puedes setear GEMINI_MODEL_ANSWER en .env para separar cargas.
-        """
         nm = (name or env("GEMINI_MODEL_ANSWER", default=env("GEMINI_MODEL", default="gemini-1.5-flash"))).strip()
         return nm if nm.startswith("models/") else f"models/{nm}"
 
     def _dialect_quote(self, dialect: str) -> str:
         d = (dialect or "postgresql").lower()
-        if d in ("postgresql","sqlite"):
+        if d in ("postgresql", "sqlite"):
             return 'Use double quotes for identifiers.'
         if d == "mysql":
             return 'Use backticks for identifiers.'
-        if d in ("mssql","sqlserver"):
+        if d in ("mssql", "sqlserver"):
             return 'Use square brackets for identifiers.'
         return 'Use double quotes by default.'
 
@@ -82,10 +93,6 @@ class GeminiProvider:
         return {"status": "ok", "models": items}
 
     def _ensure_sql_json(self, text_payload: str) -> str:
-        """
-        Asegura que el modelo devolvió un JSON con al menos "sql_query".
-        Si vino mezclado con texto, intenta extraer el primer objeto JSON.
-        """
         def _try(s: str) -> Optional[str]:
             try:
                 obj = json.loads(s)
@@ -110,12 +117,12 @@ class GeminiProvider:
     async def human_query_to_sql(
         self,
         human_query: str,
-        schema_json: Dict[str,Any],
-        dialect: str="postgresql",
-        default_limit: int=100,
-        model: Optional[str]=None
+        schema_json: Dict[str, Any],
+        dialect: str = "postgresql",
+        default_limit: int = 100,
+        model: Optional[str] = None
     ) -> str:
-        # Enviamos nombres + tipos para que el modelo sepa cuándo castear
+        # nombres + tipos + fq_name
         schema_compact = [
             {
                 "schema": t["schema"],
@@ -127,23 +134,39 @@ class GeminiProvider:
         ]
         fq_names = [t.get("fq_name") for t in schema_json.get("tables", []) if t.get("fq_name")]
 
-        system_prompt = f"""
+        # fr""" ... """ = raw f-string, evita SyntaxWarning por secuencias de escape
+        system_prompt = fr"""
 You are a careful SQL generator for {dialect.upper()}.
 
 Rules:
 - Generate only READ-ONLY statements:
   * Allowed: SELECT queries (including WITH/CTE), window functions, aggregates (SUM/COUNT/AVG...), scalar functions, and optionally EXPLAIN (without ANALYZE).
-  * Avoid any data-modifying or destructive statements: INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, MERGE, REPLACE, COPY, VACUUM, GRANT, REVOKE.
+  * Avoid any data-modifying or destructive statements: INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, MERGE, VACUUM, COPY, GRANT, REVOKE, CALL.
 - Use ONLY tables/columns from the provided schema JSON (do not hallucinate).
 - {self._dialect_quote(dialect)}
 - If identifiers contain spaces or accents, quote them accordingly (e.g., "Fecha de Pedido").
 - Prefer fully-qualified names exactly as listed in <allowed_fqn> when referencing tables (e.g., public."Table").
-- If the user asks for totals or grouping (e.g., "total", "por cada ..."), generate proper aggregates with GROUP BY and SUM/COUNT/AVG as appropriate.
-- IMPORTANT (PostgreSQL): if a numeric aggregation is required and the column type is TEXT/VARCHAR or the values include formatting (thousands separators, currency),
-  convert it to NUMERIC safely using this pattern:
-  COALESCE(NULLIF(REGEXP_REPLACE("Col", '[^0-9\\.-]', '', 'g'), '')::numeric, 0)
+
+- Numeric cleaning MACRO (use EXACTLY this token, do NOT inline its body; the server will expand it):
+  NUMERIC_CLEAN("Col")
+
+  This macro converts a textual/mixed-formatted number into NUMERIC handling:
+  * ',' as thousands or decimal separator (normalizes to '.'),
+  * removes all non [0-9.-] chars,
+  * keeps only the LAST dot as decimal separator,
+  * converts parentheses to negative (e.g., '(123)' -> '-123').
+
+  Use NUMERIC_CLEAN("Col") inside SUM/AVG/ORDER BY when "Col" is TEXT/VARCHAR or contains formatting.
+
+- EXCLUDE footer/total rows and null/blank keys when grouping by textual keys:
+  * WHERE COALESCE(TRIM("Key"), '') <> ''
+    AND "Key" !~* '^\s*total'
+    AND "Key" !~* '^\s*gran\s*total'
+    AND "Key" !~* '^\s*totales'
+
 - Include a meaningful ORDER BY when helpful.
 - Add LIMIT {default_limit} if the user didn't specify it.
+
 - Return a strict JSON object with keys: "sql_query" and "original_query". No extra keys.
 
 <schema_json>
@@ -169,16 +192,10 @@ Rules:
 
     async def build_answer(
         self,
-        rows: List[Dict[str,Any]],
+        rows: List[Dict[str, Any]],
         human_query: str,
-        model: Optional[str]=None
+        model: Optional[str] = None
     ) -> str:
-        """
-        Resumen robusto:
-          - compacta filas
-          - reintenta 3 veces con backoff incremental
-          - fallback entre varios modelos si 503/429
-        """
         rows_json = _compact_rows_for_summary(rows, max_chars=8000)
 
         prompt = f"""
@@ -222,7 +239,7 @@ Instrucciones:
 
         raise RuntimeError(f"Fallo build_answer tras reintentos/fallbacks: {last_err}")
 
-    async def ping(self, model: Optional[str]=None) -> str:
+    async def ping(self, model: Optional[str] = None) -> str:
         mdl = self._resolve_model(model)
         resp = self.client.models.generate_content(model=mdl, contents="ping")
         return resp.text or ""

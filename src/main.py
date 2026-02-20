@@ -9,6 +9,48 @@ from pydantic import BaseModel
 from . import database
 from . import llm
 
+# ---- NUEVO: helpers de normalización y configuración ----
+from decimal import Decimal
+from decouple import config as env
+
+def _to_number(v):
+    """Convierte Decimal/int/float a float; deja el resto tal cual."""
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, (int, float)):
+        return float(v)
+    return v
+
+def normalize_rows(
+    rows: List[Dict[str, Any]],
+    implied_millis_cols: List[str],
+    decimal_places: int = 3,
+    fmt_strings: bool = True,   # <<-- por defecto True para ',' miles y '.' decimales
+) -> List[Dict[str, Any]]:
+    """
+    - Divide entre 1000.0 las columnas/aliases listados en implied_millis_cols (si son numéricos)
+    - Redondea a 'decimal_places'
+    - Si fmt_strings=True, devuelve strings con separador de miles (p. ej. '114,303.000'); si False, números.
+    """
+    implied_set = {c.strip().lower() for c in implied_millis_cols if c and c.strip()}
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        nr: Dict[str, Any] = {}
+        for k, v in (r or {}).items():
+            val = _to_number(v)
+            key_low = (k or "").strip().lower()
+            if isinstance(val, (int, float)) or isinstance(v, Decimal):
+                valf = float(val)
+                if key_low in implied_set:
+                    valf = valf / 1000.0
+                valf = round(valf, decimal_places)
+                nr[k] = f"{valf:,.{decimal_places}f}" if fmt_strings else valf
+            else:
+                nr[k] = v
+        out.append(nr)
+    return out
+# ---------------------------------------------------------
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -32,7 +74,7 @@ class PostHumanQueryPayload(BaseModel):
     limit: Optional[int] = None
     execute: bool = True
     schema_refresh: bool = False
-    summarize: Optional[bool] = True   # si False → no llamar OpenAI para respuesta
+    summarize: Optional[bool] = True   # si False → no llamar LLM para respuesta
 
 
 @router.get("/")
@@ -64,15 +106,6 @@ def get_schema(
     )
     return schema_json
 
-"""
-@router.get("/llm/ping", dependencies=[Depends(api_key_guard)])
-async def llm_ping(request: Request) -> Dict[str, Any]:
-    try:
-        txt = await llm.build_answer([{"ok": True}], "ping")
-        return {"status": "ok", "gemini_reply": txt[:200]}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
-""" 
 
 @router.get("/llm/ping", dependencies=[Depends(api_key_guard)])
 async def llm_ping(request: Request) -> Dict[str, Any]:
@@ -103,7 +136,9 @@ def llm_models() -> Dict[str, Any]:
         return llm.list_models()
     except Exception as e:
         return {"status": "error", "detail": str(e)}
-    
+
+
+# ------- DEBUG endpoints --------
 @router.get("/debug/schema")
 def debug_schema(request: Request):
     settings = request.app.state.settings
@@ -154,7 +189,6 @@ async def debug_llm_sql(request: Request, payload: PostHumanQueryPayload):
         "raw_llm_sql_json": sql_json
     }
 
-
 @router.post("/debug/llm_sql_full")
 async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
     settings = request.app.state.settings
@@ -183,7 +217,7 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
 
     safe = database.is_safe_select(sql_clean)
     allowed = database.restrict_to_allowed_tables(sql_clean, allowed_fqn)
-    forbidden_hits = database.find_forbidden_tokens(sql_clean)
+    forbidden_hits = database.find_forbidden_tokens(sql_clean) if hasattr(database, "find_forbidden_tokens") else []
 
     return {
         "LLM_raw_JSON": raw_json,
@@ -195,6 +229,7 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
         "forbidden_hits": forbidden_hits,
         "schema_used": schema_json,
     }
+# ------- /DEBUG endpoints --------
     
 @router.post("/schema/refresh", dependencies=[Depends(api_key_guard)])
 def refresh_schema() -> Dict[str, str]:
@@ -228,7 +263,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         max_limit = getattr(settings, "MAX_ROWS_HARD", 1000)
         llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
 
-
         # 2) Obtener SQL (override → LLM)
         if payload.sql_query_override:
             sql_query = payload.sql_query_override
@@ -242,7 +276,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                 default_limit=default_limit,
                 model=llm_model,
             )
-            logger.debug("[/human_query] LLM raw JSON=%s", (sql_json[:500] if sql_json else None))  # [DEBUG
+            logger.debug("[/human_query] LLM raw JSON=%s", (sql_json[:500] if sql_json else None))  # [DEBUG]
             if not sql_json:
                 raise HTTPException(status_code=500, detail="Falló la generación de la consulta SQL")
 
@@ -251,30 +285,43 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             if not sql_query:
                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
 
-        
         # Limpieza antes de dry-run / ejecución
         sql_query = database.clean_sql(sql_query)
+        
+        # NUEVO: expandir macro NUMERIC_CLEAN antes de validar
+        sql_query = database.expand_numeric_clean(sql_query)
+
 
         # 3) Dry-run
         if not payload.execute:
             if not database.is_safe_select(sql_query) or not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
-                
                 logger.debug("[/human_query] FAIL dry-run safe=%s allowed=%s",
                              database.is_safe_select(sql_query),
                              database.restrict_to_allowed_tables(sql_query, allowed_fqn))  # [DEBUG]
-
                 raise HTTPException(status_code=400, detail="SQL insegura o fuera de las tablas permitidas.")
             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
 
         # 4) Ejecutar SQL real
-        rows = await database.query(
+        rows_raw = await database.query(
             sql_query,
             allowed_fqn=allowed_fqn,
             default_limit=default_limit,
             max_limit=max_limit,
         )
 
-        # 5) Resumen opcional en lenguaje natural
+        # 4.1) Normalización post-DB (escalado/1000 opcional, redondeo, string-format por defecto)
+        implied_cols = [s.strip() for s in (env("IMPLIED_MILLIS_COLUMNS", default="") or "").split(",") if s.strip()]
+        fmt_strings = env("RETURN_FORMATTED_NUMBERS", default=True, cast=bool)   # <<-- por defecto True
+        decimal_places = env("DECIMAL_PLACES", default=3, cast=int)
+
+        rows = normalize_rows(
+            rows_raw,
+            implied_millis_cols=implied_cols,
+            decimal_places=decimal_places,
+            fmt_strings=fmt_strings
+        )
+
+        # 5) Resumen opcional en lenguaje natural (usar filas normalizadas)
         if not payload.summarize:
             return {"rows": rows, "row_count": len(rows), "sql_query": sql_query}
 
