@@ -15,8 +15,8 @@ from decimal import Decimal
 from decouple import config as env
 
 
+
 def _to_number(v):
-    """Convierte Decimal/int/float a float; deja el resto tal cual."""
     if isinstance(v, Decimal):
         return float(v)
     if isinstance(v, (int, float)):
@@ -24,12 +24,6 @@ def _to_number(v):
     return v
 
 def _norm_key_name(s: str) -> str:
-    """
-    Normaliza un nombre de columna/alias para comparación:
-    - sin tildes (NFKD)
-    - minúsculas
-    - sin espacios extremos
-    """
     if not s:
         return ""
     s_norm = unicodedata.normalize("NFKD", s)
@@ -43,29 +37,33 @@ def normalize_rows(
     fmt_strings: bool = True,
 ) -> List[Dict[str, Any]]:
     """
-    - Divide entre 1000.0 las columnas/aliases listados en implied_millis_cols (si son numéricos)
-    - Aplica una heurística opcional para dividir entre 1000 en claves típicas (despachado/original/pendiente/total linea)
-      si el valor luce inflado (ej. múltiplo de 1000 grande).
-    - Redondea a 'decimal_places'
-    - Si fmt_strings=True, devuelve strings con separador de miles (p. ej. '78,724.000'); si False, números nativos.
+    - Divide entre 1000.0 las columnas/aliases listados en implied_millis_cols (match exacto por nombre normalizado).
+    - Heurística opcional: si el nombre contiene alguna keyword (subcadena) y el valor luce inflado (>=100000 y múltiplo de 1000),
+      divide entre 1000. Las keywords vienen de .env y se comparan en minúsculas, sin tildes.
+    - Redondeo y formateo opcional.
     """
-    # Normaliza los nombres de columnas/aliases esperados por el usuario
-    implied_set = {_norm_key_name(c) for c in implied_millis_cols if c and c.strip()}
+    # Lista explícita (match exacto por nombre normalizado)
+    implied_exact = {_norm_key_name(c) for c in implied_millis_cols if c and c.strip()}
 
-    # Heurística opcional (configurable por .env)
+    # Heurística configurable por .env
     auto_heur = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
     keywords_env = env(
         "IMPLIED_MILLIS_KEYWORDS",
-        default="despachado,original,pendiente,total linea,total línea,total despachado"
+        # incluimos variantes típicas
+        default="despachado,original,pendiente,total linea,total línea,total despachado,total original,total pendiente"
     )
-    kw_set = {_norm_key_name(w) for w in keywords_env.split(",") if w.strip()}
+    kw_list = [_norm_key_name(w) for w in keywords_env.split(",") if w.strip()]
+
+    def _name_has_keyword(name_low: str) -> bool:
+        # subcadena: si alguna keyword aparece dentro del nombre normalizado
+        return any((kw in name_low) for kw in kw_list if kw)
 
     out: List[Dict[str, Any]] = []
 
     for r in rows:
         nr: Dict[str, Any] = {}
         for k, v in (r or {}).items():
-            key_low = _norm_key_name(k)
+            name_low = _norm_key_name(k)
             val = _to_number(v)
 
             if isinstance(val, (int, float)) or isinstance(v, Decimal):
@@ -73,19 +71,15 @@ def normalize_rows(
 
                 must_divide = False
 
-                # 1) Regla explícita (lista del payload o .env)
-                if key_low in implied_set:
+                # 1) Regla explícita (alias exacto en la lista)
+                if name_low in implied_exact:
                     must_divide = True
 
-                # 2) Heurística (si está activa): columnas típicas y valores aparentemente “inflados”
-                #    Evitamos floats no enteros; si es casi entero y múltiplo de 1000 y bastante grande, dividimos.
-                if not must_divide and auto_heur and key_low in kw_set:
-                    # cercano a entero
+                # 2) Heurística (si activa): nombre contiene keyword y valor "inflado"
+                if not must_divide and auto_heur and _name_has_keyword(name_low):
                     nearest = round(valf)
-                    if abs(valf - nearest) < 1e-9:
-                        # múltiplo de 1000 y magnitud relevante (>= 100000 evita dividir 1000 ó 2000 válidos)
-                        if abs(nearest) >= 100000 and nearest % 1000 == 0:
-                            must_divide = True
+                    if abs(valf - nearest) < 1e-9 and abs(nearest) >= 100000 and nearest % 1000 == 0:
+                        must_divide = True
 
                 if must_divide:
                     valf = valf / 1000.0

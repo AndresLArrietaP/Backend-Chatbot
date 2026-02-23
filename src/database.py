@@ -11,7 +11,7 @@ from sqlalchemy.sql import text
 
 logger = logging.getLogger(__name__)
 
-# --- conexión / flags (tu configuración actual) ---
+# --- conexión / flags ---
 DATABASE_URL = (env("DATABASE_URL", default=None) or "").strip()
 if not DATABASE_URL:
     raise RuntimeError("Falta la variable de entorno DATABASE_URL.")
@@ -87,7 +87,7 @@ def get_schema_json(
 def refresh_schema_cache() -> None:
     _SCHEMA_CACHE.clear()
 
-# -------- Limpieza y expansión de macros --------
+# -------- Limpieza --------
 
 _CODE_FENCE_RE = re.compile(r"^\s*```(?:sql|postgresql)?\s*|\s*```\s*$", re.IGNORECASE | re.MULTILINE)
 
@@ -111,109 +111,124 @@ def clean_sql(sql: str) -> str:
     logger.debug("[database.clean_sql] OUT: %r", s)
     return s
 
-# # --- Macro: NUMERIC_CLEAN("Col") -> expansión segura y bien parentizada ---
-# _NUMERIC_CLEAN_MACRO = re.compile(r'NUMERIC_CLEAN\(\s*(".*?")\s*\)', re.IGNORECASE | re.DOTALL)
+# -------- Macros --------
 
-# def expand_numeric_clean(sql: str) -> str:
-#     """
-#     Expande NUMERIC_CLEAN("Col") a una expresión robusta que:
-#       - Normaliza ',' -> '.' (cubre casos US y EU)
-#       - Convierte '(123)' en '-123'
-#       - Elimina todo lo no numérico salvo '.' y '-'
-#       - Conserva SÓLO el último '.' como separador decimal
-#       - Castea a numeric y aplica COALESCE(..., 0)
-#     """
-#     def repl(m: re.Match) -> str:
-#         col = m.group(1)  # incluye comillas: "Col"
-#         # Nota: usamos cadenas SQL con escapes dobles para que Postgres reciba
-#         #       los backslashes correctos en los patrones regex.
-#         return (
-#             "("
-#             "COALESCE("
-#                 "NULLIF("
-#                     "REGEXP_REPLACE("
-#                         "REGEXP_REPLACE("
-#                             f"REGEXP_REPLACE(REPLACE(TRIM({col}), ',', '.'), '^\\((.*)\\)$', '-\\\\1'), "
-#                             "'[^0-9\\\\.\\\\-]', '', 'g'"
-#                         "), "
-#                         "'\\\\.(?=.*\\\\.)', '', 'g'"
-#                     "), "
-#                     "''"
-#                 ")::numeric, "
-#                 "0"
-#             ")"
-#             ")"
-#         )
-#     out = _NUMERIC_CLEAN_MACRO.sub(repl, sql or "")
-#     if out != sql:
-#         logger.debug("[database.expand_numeric_clean] macro expanded.")
-#     return out
-
-# --- Macro: NUMERIC_CLEAN("Col") -> expansión robusta con heurística miles ---
+# NUMERIC_CLEAN: heurística de miles/decimales + paréntesis a negativo
 _NUMERIC_CLEAN_MACRO = re.compile(r'NUMERIC_CLEAN\(\s*(".*?")\s*\)', re.IGNORECASE | re.DOTALL)
 
 def expand_numeric_clean(sql: str) -> str:
     """
-    Expande NUMERIC_CLEAN("Col") a una expresión robusta que:
-      - Si tiene miles con coma (ej: 12,345 o 12,345,678.90): quita comas.
-      - Si tiene miles con punto y coma decimal (ej: 1.234,56): quita puntos, coma->punto.
-      - En otros casos: coma->punto.
-      - Convierte '(123)' en '-123'.
-      - Elimina todo lo no [0-9 . -].
-      - Conserva solo el ÚLTIMO '.' como decimal.
-      - ::numeric y COALESCE(...,0).
+    NUMERIC_CLEAN("Col"):
+      - Repara números en formatos US, EU y mixtos
+      - Maneja casos malformados: 1.165.80, 816.000.00, etc.
+      - Detecta el ÚLTIMO separador decimal real
+      - Quita miles correctamente
+      - Garantiza formato final válido: digits[.digits]
     """
     def repl(m: re.Match) -> str:
-        col = m.group(1)  # incluye comillas: "Col"
+        col = m.group(1)
 
-        # Normaliza paréntesis negativos sobre el TRIM(col)
-        neg = (
-            f"REGEXP_REPLACE(TRIM({col}), '^\\((.*)\\)$', '-\\\\1')"
+        return f"""
+        (
+            COALESCE(
+                NULLIF(
+                    (
+                        WITH raw AS (
+                            SELECT TRIM({col}) AS v
+                        ),
+                        norm AS (
+                            SELECT
+                                CASE
+                                    /* CASO 1: coma y punto mezclados → limpiar todo y decidir decimal final */
+                                    WHEN v ~ '[0-9],[0-9]' AND v ~ '[0-9]\\.[0-9]' THEN
+                                        (
+                                            -- quitar todo lo no numérico
+                                            SELECT REGEXP_REPLACE(REGEXP_REPLACE(v, '[^0-9]', '', 'g'),
+                                                                   '(.*)([0-9]{{2}})$','\\1.\\2')
+                                        )
+
+                                    /* CASO 2: formato europeo: 1.234,56 */
+                                    WHEN v ~ '^[0-9]{{1,3}}(\\.[0-9]{{3}})+(,[0-9]+)$' THEN
+                                        REPLACE(
+                                            REGEXP_REPLACE(v, '\\.', '', 'g'),
+                                            ',', '.'
+                                        )
+
+                                    /* CASO 3: formato US: 1,234.56 */
+                                    WHEN v ~ '^[0-9]{{1,3}}(,[0-9]{{3}})+(\\.[0-9]+)$' THEN
+                                        REPLACE(v, ',', '')
+
+                                    /* CASO 4: múltiples puntos: 1.165.80 → dejar solo el último */
+                                    WHEN v ~ '^[0-9.]+$' AND LENGTH(v)-LENGTH(REPLACE(v,'.','')) > 1 THEN
+                                        REGEXP_REPLACE(
+                                            REGEXP_REPLACE(v, '\\.(?=.*\\.)', '', 'g'),
+                                            '[^0-9.]', '', 'g'
+                                        )
+
+                                    /* CASO 5: decimal con coma (sin punto) → coma->punto */
+                                    WHEN v LIKE '%,%' AND v NOT LIKE '%.%' THEN
+                                        REPLACE(v, ',', '.')
+
+                                    /* CASO 6: valor limpio o casi limpio */
+                                    ELSE
+                                        REGEXP_REPLACE(v, '[^0-9.]', '', 'g')
+                                END AS v2
+                            FROM raw
+                        )
+                        SELECT v2 FROM norm LIMIT 1
+                    ),
+                ''
+                )::numeric,
+            0)
         )
+        """
 
-        # Patron 1: miles con COMA (p.ej. 12,345 o 12,345,678.90)
-        pat_comma_thousands = f"TRIM({col}) ~ '^\\s*-?\\d{{1,3}}(,\\d{{3}})+(\\.\\d+)?\\s*$'"
+    return _NUMERIC_CLEAN_MACRO.sub(repl, sql or "")
 
-        # Patron 2: miles con PUNTO y coma DECIMAL (p.ej. 1.234,56)
-        pat_dot_thousands_comma_decimal = f"TRIM({col}) ~ '^\\s*-?\\d{{1,3}}(\\.\\d{{3}})+(,\\d+)?\\s*$'"
+# DATE_PARSE: parseo robusto de TEXT->DATE (formatos mixtos)
+_DATE_PARSE_MACRO = re.compile(r'DATE_PARSE\(\s*(".*?")\s*\)', re.IGNORECASE | re.DOTALL)
 
-        # CASE para normalizar coma/punto según patrones
-        case_normalize = (
+def expand_date_parse(sql: str) -> str:
+    """
+    Expande DATE_PARSE("Col") a una expresión CASE que intenta varios formatos:
+      - YYYY-MM-DD (con o sin hora/sufijo)
+      - DD/MM/YYYY
+      - DD-MM-YYYY
+      - DD.MM.YYYY
+    Si no matchea, devuelve NULL.
+    """
+    def repl(m: re.Match) -> str:
+        col = m.group(1)  # "Col"
+        return (
             "("
             "CASE "
-                f"WHEN {pat_comma_thousands} "
-                f"THEN REGEXP_REPLACE({neg}, ',', '', 'g') "
-                f"WHEN {pat_dot_thousands_comma_decimal} "
-                f"THEN REPLACE(REGEXP_REPLACE({neg}, '\\\\.', '', 'g'), ',', '.') "
-                f"ELSE REPLACE({neg}, ',', '.') "
+                # 'YYYY-MM-DD' (posible hora al final)
+                f"WHEN TRIM({col}) ~ '^\\s*\\d{{4}}-\\d{{2}}-\\d{{2}}' "
+                f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{4}}-\\d{{2}}-\\d{{2}})'), 'YYYY-MM-DD') "
+                # 'DD/MM/YYYY'
+                f"WHEN TRIM({col}) ~ '^\\s*\\d{{1,2}}/\\d{{1,2}}/\\d{{4}}' "
+                f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{1,2}}/\\d{{1,2}}/\\d{{4}})'), 'DD/MM/YYYY') "
+                # 'DD-MM-YYYY'
+                f"WHEN TRIM({col}) ~ '^\\s*\\d{{1,2}}-\\d{{1,2}}-\\d{{4}}' "
+                f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{1,2}}-\\d{{1,2}}-\\d{{4}})'), 'DD-MM-YYYY') "
+                # 'DD.MM.YYYY'
+                f"WHEN TRIM({col}) ~ '^\\s*\\d{{1,2}}\\.\\d{{1,2}}\\.\\d{{4}}' "
+                f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{1,2}}\\.\\d{{1,2}}\\.\\d{{4}})'), 'DD.MM.YYYY') "
+                "ELSE NULL "
             "END"
             ")"
         )
+    return _DATE_PARSE_MACRO.sub(repl, sql or "")
 
-        # Limpieza de caracteres no numéricos
-        clean_non_numeric = (
-            f"REGEXP_REPLACE({case_normalize}, '[^0-9\\\\.\\\\-]', '', 'g')"
-        )
+def expand_macros(sql: str) -> str:
+    """Aplica todas las macros soportadas en orden seguro."""
+    s = sql or ""
+    s2 = expand_numeric_clean(s)
+    s3 = expand_date_parse(s2)
+    if s3 != s:
+        logger.debug("[database.expand_macros] macros expanded.")
+    return s3
 
-        # Mantener solo el ÚLTIMO punto como decimal
-        keep_last_dot = (
-            f"REGEXP_REPLACE({clean_non_numeric}, '\\\\.(?=.*\\\\.)', '', 'g')"
-        )
-
-        # Ensamblado final con ::numeric y COALESCE
-        return (
-            "("
-            "COALESCE("
-                f"NULLIF({keep_last_dot}, '' )::numeric, "
-                "0"
-            ")"
-            ")"
-        )
-
-    out = _NUMERIC_CLEAN_MACRO.sub(repl, sql or "")
-    if out != sql:
-        logger.debug("[database.expand_numeric_clean] macro expanded (robust).")
-    return out
 # -------- Clasificación / Seguridad --------
 
 _EXPLAIN_RE = re.compile(r"^\s*explain\b", re.IGNORECASE)
@@ -233,6 +248,34 @@ def unwrap_explain(sql: str) -> str:
     s = sql.strip()
     s = re.sub(r"^\s*explain\b(?:\s+\w+(?:\s+\w+)*)*\s*", "", s, flags=re.IGNORECASE)
     return s.strip()
+
+# --- EXPLAIN sanitization: quitar ANALYZE (y otras) si no está permitido ---
+_EXPLAIN_OPTIONS_RE = re.compile(r'^\s*explain\s*\((?P<opts>[^)]*)\)\s*', re.IGNORECASE | re.DOTALL)
+
+def _sanitize_explain(sql: str, allow_analyze: bool) -> str:
+    """
+    Si es EXPLAIN y allow_analyze=False:
+      - Si trae opciones (ANALYZE, BUFFERS, TIMING, COSTS...), las elimina dejando EXPLAIN simple.
+      - Si trae 'ANALYZE' explícito (con o sin opciones), lo quita.
+    Devuelve el SQL saneado.
+    """
+    s = sql or ""
+    if not is_explain(s):
+        return s
+
+    if allow_analyze:
+        return s  # no tocar
+
+    # 1) Si es del tipo EXPLAIN ( ... ) SELECT ...
+    m = _EXPLAIN_OPTIONS_RE.match(s)
+    if m:
+        # Reemplazamos EXPLAIN (opciones) por EXPLAIN simple
+        s2 = _EXPLAIN_OPTIONS_RE.sub("EXPLAIN ", s, count=1)
+        return s2
+
+    # 2) Si es EXPLAIN ANALYZE SELECT ...  -> quitar ANALYZE
+    s2 = re.sub(r'^\s*explain\s+analyze\b', 'EXPLAIN', s, flags=re.IGNORECASE)
+    return s2
 
 # Tokens peligrosos como palabras completas (ignorando literales)
 _SINGLE_QUOTED_RE = re.compile(r"('([^']|'')*')", re.DOTALL)
@@ -335,51 +378,79 @@ def _extract_referenced_tables(sql: str) -> List[str]:
         refs.append(raw)
     return refs
 
+# --- CTE support: recolectar nombres de CTE definidos en WITH ---
+_CTE_FIRST_RE = re.compile(r'\bwith\s+("?[A-Za-z0-9_ ]+"?)\s+as\s*\(', re.IGNORECASE)
+_CTE_NEXT_RE  = re.compile(r',\s*("?[A-Za-z0-9_ ]+"?)\s+as\s*\(', re.IGNORECASE)
+
+def _collect_cte_names(sql: str) -> List[str]:
+    """
+    Devuelve los nombres de CTE (identificadores del WITH ... AS (...), incluyendo los separados por comas).
+    Ej.: WITH b AS (...), t2 AS (...)  -> ['b', 't2']
+    """
+    names: List[str] = []
+    s = sql or ""
+    for m in _CTE_FIRST_RE.finditer(s):
+        nm = m.group(1).strip().strip('"')
+        if nm:
+            names.append(nm.lower())
+    for m in _CTE_NEXT_RE.finditer(s):
+        nm = m.group(1).strip().strip('"')
+        if nm:
+            names.append(nm.lower())
+    return names
+
 def restrict_to_allowed_tables(sql: str, allowed_fqn: List[str]) -> bool:
     """
-    Devuelve True SOLO si **todas** las tablas referenciadas en FROM/JOIN
-    pertenecen al conjunto permitido.
+    Devuelve True SOLO si todas las tablas reales referenciadas en FROM/JOIN
+    pertenecen al conjunto permitido. Ignora referencias a CTEs (definidos en WITH).
     """
     if not sql or not allowed_fqn:
         return False
     if is_values_only(sql):
         return True
 
-    s = unwrap_explain(sql) if is_explain(sql) else sql
+    s = unwrap_explain(sql) if is_explain(sql) else (sql or "")
 
     allowed_set = {a.strip().lower() for a in allowed_fqn}
     table_map = _build_table_map(allowed_fqn)
 
+    # Nombres de CTE definidos en este SQL
+    cte_names = set(_collect_cte_names(s))
+
     refs = _extract_referenced_tables(s)
     if not refs:
-        # Si no detectamos tablas (consulta trivial), negar por seguridad.
+        # No encontramos FROM/JOIN -> por seguridad, negar
         return False
 
     for r in refs:
         r_clean = r.strip()
-        if "." in r_clean:
-            # Puede venir como schema."table" o schema.table o "schema"."table"
-            # Normalizamos: schema sin comillas + "table" con comillas
-            parts = [p.strip().strip('"') for p in r_clean.split(".")]
-            if len(parts) == 2:
-                schema_n = parts[0].lower()
-                table_n = parts[1]
-                fqn_norm = f'{schema_n}."{table_n}"'
-                if fqn_norm.lower() not in allowed_set:
-                    return False
-            else:
-                # Formato raro -> rechazamos
-                return False
-        else:
-            # No cualificada: buscamos en el map
-            table_n = r_clean.strip().strip('"')
-            fqn_norm = table_map.get(table_n.lower())
+
+        # Nombre sin cualificar
+        if "." not in r_clean:
+            name = r_clean.strip().strip('"').lower()
+            # Si es CTE, permitido
+            if name in cte_names:
+                continue
+            # Sino, debe mapear a una tabla física permitida
+            fqn_norm = table_map.get(name)
             if not fqn_norm or fqn_norm.lower() not in allowed_set:
                 return False
+            continue
+
+        # Nombre cualificado schema.table
+        parts = [p.strip().strip('"') for p in r_clean.split(".")]
+        if len(parts) == 2:
+            schema_n, table_n = parts[0].lower(), parts[1]
+            fqn_norm = f'{schema_n}."{table_n}"'
+            if fqn_norm.lower() not in allowed_set:
+                return False
+        else:
+            # Algo raro (triple punto, etc.)
+            return False
 
     return True
 
-# --- Cualificación (igual que antes, mantenemos) ---
+# --- Cualificación ---
 _FROM_JOIN_RE = re.compile(r'\b(from|join)\s+("?[A-Za-z0-9_ ]+"?)(?!\s*\.)', re.IGNORECASE)
 
 def qualify_tables(sql: str, allowed_fqn: List[str]) -> str:
@@ -414,11 +485,15 @@ async def query(
     sql_query = clean_sql(sql_query)
     logger.debug("[database.query] after clean=%r", sql_query)
 
-    # 0.25) expandir macros (NUMERIC_CLEAN)
-    sql_query = expand_numeric_clean(sql_query)
-    logger.debug("[database.query] after expand numeric macro=%r", sql_query)
+    # 0.25) expandir macros (NUMERIC_CLEAN, DATE_PARSE)
+    sql_query = expand_macros(sql_query)
+    
+    # 0.4) Saneador de EXPLAIN: bajar a EXPLAIN simple si ANALYZE no está permitido
+    sql_query = _sanitize_explain(sql_query, allow_analyze=ALLOW_EXPLAIN_ANALYZE)
+    logger.debug("[database.query] after explain sanitize=%r", sql_query)
 
-    # 0.5) cualificación auto (no para EXPLAIN/VALUES)
+
+    # 0.5) cualificación automática (no para EXPLAIN/VALUES)
     sql_query = qualify_tables(sql_query, allowed_fqn)
     logger.debug("[database.query] after qualify=%r", sql_query)
 

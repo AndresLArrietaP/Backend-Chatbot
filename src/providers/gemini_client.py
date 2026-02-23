@@ -122,7 +122,6 @@ class GeminiProvider:
         default_limit: int = 100,
         model: Optional[str] = None
     ) -> str:
-        # nombres + tipos + fq_name
         schema_compact = [
             {
                 "schema": t["schema"],
@@ -146,16 +145,18 @@ Rules:
 - If identifiers contain spaces or accents, quote them accordingly (e.g., "Fecha de Pedido").
 - Prefer fully-qualified names exactly as listed in <allowed_fqn> when referencing tables (e.g., public."Table").
 
-- Numeric cleaning MACRO (use EXACTLY this token, do NOT inline its body; the server will expand it):
+- Numeric cleaning MACRO (use EXACTLY this token; the server will expand it):
   NUMERIC_CLEAN("Col")
-
-  This macro converts textual/mixed-formatted numbers into NUMERIC handling:
-  * ',' as thousands or decimal separator (normalizes to '.'),
-  * removes all non [0-9.-] chars,
-  * keeps only the LAST dot as decimal separator,
-  * converts parentheses to negative (e.g., '(123)' -> '-123').
-
   Use NUMERIC_CLEAN("Col") inside SUM/AVG/ORDER BY/WHERE when "Col" is TEXT/VARCHAR or contains formatting.
+
+- Date parsing MACRO (use EXACTLY this token; the server will expand it):
+  DATE_PARSE("Col")  --> returns a DATE
+  This macro parses textual dates handling formats like:
+    * 'YYYY-MM-DD' (with or without time suffix),
+    * 'DD/MM/YYYY',
+    * 'DD-MM-YYYY',
+    * 'DD.MM.YYYY'.
+  Always use DATE_PARSE("Col") before DATE_TRUNC/TO_CHAR or any grouping/filtering by date. Do NOT cast TEXT to DATE directly with ::DATE.
 
 - EXCLUDE footer/total rows and null/blank keys when grouping by textual keys:
   * WHERE COALESCE(TRIM("Key"), '') <> ''
@@ -173,7 +174,7 @@ Rules:
 User: "Dame el total despachado por cada cliente"
 SQL:
 {{
-  "sql_query": "SELECT COALESCE(TRIM(\"Cliente\"), '(Sin cliente)') AS \"Cliente\", SUM(NUMERIC_CLEAN(\"Despachado\")) AS \"Total Despachado\" FROM public.\"ConsumoMARC\" WHERE COALESCE(TRIM(\"Cliente\"), '') <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT {default_limit}",
+  "sql_query": "SELECT COALESCE(TRIM(\"Cliente Nombre\"), '(Sin cliente)') AS \"Cliente\", SUM(NUMERIC_CLEAN(\"Despachado\")) AS \"Total Despachado\" FROM public.\"ConsumoMARC\" WHERE COALESCE(TRIM(\"Cliente Nombre\"), '') <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT {default_limit}",
   "original_query": "Dame el total despachado por cada cliente"
 }}
 
@@ -182,6 +183,13 @@ SQL:
 {{
   "sql_query": "SELECT COALESCE(TRIM(\"Descripción Material\"), '(Sin material)') AS \"Material\", SUM(NUMERIC_CLEAN(\"Despachado\")) AS \"Total Despachado\" FROM public.\"ConsumoMARC\" WHERE COALESCE(TRIM(\"Descripción Material\"), '') <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
   "original_query": "Top 10 materiales por total despachado"
+}}
+
+User: "Total despachado por mes (parsing de fechas mixtas)"
+SQL:
+{{
+  "sql_query": "WITH b AS (SELECT DATE_PARSE(\"Fecha de Pedido\") AS fecha, NUMERIC_CLEAN(\"Despachado\") AS desp FROM public.\"ConsumoMARC\") SELECT to_char(date_trunc('month', fecha), 'YYYY-MM') AS \"Mes\", SUM(desp) AS \"Total Despachado\" FROM b WHERE fecha IS NOT NULL GROUP BY 1 ORDER BY 1 ASC LIMIT 120",
+  "original_query": "Total despachado por mes (parsing de fechas mixtas)"
 }}
 
 <schema_json>
