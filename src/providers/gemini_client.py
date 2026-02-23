@@ -16,7 +16,7 @@ log = getLogger(__name__)
 
 def _to_json_safe(v: Any) -> Any:
     if isinstance(v, Decimal):
-        return float(v)  # usa str(v) si prefieres precisión textual absoluta
+        return float(v)
     if isinstance(v, (datetime, date)):
         return v.isoformat()
     if isinstance(v, list):
@@ -134,7 +134,6 @@ class GeminiProvider:
         ]
         fq_names = [t.get("fq_name") for t in schema_json.get("tables", []) if t.get("fq_name")]
 
-        # fr""" ... """ = raw f-string, evita SyntaxWarning por secuencias de escape
         system_prompt = fr"""
 You are a careful SQL generator for {dialect.upper()}.
 
@@ -150,13 +149,13 @@ Rules:
 - Numeric cleaning MACRO (use EXACTLY this token, do NOT inline its body; the server will expand it):
   NUMERIC_CLEAN("Col")
 
-  This macro converts a textual/mixed-formatted number into NUMERIC handling:
+  This macro converts textual/mixed-formatted numbers into NUMERIC handling:
   * ',' as thousands or decimal separator (normalizes to '.'),
   * removes all non [0-9.-] chars,
   * keeps only the LAST dot as decimal separator,
   * converts parentheses to negative (e.g., '(123)' -> '-123').
 
-  Use NUMERIC_CLEAN("Col") inside SUM/AVG/ORDER BY when "Col" is TEXT/VARCHAR or contains formatting.
+  Use NUMERIC_CLEAN("Col") inside SUM/AVG/ORDER BY/WHERE when "Col" is TEXT/VARCHAR or contains formatting.
 
 - EXCLUDE footer/total rows and null/blank keys when grouping by textual keys:
   * WHERE COALESCE(TRIM("Key"), '') <> ''
@@ -168,6 +167,22 @@ Rules:
 - Add LIMIT {default_limit} if the user didn't specify it.
 
 - Return a strict JSON object with keys: "sql_query" and "original_query". No extra keys.
+
+### EXAMPLES
+
+User: "Dame el total despachado por cada cliente"
+SQL:
+{{
+  "sql_query": "SELECT COALESCE(TRIM(\"Cliente\"), '(Sin cliente)') AS \"Cliente\", SUM(NUMERIC_CLEAN(\"Despachado\")) AS \"Total Despachado\" FROM public.\"ConsumoMARC\" WHERE COALESCE(TRIM(\"Cliente\"), '') <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT {default_limit}",
+  "original_query": "Dame el total despachado por cada cliente"
+}}
+
+User: "Top 10 materiales por total despachado"
+SQL:
+{{
+  "sql_query": "SELECT COALESCE(TRIM(\"Descripción Material\"), '(Sin material)') AS \"Material\", SUM(NUMERIC_CLEAN(\"Despachado\")) AS \"Total Despachado\" FROM public.\"ConsumoMARC\" WHERE COALESCE(TRIM(\"Descripción Material\"), '') <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+  "original_query": "Top 10 materiales por total despachado"
+}}
 
 <schema_json>
 {json.dumps(schema_compact, ensure_ascii=False)}
