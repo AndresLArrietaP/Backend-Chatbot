@@ -1,3 +1,4 @@
+# src/database.py
 from typing import Any, List, Dict, Optional, Tuple
 from decouple import config as env
 import re
@@ -112,76 +113,65 @@ def clean_sql(sql: str) -> str:
 
 # -------- Macros --------
 
-# NUMERIC_CLEAN: heurística de miles/decimales + paréntesis a negativo
+# NUMERIC_CLEAN: heurística de miles/decimales + casos mixtos
 _NUMERIC_CLEAN_MACRO = re.compile(r'NUMERIC_CLEAN\(\s*(".*?")\s*\)', re.IGNORECASE | re.DOTALL)
 
 def expand_numeric_clean(sql: str) -> str:
     """
-    NUMERIC_CLEAN("Col"):
-      - Repara números en formatos US, EU y mixtos
-      - Maneja casos malformados: 1.165.80, 816.000.00, etc.
-      - Detecta el ÚLTIMO separador decimal real
-      - Quita miles correctamente
-      - Garantiza formato final válido: digits[.digits]
+    NUMERIC_CLEAN("Col") -> ::numeric robusto sin usar CTE dentro de expresiones.
+      - US: 1,234.56
+      - EU: 1.234,56
+      - Enteros con miles: 114,303 / 114.303
+      - Mixtos: 114,303.000
+      - Caso especial: '0.284' (punto como miles) -> 284
+      - Fallback: quita todo salvo dígitos y punto
     """
     def repl(m: re.Match) -> str:
         col = m.group(1)
-
+        s = f"TRIM({col})"
         return f"""
         (
-            COALESCE(
-                NULLIF(
-                    (
-                        WITH raw AS (
-                            SELECT TRIM({col}) AS v
-                        ),
-                        norm AS (
-                            SELECT
-                                CASE
-                                    /* CASO 1: coma y punto mezclados → limpiar todo y decidir decimal final */
-                                    WHEN v ~ '[0-9],[0-9]' AND v ~ '[0-9]\\.[0-9]' THEN
-                                        (
-                                            -- quitar todo lo no numérico
-                                            SELECT REGEXP_REPLACE(REGEXP_REPLACE(v, '[^0-9]', '', 'g'),
-                                                                   '(.*)([0-9]{{2}})$','\\1.\\2')
-                                        )
+          COALESCE(
+            NULLIF(
+              CASE
+                WHEN {s} IS NULL OR {s} = '' THEN NULL
 
-                                    /* CASO 2: formato europeo: 1.234,56 */
-                                    WHEN v ~ '^[0-9]{{1,3}}(\\.[0-9]{{3}})+(,[0-9]+)$' THEN
-                                        REPLACE(
-                                            REGEXP_REPLACE(v, '\\.', '', 'g'),
-                                            ',', '.'
-                                        )
+                -- US: 1,234.56  -> quitar comas
+                WHEN {s} ~ '^[0-9]{{1,3}}(,[0-9]{{3}})+(\\.[0-9]+)?$'
+                  THEN REPLACE({s}, ',', '')
 
-                                    /* CASO 3: formato US: 1,234.56 */
-                                    WHEN v ~ '^[0-9]{{1,3}}(,[0-9]{{3}})+(\\.[0-9]+)$' THEN
-                                        REPLACE(v, ',', '')
+                -- EU: 1.234,56  -> quitar puntos de miles, coma -> punto
+                WHEN {s} ~ '^[0-9]{{1,3}}(\\.[0-9]{{3}})+(,[0-9]+)?$'
+                  THEN REPLACE(REPLACE({s}, '.', ''), ',', '.')
 
-                                    /* CASO 4: múltiples puntos: 1.165.80 → dejar solo el último */
-                                    WHEN v ~ '^[0-9.]+$' AND LENGTH(v)-LENGTH(REPLACE(v,'.','')) > 1 THEN
-                                        REGEXP_REPLACE(
-                                            REGEXP_REPLACE(v, '\\.(?=.*\\.)', '', 'g'),
-                                            '[^0-9.]', '', 'g'
-                                        )
+                -- Solo coma decimal (sin puntos)
+                WHEN {s} ~ '^[0-9]+,[0-9]+$'
+                  THEN REPLACE({s}, ',', '.')
 
-                                    /* CASO 5: decimal con coma (sin punto) → coma->punto */
-                                    WHEN v LIKE '%,%' AND v NOT LIKE '%.%' THEN
-                                        REPLACE(v, ',', '.')
+                -- Entero con un punto 'X.XXX' -> quita el punto (era miles)
+                WHEN {s} ~ '^[0-9]+\\.[0-9]{{3}}$'
+                  THEN REPLACE({s}, '.', '')
 
-                                    /* CASO 6: valor limpio o casi limpio */
-                                    ELSE
-                                        REGEXP_REPLACE(v, '[^0-9.]', '', 'g')
-                                END AS v2
-                            FROM raw
-                        )
-                        SELECT v2 FROM norm LIMIT 1
-                    ),
-                ''
-                )::numeric,
-            0)
+                -- Múltiples puntos -> deja solo el último (decimal real)
+                WHEN {s} ~ '^[0-9.]+$' AND LENGTH({s})-LENGTH(REPLACE({s},'.','')) > 1
+                  THEN REGEXP_REPLACE({s}, '\\.(?=.*\\.)', '', 'g')
+
+                -- Mezclas coma+punto: asume el último como decimal
+                WHEN {s} ~ '[0-9],[0-9]' AND {s} ~ '[0-9]\\.[0-9]'
+                  THEN CASE
+                         WHEN {s} ~ ',\\d+\\s*$' THEN REPLACE(REPLACE({s}, '.', ''), ',', '.')
+                         ELSE REPLACE({s}, ',', '')
+                       END
+
+                -- Fallback: limpiar todo salvo dígitos y punto (unificar coma->punto)
+                ELSE REGEXP_REPLACE(REPLACE({s}, ',', '.'), '[^0-9.]', '', 'g')
+              END,
+              ''
+            )::numeric,
+            0
+          )
         )
         """
-
     return _NUMERIC_CLEAN_MACRO.sub(repl, sql or "")
 
 # DATE_PARSE: parseo robusto de TEXT->DATE (formatos mixtos)
@@ -201,16 +191,12 @@ def expand_date_parse(sql: str) -> str:
         return (
             "("
             "CASE "
-                # 'YYYY-MM-DD' (posible hora al final)
                 f"WHEN TRIM({col}) ~ '^\\s*\\d{{4}}-\\d{{2}}-\\d{{2}}' "
                 f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{4}}-\\d{{2}}-\\d{{2}})'), 'YYYY-MM-DD') "
-                # 'DD/MM/YYYY'
                 f"WHEN TRIM({col}) ~ '^\\s*\\d{{1,2}}/\\d{{1,2}}/\\d{{4}}' "
                 f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{1,2}}/\\d{{1,2}}/\\d{{4}})'), 'DD/MM/YYYY') "
-                # 'DD-MM-YYYY'
                 f"WHEN TRIM({col}) ~ '^\\s*\\d{{1,2}}-\\d{{1,2}}-\\d{{4}}' "
                 f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{1,2}}-\\d{{1,2}}-\\d{{4}})'), 'DD-MM-YYYY') "
-                # 'DD.MM.YYYY'
                 f"WHEN TRIM({col}) ~ '^\\s*\\d{{1,2}}\\.\\d{{1,2}}\\.\\d{{4}}' "
                 f"THEN to_date(SUBSTRING(TRIM({col}) FROM '(\\d{{1,2}}\\.\\d{{1,2}}\\.\\d{{4}})'), 'DD.MM.YYYY') "
                 "ELSE NULL "

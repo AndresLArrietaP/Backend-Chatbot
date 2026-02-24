@@ -1,6 +1,9 @@
+# src/main.py
 import json
 import logging
 import unicodedata
+import time
+from hashlib import sha1
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Request, Query
@@ -13,6 +16,8 @@ from . import llm
 from decimal import Decimal
 from decouple import config as env
 
+logger = logging.getLogger(__name__)
+router = APIRouter()
 
 def _to_number(v):
     if isinstance(v, Decimal):
@@ -47,14 +52,14 @@ def normalize_rows(
           * Números enteros -> sin decimales y con separador de miles COMA (p. ej., 42,869)
           * Números no enteros -> con 'decimal_places' y separador de miles COMA
     """
-    # Pistas explícitas (ahora son "soft", no fuerzan la división por sí solas)
+    # Pistas explícitas (soft)
     implied_exact = {_norm_key_name(c) for c in (implied_millis_cols or []) if c and c.strip()}
 
     # Flags / parámetros
     auto_kw = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
     auto_detect = env("IMPLIED_MILLIS_AUTODETECT", default=True, cast=bool)
     ratio_threshold = env("IMPLIED_MILLIS_RATIO_THRESHOLD", default=0.8, cast=float)
-    min_abs = env("IMPLIED_MILLIS_MIN_ABS", default=100000, cast=int)  # umbral alto por defecto
+    min_abs = env("IMPLIED_MILLIS_MIN_ABS", default=100000, cast=int)
 
     keywords_env = env(
         "IMPLIED_MILLIS_KEYWORDS",
@@ -89,13 +94,11 @@ def normalize_rows(
                       else 0.5 * (vals_sorted[mid - 1] + vals_sorted[mid]))
             mult_cnt = sum(1 for x in vals if _is_big_multiple_of_1000(x))
             ratio = mult_cnt / len(vals)
-            # Señal fuerte: ratio alto de múltiplos de 1000 o mediana muy grande con patrón frecuente
             if ratio >= ratio_threshold or (median >= (min_abs * 2) and ratio >= 0.6):
                 auto_divide_cols.add(_norm_key_name(col))
 
     # ---------- 2) Aplicar normalización ----------
     out: List[Dict[str, Any]] = []
-
     for r in rows:
         nr: Dict[str, Any] = {}
         for k, v in (r or {}).items():
@@ -105,7 +108,7 @@ def normalize_rows(
             if isinstance(val, (int, float)) or isinstance(v, Decimal):
                 valf = float(val)
 
-                # División solo si: (col marcada por auto-detección) o (pista y el valor luce inflado)
+                # División x1000 si corresponde
                 must_divide = False
                 col_marked = name_low in auto_divide_cols
                 soft_signal = (name_low in implied_exact) or (auto_kw and _name_has_keyword(name_low))
@@ -120,7 +123,6 @@ def normalize_rows(
 
                 # Formateo
                 if fmt_strings:
-                    # Si es "prácticamente entero", no mostrar decimales, usar separador de miles COMA
                     if abs(valf - round(valf)) < 1e-9:
                         nr[k] = f"{int(round(valf)):,}"
                     else:
@@ -133,10 +135,151 @@ def normalize_rows(
 
     return out
 
-# ---------------------------------------------------------
+# -------- Fallback de resumen local (determinista y limpio) --------
+def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
+    if not rows:
+        return f"No se encontraron datos para la consulta: “{human_query}”."
 
-logger = logging.getLogger(__name__)
-router = APIRouter()
+    # Detecta posibles columnas de clave (texto) y de valor (numérica)
+    sample = rows[0]
+    text_cols: List[str] = []
+    num_cols: List[str] = []
+
+    # Clasificación simple por tipo / parseo
+    for k in sample.keys():
+        is_num = False
+        for r in rows:
+            v = r.get(k)
+            if isinstance(v, (int, float, Decimal)):
+                is_num = True
+                break
+            if isinstance(v, str):
+                try:
+                    float(v.replace(",", ""))  # por si vienen formateados
+                    is_num = True
+                    break
+                except Exception:
+                    pass
+        if is_num:
+            num_cols.append(k)
+        else:
+            text_cols.append(k)
+
+    # Heurísticas de nombres para priorizar columnas comunes en tu dataset
+    def _score_text(name: str) -> int:
+        n = name.lower()
+        # prioriza "Material" o similares
+        if "material" in n:
+            return 3
+        if "cliente" in n:
+            return 2
+        return 1
+
+    def _score_num(name: str) -> int:
+        n = name.lower()
+        if "total línea" in n or "total linea" in n:
+            return 4
+        if "despachado" in n or "cantidad" in n or "total" in n:
+            return 3
+        if "valor" in n:
+            return 2
+        return 1
+
+    # Elige columnas candidatas
+    text_cols.sort(key=_score_text, reverse=True)
+    num_cols.sort(key=_score_num, reverse=True)
+
+    key_col = text_cols[0] if text_cols else None
+    val_col = num_cols[0] if num_cols else None
+
+    # Construcción del resumen
+    bullets: List[str] = []
+    bullets.append(f"Filas analizadas: {len(rows)}.")
+
+    if val_col:
+        # suma total
+        total = 0.0
+        for r in rows:
+            v = r.get(val_col)
+            try:
+                if isinstance(v, str):
+                    v = float(v.replace(",", ""))
+                elif isinstance(v, Decimal):
+                    v = float(v)
+                elif not isinstance(v, (int, float)):
+                    v = 0.0
+            except Exception:
+                v = 0.0
+            total += float(v)
+        bullets.append(f"Suma de “{val_col}”: {total:,.3f}")
+
+    # Top-3 por clave textual (si existen ambas)
+    if key_col and val_col:
+        agg: Dict[str, float] = {}
+        for r in rows:
+            k = str(r.get(key_col) or "(Sin valor)")
+            v = r.get(val_col)
+            try:
+                if isinstance(v, str):
+                    v = float(v.replace(",", ""))
+                elif isinstance(v, Decimal):
+                    v = float(v)
+                elif not isinstance(v, (int, float)):
+                    v = 0.0
+            except Exception:
+                v = 0.0
+            agg[k] = agg.get(k, 0.0) + float(v)
+        top = sorted(agg.items(), key=lambda kv: kv[1], reverse=True)[:3]
+        if top:
+            bullets.append("Top por {0}: {1}".format(
+                key_col,
+                "; ".join([f"{k} = {v:,.3f}" for k, v in top])
+            ))
+
+    # Construye el texto final (2–3 frases sin markdown)
+    summary_parts = []
+    summary_parts.append(f"Consulta: “{human_query}”.")
+    if val_col and key_col:
+        summary_parts.append(f"Se analizó “{val_col}” por “{key_col}” y se listan los principales aportes.")
+    elif val_col:
+        summary_parts.append(f"Se destaca la métrica “{val_col}”.")
+    else:
+        summary_parts.append("No se identificó una métrica numérica dominante; se muestran datos generales.")
+
+    final = " ".join(p if p.endswith(('.', '!', '?')) else p + "." for p in summary_parts)
+    # Añade 2–3 bullets en líneas nuevas
+    for b in bullets[:3]:
+        final += f"\n- {b}"
+    return final
+# ------------------- LLM SQL cache (LRU+TTL) -------------------
+_SQL_CACHE: Dict[str, Dict[str, Any]] = {}
+SQL_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)  # 5 min
+SQL_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
+
+def _cache_key(human_query: str, schema_json: Dict[str, Any], dialect: str, default_limit: int) -> str:
+    payload = json.dumps(
+        {"q": human_query, "schema": schema_json, "dialect": dialect, "limit": default_limit},
+        ensure_ascii=False, sort_keys=True
+    )
+    return sha1(payload.encode("utf-8")).hexdigest()
+
+def _cache_get(key: str) -> Optional[str]:
+    item = _SQL_CACHE.get(key)
+    if not item:
+        return None
+    if time.time() > item["exp"]:
+        _SQL_CACHE.pop(key, None)
+        return None
+    return item["sql_json"]
+
+def _cache_put(key: str, sql_json: str) -> None:
+    # Evict simple por expiración y tamaño
+    if len(_SQL_CACHE) >= SQL_CACHE_MAX:
+        oldest = min(_SQL_CACHE.items(), key=lambda kv: kv[1]["exp"])[0]
+        _SQL_CACHE.pop(oldest, None)
+    _SQL_CACHE[key] = {"exp": time.time() + SQL_CACHE_TTL, "sql_json": sql_json}
+
+# ---------------------------------------------------------
 
 # --------- Auth opcional por API Key ---------
 async def api_key_guard(request: Request, x_api_key: Optional[str] = Header(default=None)):
@@ -158,7 +301,7 @@ class PostHumanQueryPayload(BaseModel):
     execute: bool = True
     schema_refresh: bool = False
     summarize: Optional[bool] = True   # si False → no llamar LLM para respuesta
-    # NUEVO: control de salida por request (sin tocar .env)
+    # Control de salida por request (sin tocar .env)
     format_numbers: Optional[bool] = None         # si None -> usa .env RETURN_FORMATTED_NUMBERS
     decimals: Optional[int] = None                # si None -> usa .env DECIMAL_PLACES
     implied_millis_cols: Optional[List[str]] = None  # override por request
@@ -244,15 +387,22 @@ async def debug_llm_sql(request: Request, payload: PostHumanQueryPayload):
     settings = request.app.state.settings
     schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
     schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
-    llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
 
-    sql_json = await llm.human_query_to_sql(
-        payload.human_query,
-        schema_json=schema_json,
-        dialect=payload.dialect or "postgresql",
-        default_limit=payload.limit or 100,
-        model=llm_model,
-    )
+    # Cache LLM -> SQL
+    cache_key = _cache_key(payload.human_query, schema_json, payload.dialect or "postgresql", payload.limit or 100)
+    cached = _cache_get(cache_key)
+    if cached:
+        sql_json = cached
+    else:
+        sql_json = await llm.human_query_to_sql(
+            payload.human_query,
+            schema_json=schema_json,
+            dialect=payload.dialect or "postgresql",
+            default_limit=payload.limit or 100,
+            model=None,  # deja que el provider elija por .env
+        )
+        _cache_put(cache_key, sql_json)
+
     return {"raw_llm_sql_json": sql_json}
 
 @router.post("/debug/llm_sql_full")
@@ -263,14 +413,19 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
     schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
     allowed_fqn = [f'{t["schema"]}."{t["table"]}"' for t in schema_json.get("tables", [])]
 
-    llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
-    raw_json = await llm.human_query_to_sql(
-        payload.human_query,
-        schema_json=schema_json,
-        dialect=payload.dialect or "postgresql",
-        default_limit=payload.limit or 100,
-        model=llm_model,
-    )
+    cache_key = _cache_key(payload.human_query, schema_json, payload.dialect or "postgresql", payload.limit or 100)
+    cached = _cache_get(cache_key)
+    if cached:
+        raw_json = cached
+    else:
+        raw_json = await llm.human_query_to_sql(
+            payload.human_query,
+            schema_json=schema_json,
+            dialect=payload.dialect or "postgresql",
+            default_limit=payload.limit or 100,
+            model=None,  # deja que el provider elija por .env
+        )
+        _cache_put(cache_key, raw_json)
 
     try:
         parsed = json.loads(raw_json)
@@ -278,6 +433,7 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
         parsed = {"error": "No se pudo parsear JSON", "raw": raw_json}
 
     sql_raw = parsed.get("sql_query", "")
+
     # Pipeline consistente
     sql_clean = database.clean_sql(sql_raw)
     sql_clean = database.expand_macros(sql_clean)
@@ -325,7 +481,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         dialect = payload.dialect or getattr(settings, "DB_DIALECT", "postgresql")
         default_limit = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
         max_limit = getattr(settings, "MAX_ROWS_HARD", 1000)
-        llm_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
 
         # 2) Obtener SQL (override → LLM)
         if payload.sql_query_override:
@@ -333,13 +488,22 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             result_dict = {"sql_query": sql_query, "original_query": payload.human_query}
             logger.debug("[/human_query] using sql_query_override=%r", sql_query)
         else:
-            sql_json = await llm.human_query_to_sql(
-                payload.human_query,
-                schema_json=schema_json,
-                dialect=dialect,
-                default_limit=default_limit,
-                model=llm_model,
-            )
+            # Cache LLM -> SQL
+            cache_key = _cache_key(payload.human_query, schema_json, dialect, default_limit)
+            cached = _cache_get(cache_key)
+            if cached:
+                logger.debug("[/human_query] LLM SQL cache HIT")
+                sql_json = cached
+            else:
+                sql_json = await llm.human_query_to_sql(
+                    payload.human_query,
+                    schema_json=schema_json,
+                    dialect=dialect,
+                    default_limit=default_limit,
+                    model=None,  # provider por .env
+                )
+                _cache_put(cache_key, sql_json)
+
             logger.debug("[/human_query] LLM raw JSON=%s", (sql_json[:500] if sql_json else None))
             if not sql_json:
                 raise HTTPException(status_code=500, detail="Falló la generación de la consulta SQL")
@@ -398,21 +562,35 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             }
 
         try:
-            answer = await llm.build_answer(rows, payload.human_query, model=llm_model)
+            answer = await llm.build_answer(rows, payload.human_query, model=None)
+            if not (answer or "").strip():
+                # Fallback determinista
+                local_answer = _local_summary_answer(rows, payload.human_query)
+                return {
+                    "answer": local_answer,
+                    "answer_source": "local_fallback",
+                    "rows": rows[:50],
+                    "row_count": len(rows),
+                    "sql_query": sql_query,
+                    "warning": "Resumen generado localmente por falta de respuesta del LLM."
+                }
             return {
                 "answer": answer,
+                "answer_source": "llm",
                 "rows": rows[:50],
                 "row_count": len(rows),
                 "sql_query": sql_query
             }
         except Exception as ex:
             logger.exception("Fallo al generar 'answer'.")
+            local_answer = _local_summary_answer(rows, payload.human_query)
             return {
+                "answer": local_answer,
+                "answer_source": "local_fallback",
                 "rows": rows[:50],
                 "row_count": len(rows),
                 "sql_query": sql_query,
-                "warning": f"No se pudo generar el resumen (LLM): {str(ex)[:180]}",
-                "can_retry_summary": True
+                "warning": f"LLM falló, se usó resumen local: {str(ex)[:160]}"
             }
 
     except Exception as e:

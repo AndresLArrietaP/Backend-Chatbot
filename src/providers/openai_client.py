@@ -18,7 +18,6 @@ class OpenAIProvider:
     def list_models(self) -> Dict[str, Any]:
         items = []
         for m in self.client.models.list():
-            # En OpenAI Python 1.x, m.id es el nombre del modelo
             items.append({"name": getattr(m, "id", None)})
         return {"status": "ok", "models": items}
 
@@ -27,6 +26,8 @@ class OpenAIProvider:
             try:
                 obj = json.loads(s)
                 if isinstance(obj, dict) and "sql_query" in obj:
+                    if "original_query" not in obj:
+                        obj["original_query"] = ""
                     return json.dumps(obj, ensure_ascii=False)
             except Exception:
                 return None
@@ -35,13 +36,11 @@ class OpenAIProvider:
         ok = _try(content.strip())
         if ok:
             return ok
-
         m = re.search(r"\{.*\}", content, re.DOTALL)
         if m:
             ok = _try(m.group(0))
             if ok:
                 return ok
-
         raise RuntimeError(f"OpenAI devolvió un formato inesperado: {content[:300]}")
 
     async def human_query_to_sql(
