@@ -1,4 +1,3 @@
-# src/database.py
 from typing import Any, List, Dict, Optional, Tuple
 from decouple import config as env
 import re
@@ -277,6 +276,10 @@ def _sanitize_explain(sql: str, allow_analyze: bool) -> str:
     s2 = re.sub(r'^\s*explain\s+analyze\b', 'EXPLAIN', s, flags=re.IGNORECASE)
     return s2
 
+def sanitize_explain(sql: str) -> str:
+    """Wrapper público para saneo de EXPLAIN según ALLOW_EXPLAIN_ANALYZE (.env)."""
+    return _sanitize_explain(sql, allow_analyze=ALLOW_EXPLAIN_ANALYZE)
+
 # Tokens peligrosos como palabras completas (ignorando literales)
 _SINGLE_QUOTED_RE = re.compile(r"('([^']|'')*')", re.DOTALL)
 _DOLLAR_QUOTED_RE = re.compile(r"(\$\$.*?\$\$)", re.DOTALL)
@@ -489,9 +492,8 @@ async def query(
     sql_query = expand_macros(sql_query)
     
     # 0.4) Saneador de EXPLAIN: bajar a EXPLAIN simple si ANALYZE no está permitido
-    sql_query = _sanitize_explain(sql_query, allow_analyze=ALLOW_EXPLAIN_ANALYZE)
+    sql_query = sanitize_explain(sql_query)
     logger.debug("[database.query] after explain sanitize=%r", sql_query)
-
 
     # 0.5) cualificación automática (no para EXPLAIN/VALUES)
     sql_query = qualify_tables(sql_query, allowed_fqn)

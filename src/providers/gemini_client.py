@@ -1,5 +1,4 @@
-# src/providers/gemini_client.py
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, Set
 from decouple import config as env
 import json
 import re
@@ -67,6 +66,24 @@ class GeminiProvider:
             raise RuntimeError("Falta GOOGLE_API_KEY en .env")
         self.client = genai.Client(api_key=api_key)
 
+        # Cache de modelos que soportan generateContent
+        self._models_with_generate: Set[str] = set()
+        try:
+            for m in self.client.models.list():
+                name = getattr(m, "name", "") or ""
+                methods = getattr(m, "supported_generation_methods", None) or getattr(m, "generation_methods", None) or []
+                methods_low = {str(x).lower() for x in (methods or [])}
+                if (
+                    "generatecontent" in methods_low
+                    or "generate_content" in methods_low
+                    or "generate" in methods_low
+                ):
+                    self._models_with_generate.add(name)
+        except Exception as e:
+            log.warning("No se pudo listar modelos de Gemini para cachear capacidades: %s", e)
+
+    # ---------------- helpers de modelos ----------------
+
     def _resolve_model(self, name: Optional[str]) -> str:
         nm = (name or env("GEMINI_MODEL", default="gemini-1.5-flash")).strip()
         return nm if nm.startswith("models/") else f"models/{nm}"
@@ -74,6 +91,58 @@ class GeminiProvider:
     def _resolve_answer_model(self, name: Optional[str]) -> str:
         nm = (name or env("GEMINI_MODEL_ANSWER", default=env("GEMINI_MODEL", default="gemini-1.5-flash"))).strip()
         return nm if nm.startswith("models/") else f"models/{nm}"
+
+    def _candidate_models(self, env_key: str, primary: Optional[str]) -> List[str]:
+        """
+        Construye la lista de candidatos a partir de:
+        - primary resuelto
+        - lista .env coma-separada (env_key)
+        - fallback por defecto
+        Devuelve todos en formato 'models/<name>'.
+        """
+        raw = env(env_key, default="")
+        env_list = [s.strip() for s in raw.split(",") if s.strip()]
+        base: List[str] = []
+        if primary:
+            base.append(primary if primary.startswith("models/") else f"models/{primary}")
+        for m in env_list:
+            mm = m if m.startswith("models/") else f"models/{m}"
+            if mm not in base:
+                base.append(mm)
+        # Fallback razonable
+        for m in ["models/gemini-flash-latest", "models/gemini-1.5-flash"]:
+            if m not in base:
+                base.append(m)
+        return base
+
+    def _supports_generate_content(self, model_name: str) -> bool:
+        """
+        Verifica si el modelo soporta generateContent.
+        - Primero revisa la caché (_models_with_generate).
+        - Si no está, intenta obtener el modelo y revisar métodos.
+        - En caso de error, devuelve False.
+        """
+        if not model_name:
+            return False
+        if model_name in self._models_with_generate:
+            return True
+        try:
+            m = self.client.models.get(name=model_name)
+            methods = getattr(m, "supported_generation_methods", None) or getattr(m, "generation_methods", None) or []
+            methods_low = {str(x).lower() for x in (methods or [])}
+            ok = (
+                "generatecontent" in methods_low
+                or "generate_content" in methods_low
+                or "generate" in methods_low
+            )
+            if ok:
+                self._models_with_generate.add(model_name)
+            return ok
+        except Exception as e:
+            log.info("Modelo no soporta generateContent o no existe: %s (%s)", model_name, e)
+            return False
+
+    # ---------------- otros helpers ----------------
 
     def _dialect_quote(self, dialect: str) -> str:
         d = (dialect or "postgresql").lower()
@@ -113,6 +182,8 @@ class GeminiProvider:
                 return ok
 
         raise RuntimeError(f"Gemini devolvió un formato inesperado: {text_payload[:300]}")
+
+    # ---------------- LLM: NL -> SQL ----------------
 
     async def human_query_to_sql(
         self,
@@ -201,17 +272,58 @@ SQL:
 </allowed_fqn>
 """.strip()
 
-        mdl = self._resolve_model(model)
-        resp = self.client.models.generate_content(
-            model=mdl,
-            contents=[
-                {"role": "system", "parts": [{"text": system_prompt}]},
-                {"role": "user",   "parts": [{"text": human_query}]}
-            ],
-            config={"response_mime_type": "application/json"}
-        )
-        log.debug("[gemini.human_query_to_sql] resp.text=%s", (resp.text[:800] if resp and resp.text else None))
-        return self._ensure_sql_json(resp.text or "")
+        mdl_primary = self._resolve_model(model)
+        raw_candidates = self._candidate_models("GEMINI_MODEL_CANDIDATES", mdl_primary)
+        # Filtrar por soporte a generateContent y desduplicar conservando orden
+        mdl_candidates: List[str] = []
+        seen = set()
+        for m in raw_candidates:
+            if m in seen:
+                continue
+            seen.add(m)
+            if self._supports_generate_content(m):
+                mdl_candidates.append(m)
+            else:
+                log.info("Ignorando modelo sin soporte generateContent: %s", m)
+
+        # En caso extremo, fallback mínimo
+        if not mdl_candidates:
+            mdl_candidates = ["models/gemini-flash-latest", "models/gemini-1.5-flash"]
+
+        last_err: Optional[Exception] = None
+        for attempt in range(3):
+            for mdl in mdl_candidates:
+                try:
+                    resp = self.client.models.generate_content(
+                        model=mdl,
+                        contents=[
+                            {"role": "system", "parts": [{"text": system_prompt}]},
+                            {"role": "user",   "parts": [{"text": human_query}]}
+                        ],
+                        config={"response_mime_type": "application/json"}
+                    )
+                    log.debug("[gemini.human_query_to_sql] model=%s", mdl)
+                    text = (resp.text or "").strip()
+                    if text:
+                        return self._ensure_sql_json(text)
+                    last_err = RuntimeError("Respuesta vacía del modelo")
+                except (genai_errors.ServerError, genai_errors.APIError) as e:
+                    # Si es un 404/NOT_FOUND en esta versión del SDK, viene como APIError con message/status
+                    msg = getattr(e, "message", "") or str(e)
+                    status = getattr(e, "status", "") or ""
+                    code = getattr(e, "code", None)
+                    if status == "NOT_FOUND" or code == 404 or "not found" in msg.lower():
+                        log.warning("Modelo no encontrado/soportado para generateContent: %s (%s)", mdl, msg)
+                        last_err = e
+                        continue
+                    last_err = e
+                except Exception as e:
+                    last_err = e
+            time.sleep(1.5 * (attempt + 1))
+
+        raise RuntimeError(f"Fallo human_query_to_sql tras reintentos/fallbacks: {last_err}")
+
+    # ---------------- LLM: resumen ----------------
 
     async def build_answer(
         self,
@@ -238,12 +350,20 @@ Instrucciones:
 """.strip()
 
         primary = self._resolve_answer_model(model)
-        mdl_candidates = [
-            primary,
-            "models/gemini-1.5-flash",
-            "models/gemini-flash-latest",
-            "models/gemini-1.5-pro",
-        ]
+        raw_candidates = self._candidate_models("GEMINI_MODEL_ANSWER_CANDIDATES", primary)
+        mdl_candidates: List[str] = []
+        seen = set()
+        for m in raw_candidates:
+            if m in seen:
+                continue
+            seen.add(m)
+            if self._supports_generate_content(m):
+                mdl_candidates.append(m)
+            else:
+                log.info("Ignorando modelo answer sin soporte generateContent: %s", m)
+
+        if not mdl_candidates:
+            mdl_candidates = ["models/gemini-flash-latest", "models/gemini-1.5-flash"]
 
         last_err: Optional[Exception] = None
         for attempt in range(3):
@@ -255,6 +375,13 @@ Instrucciones:
                         return text
                     last_err = RuntimeError("Respuesta vacía del modelo")
                 except (genai_errors.ServerError, genai_errors.APIError) as e:
+                    msg = getattr(e, "message", "") or str(e)
+                    status = getattr(e, "status", "") or ""
+                    code = getattr(e, "code", None)
+                    if status == "NOT_FOUND" or code == 404 or "not found" in msg.lower():
+                        log.warning("Modelo (answer) no encontrado/soportado: %s (%s)", mdl, msg)
+                        last_err = e
+                        continue
                     last_err = e
                 except Exception as e:
                     last_err = e
@@ -263,6 +390,27 @@ Instrucciones:
         raise RuntimeError(f"Fallo build_answer tras reintentos/fallbacks: {last_err}")
 
     async def ping(self, model: Optional[str] = None) -> str:
-        mdl = self._resolve_model(model)
-        resp = self.client.models.generate_content(model=mdl, contents="ping")
-        return resp.text or ""
+        mdl_primary = self._resolve_model(model)
+        raw_candidates = self._candidate_models("GEMINI_MODEL_CANDIDATES", mdl_primary)
+
+        # Filtrar ping por soporte
+        mdl_candidates: List[str] = []
+        seen = set()
+        for m in raw_candidates:
+            if m in seen:
+                continue
+            seen.add(m)
+            if self._supports_generate_content(m):
+                mdl_candidates.append(m)
+
+        last_txt = ""
+        for mdl in mdl_candidates or ["models/gemini-flash-latest"]:
+            try:
+                resp = self.client.models.generate_content(model=mdl, contents="ping")
+                txt = resp.text or ""
+                if txt.strip():
+                    return txt
+                last_txt = txt
+            except Exception:
+                continue
+        return last_txt

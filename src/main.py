@@ -1,4 +1,3 @@
-# src/main.py
 import json
 import logging
 import unicodedata
@@ -13,7 +12,6 @@ from . import llm
 # ---- helpers de normalización y configuración ----
 from decimal import Decimal
 from decouple import config as env
-
 
 
 def _to_number(v):
@@ -37,27 +35,65 @@ def normalize_rows(
     fmt_strings: bool = True,
 ) -> List[Dict[str, Any]]:
     """
-    - Divide entre 1000.0 las columnas/aliases listados en implied_millis_cols (match exacto por nombre normalizado).
-    - Heurística opcional: si el nombre contiene alguna keyword (subcadena) y el valor luce inflado (>=100000 y múltiplo de 1000),
-      divide entre 1000. Las keywords vienen de .env y se comparan en minúsculas, sin tildes.
-    - Redondeo y formateo opcional.
-    """
-    # Lista explícita (match exacto por nombre normalizado)
-    implied_exact = {_norm_key_name(c) for c in implied_millis_cols if c and c.strip()}
+    Normaliza resultados numéricos con detección robusta de milésimas implícitas
+    SIN depender de 'implied_millis_cols' como regla dura.
 
-    # Heurística configurable por .env
-    auto_heur = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
+    Reglas de división x1000 SOLO si:
+      (A) La AUTODETECCIÓN por distribución marca la columna, o
+      (B) (pista explícita o keyword) Y el valor individual luce "múltiplo de 1000" y es grande.
+
+    Formato:
+      - Si 'fmt_strings' es True:
+          * Números enteros -> sin decimales y con separador de miles COMA (p. ej., 42,869)
+          * Números no enteros -> con 'decimal_places' y separador de miles COMA
+    """
+    # Pistas explícitas (ahora son "soft", no fuerzan la división por sí solas)
+    implied_exact = {_norm_key_name(c) for c in (implied_millis_cols or []) if c and c.strip()}
+
+    # Flags / parámetros
+    auto_kw = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
+    auto_detect = env("IMPLIED_MILLIS_AUTODETECT", default=True, cast=bool)
+    ratio_threshold = env("IMPLIED_MILLIS_RATIO_THRESHOLD", default=0.8, cast=float)
+    min_abs = env("IMPLIED_MILLIS_MIN_ABS", default=100000, cast=int)  # umbral alto por defecto
+
     keywords_env = env(
         "IMPLIED_MILLIS_KEYWORDS",
-        # incluimos variantes típicas
         default="despachado,original,pendiente,total linea,total línea,total despachado,total original,total pendiente"
     )
     kw_list = [_norm_key_name(w) for w in keywords_env.split(",") if w.strip()]
 
     def _name_has_keyword(name_low: str) -> bool:
-        # subcadena: si alguna keyword aparece dentro del nombre normalizado
         return any((kw in name_low) for kw in kw_list if kw)
 
+    def _is_big_multiple_of_1000(x: float) -> bool:
+        nearest = round(x)
+        return (abs(x - nearest) < 1e-9) and (abs(nearest) >= min_abs) and (nearest % 1000 == 0)
+
+    # ---------- 1) Stats de columna para AUTODETECCIÓN ----------
+    col_numeric_values: Dict[str, List[float]] = {}
+    for r in rows or []:
+        for k, v in (r or {}).items():
+            if isinstance(v, Decimal):
+                col_numeric_values.setdefault(k, []).append(float(v))
+            elif isinstance(v, (int, float)):
+                col_numeric_values.setdefault(k, []).append(float(v))
+
+    auto_divide_cols = set()
+    if auto_detect and rows:
+        for col, vals in col_numeric_values.items():
+            if len(vals) < 5:
+                continue  # muestra pequeña
+            vals_sorted = sorted(vals)
+            mid = len(vals_sorted) // 2
+            median = (vals_sorted[mid] if len(vals_sorted) % 2 == 1
+                      else 0.5 * (vals_sorted[mid - 1] + vals_sorted[mid]))
+            mult_cnt = sum(1 for x in vals if _is_big_multiple_of_1000(x))
+            ratio = mult_cnt / len(vals)
+            # Señal fuerte: ratio alto de múltiplos de 1000 o mediana muy grande con patrón frecuente
+            if ratio >= ratio_threshold or (median >= (min_abs * 2) and ratio >= 0.6):
+                auto_divide_cols.add(_norm_key_name(col))
+
+    # ---------- 2) Aplicar normalización ----------
     out: List[Dict[str, Any]] = []
 
     for r in rows:
@@ -69,23 +105,28 @@ def normalize_rows(
             if isinstance(val, (int, float)) or isinstance(v, Decimal):
                 valf = float(val)
 
+                # División solo si: (col marcada por auto-detección) o (pista y el valor luce inflado)
                 must_divide = False
+                col_marked = name_low in auto_divide_cols
+                soft_signal = (name_low in implied_exact) or (auto_kw and _name_has_keyword(name_low))
 
-                # 1) Regla explícita (alias exacto en la lista)
-                if name_low in implied_exact:
+                if col_marked:
                     must_divide = True
-
-                # 2) Heurística (si activa): nombre contiene keyword y valor "inflado"
-                if not must_divide and auto_heur and _name_has_keyword(name_low):
-                    nearest = round(valf)
-                    if abs(valf - nearest) < 1e-9 and abs(nearest) >= 100000 and nearest % 1000 == 0:
-                        must_divide = True
+                elif soft_signal and _is_big_multiple_of_1000(valf):
+                    must_divide = True
 
                 if must_divide:
                     valf = valf / 1000.0
 
-                valf = round(valf, decimal_places)
-                nr[k] = f"{valf:,.{decimal_places}f}" if fmt_strings else valf
+                # Formateo
+                if fmt_strings:
+                    # Si es "prácticamente entero", no mostrar decimales, usar separador de miles COMA
+                    if abs(valf - round(valf)) < 1e-9:
+                        nr[k] = f"{int(round(valf)):,}"
+                    else:
+                        nr[k] = f"{valf:,.{decimal_places}f}"
+                else:
+                    nr[k] = round(valf, decimal_places)
             else:
                 nr[k] = v
         out.append(nr)
@@ -162,7 +203,7 @@ def configz(request: Request):
     k = (getattr(s, "GOOGLE_API_KEY", "") or "")
     return {
         "LLM_PROVIDER": getattr(s, "LLM_PROVIDER", "gemini"),
-        "GOOGLE_API_KEY_prefix": (k[:6] + "...") if k else "(empty)",
+        "GOOGLE_API_KEY_prefix": ((k[:6] + "...") if k else "(empty)"),
         "GEMINI_MODEL": getattr(s, "GEMINI_MODEL", ""),
         "GEMINI_MODEL_ANSWER": getattr(s, "GEMINI_MODEL_ANSWER", ""),
         "OPENAI_MODEL": getattr(s, "OPENAI_MODEL", ""),
@@ -237,7 +278,11 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
         parsed = {"error": "No se pudo parsear JSON", "raw": raw_json}
 
     sql_raw = parsed.get("sql_query", "")
+    # Pipeline consistente
     sql_clean = database.clean_sql(sql_raw)
+    sql_clean = database.expand_macros(sql_clean)
+    sql_clean = database.sanitize_explain(sql_clean)
+    sql_clean = database.qualify_tables(sql_clean, allowed_fqn)
 
     safe = database.is_safe_select(sql_clean)
     allowed = database.restrict_to_allowed_tables(sql_clean, allowed_fqn)
@@ -245,8 +290,7 @@ async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
 
     return {
         "LLM_raw_JSON": raw_json,
-        "sql_raw": sql_raw,
-        "sql_clean": sql_clean,
+        "sql_processed": sql_clean,
         "allowed_fqn": allowed_fqn,
         "is_safe_select": safe,
         "restrict_ok": allowed,
@@ -305,9 +349,11 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             if not sql_query:
                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
 
-        # Limpieza + macro
+        # Limpieza + macros + saneo EXPLAIN + qualify (consistente para dry-run y ejecución)
         sql_query = database.clean_sql(sql_query)
-        sql_query = database.expand_numeric_clean(sql_query)
+        sql_query = database.expand_macros(sql_query)
+        sql_query = database.sanitize_explain(sql_query)
+        sql_query = database.qualify_tables(sql_query, allowed_fqn)
 
         # 3) Dry-run
         if not payload.execute:
@@ -318,7 +364,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                 raise HTTPException(status_code=400, detail="SQL insegura o fuera de las tablas permitidas.")
             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
 
-        # 4) Ejecutar SQL real
+        # 4) Ejecutar SQL real (database.query repite saneos por defensa en profundidad)
         rows_raw = await database.query(
             sql_query,
             allowed_fqn=allowed_fqn,
