@@ -127,34 +127,12 @@ def clean_sql(sql: str) -> str:
 
 # -------- Macros --------
 
-# >>> CAMBIO CLAVE:
-# Acepta expresiones calificadas (public."T"."Col", alias."Col", etc)
-# sin exigir que sea únicamente "Col".
-# Nota: no parsea paréntesis anidados complejos (no es necesario para este caso).
 _NUMERIC_CLEAN_MACRO = re.compile(
     r"NUMERIC_CLEAN\(\s*([^)]+?)\s*\)", re.IGNORECASE | re.DOTALL
 )
 
 
 def expand_numeric_clean(sql: str) -> str:
-    """
-    NUMERIC_CLEAN(<expr>) -> ::numeric robusto sin usar CTE dentro de expresiones.
-
-    Soporta <expr> como:
-      - "Col"
-      - public."Tabla"."Col"
-      - alias."Col"
-      - etc.
-
-    Casos:
-      - US: 1,234.56
-      - EU: 1.234,56
-      - Enteros con miles: 114,303 / 114.303
-      - Mixtos: 114,303.000
-      - Caso especial: '0.284' (punto como miles) -> 284
-      - Fallback: quita todo salvo dígitos y punto
-    """
-
     def repl(m: re.Match) -> str:
         expr = (m.group(1) or "").strip()
         s = f"TRIM({expr})"
@@ -164,35 +142,21 @@ def expand_numeric_clean(sql: str) -> str:
             NULLIF(
               CASE
                 WHEN {s} IS NULL OR {s} = '' THEN NULL
-
-                -- US: 1,234.56  -> quitar comas
                 WHEN {s} ~ '^[0-9]{{1,3}}(,[0-9]{{3}})+(\\.[0-9]+)?$'
                   THEN REPLACE({s}, ',', '')
-
-                -- EU: 1.234,56  -> quitar puntos de miles, coma -> punto
                 WHEN {s} ~ '^[0-9]{{1,3}}(\\.[0-9]{{3}})+(,[0-9]+)?$'
                   THEN REPLACE(REPLACE({s}, '.', ''), ',', '.')
-
-                -- Solo coma decimal (sin puntos)
                 WHEN {s} ~ '^[0-9]+,[0-9]+$'
                   THEN REPLACE({s}, ',', '.')
-
-                -- Entero con un punto 'X.XXX' -> quita el punto (era miles)
                 WHEN {s} ~ '^[0-9]+\\.[0-9]{{3}}$'
                   THEN REPLACE({s}, '.', '')
-
-                -- Múltiples puntos -> deja solo el último (decimal real)
                 WHEN {s} ~ '^[0-9.]+$' AND LENGTH({s})-LENGTH(REPLACE({s},'.','')) > 1
                   THEN REGEXP_REPLACE({s}, '\\.(?=.*\\.)', '', 'g')
-
-                -- Mezclas coma+punto: asume el último como decimal
                 WHEN {s} ~ '[0-9],[0-9]' AND {s} ~ '[0-9]\\.[0-9]'
                   THEN CASE
                          WHEN {s} ~ ',\\d+\\s*$' THEN REPLACE(REPLACE({s}, '.', ''), ',', '.')
                          ELSE REPLACE({s}, ',', '')
                        END
-
-                -- Fallback: limpiar todo salvo dígitos y punto (unificar coma->punto)
                 ELSE REGEXP_REPLACE(REPLACE({s}, ',', '.'), '[^0-9.]', '', 'g')
               END,
               ''
@@ -201,25 +165,13 @@ def expand_numeric_clean(sql: str) -> str:
           )
         )
         """
-
     return _NUMERIC_CLEAN_MACRO.sub(repl, sql or "")
 
 
-# >>> CAMBIO CLAVE:
-# Acepta expresiones calificadas
 _DATE_PARSE_MACRO = re.compile(r"DATE_PARSE\(\s*([^)]+?)\s*\)", re.IGNORECASE | re.DOTALL)
 
 
 def expand_date_parse(sql: str) -> str:
-    """
-    Expande DATE_PARSE(<expr>) a una expresión CASE que intenta varios formatos:
-      - YYYY-MM-DD (con o sin hora/sufijo)
-      - DD/MM/YYYY
-      - DD-MM-YYYY
-      - DD.MM.YYYY
-    Si no matchea, devuelve NULL.
-    """
-
     def repl(m: re.Match) -> str:
         expr = (m.group(1) or "").strip()
         col = expr
@@ -238,12 +190,10 @@ def expand_date_parse(sql: str) -> str:
             "END"
             ")"
         )
-
     return _DATE_PARSE_MACRO.sub(repl, sql or "")
 
 
 def expand_macros(sql: str) -> str:
-    """Aplica todas las macros soportadas en orden seguro."""
     s = sql or ""
     s2 = expand_numeric_clean(s)
     s3 = expand_date_parse(s2)
@@ -255,9 +205,7 @@ def expand_macros(sql: str) -> str:
 # -------- Clasificación / Seguridad --------
 
 _EXPLAIN_RE = re.compile(r"^\s*explain\b", re.IGNORECASE)
-_EXPLAIN_ANALYZE_RE = re.compile(
-    r"^\s*explain\b.*\banalyze\b", re.IGNORECASE | re.DOTALL
-)
+_EXPLAIN_ANALYZE_RE = re.compile(r"^\s*explain\b.*\banalyze\b", re.IGNORECASE | re.DOTALL)
 _VALUES_RE = re.compile(r"^\s*values\s*\(", re.IGNORECASE)
 _SELECT_RE = re.compile(r"^\s*(WITH\b.+\bSELECT|SELECT)\b", re.IGNORECASE | re.DOTALL)
 
@@ -274,49 +222,29 @@ def unwrap_explain(sql: str) -> str:
     if not is_explain(sql):
         return sql
     s = sql.strip()
-    s = re.sub(
-        r"^\s*explain\b(?:\s+\w+(?:\s+\w+)*)*\s*", "", s, flags=re.IGNORECASE
-    )
+    s = re.sub(r"^\s*explain\b(?:\s+\w+(?:\s+\w+)*)*\s*", "", s, flags=re.IGNORECASE)
     return s.strip()
 
 
-# --- EXPLAIN sanitization: quitar ANALYZE (y otras) si no está permitido ---
-_EXPLAIN_OPTIONS_RE = re.compile(
-    r"^\s*explain\s*\((?P<opts>[^)]*)\)\s*", re.IGNORECASE | re.DOTALL
-)
+_EXPLAIN_OPTIONS_RE = re.compile(r"^\s*explain\s*\((?P<opts>[^)]*)\)\s*", re.IGNORECASE | re.DOTALL)
 
 
 def _sanitize_explain(sql: str, allow_analyze: bool) -> str:
-    """
-    Si es EXPLAIN y allow_analyze=False:
-      - Si trae opciones (ANALYZE, BUFFERS, TIMING, COSTS...), las elimina dejando EXPLAIN simple.
-      - Si trae 'ANALYZE' explícito (con o sin opciones), lo quita.
-    Devuelve el SQL saneado.
-    """
     s = sql or ""
     if not is_explain(s):
         return s
-
     if allow_analyze:
-        return s  # no tocar
-
-    # 1) Si es del tipo EXPLAIN ( ... ) SELECT ...
+        return s
     m = _EXPLAIN_OPTIONS_RE.match(s)
     if m:
-        s2 = _EXPLAIN_OPTIONS_RE.sub("EXPLAIN ", s, count=1)
-        return s2
-
-    # 2) Si es EXPLAIN ANALYZE SELECT ...  -> quitar ANALYZE
-    s2 = re.sub(r"^\s*explain\s+analyze\b", "EXPLAIN", s, flags=re.IGNORECASE)
-    return s2
+        return _EXPLAIN_OPTIONS_RE.sub("EXPLAIN ", s, count=1)
+    return re.sub(r"^\s*explain\s+analyze\b", "EXPLAIN", s, flags=re.IGNORECASE)
 
 
 def sanitize_explain(sql: str) -> str:
-    """Wrapper público para saneo de EXPLAIN según ALLOW_EXPLAIN_ANALYZE (.env)."""
     return _sanitize_explain(sql, allow_analyze=ALLOW_EXPLAIN_ANALYZE)
 
 
-# Tokens peligrosos como palabras completas (ignorando literales)
 _SINGLE_QUOTED_RE = re.compile(r"('([^']|'')*')", re.DOTALL)
 _DOLLAR_QUOTED_RE = re.compile(r"(\$\$.*?\$\$)", re.DOTALL)
 
@@ -329,18 +257,9 @@ def _mask_string_literals(sql: str) -> str:
 
 
 _base_forbidden = [
-    r"\bDROP\b",
-    r"\bDELETE\b",
-    r"\bTRUNCATE\b",
-    r"\bALTER\b",
-    r"\bINSERT\b",
-    r"\bUPDATE\b",
-    r"\bCREATE\b",
-    r"\bMERGE\b",
-    r"\bVACUUM\b",
-    r"\bCOPY\b",
-    r"\bGRANT\b",
-    r"\bREVOKE\b",
+    r"\bDROP\b", r"\bDELETE\b", r"\bTRUNCATE\b", r"\bALTER\b",
+    r"\bINSERT\b", r"\bUPDATE\b", r"\bCREATE\b", r"\bMERGE\b",
+    r"\bVACUUM\b", r"\bCOPY\b", r"\bGRANT\b", r"\bREVOKE\b",
 ]
 if not ALLOW_SQL_CALL:
     _base_forbidden.append(r"\bCALL\b")
@@ -355,45 +274,27 @@ def _contains_forbidden(sql: str) -> Optional[str]:
     return None
 
 
-def find_forbidden_tokens(sql: str) -> List[str]:
-    hits: List[str] = []
-    s = _mask_string_literals(sql or "")
-    for pat in _FORBIDDEN_PATTERNS:
-        if pat.search(s):
-            hits.append(pat.pattern)
-    return hits
-
-
 def is_safe_select(sql: str) -> bool:
     s = sql or ""
 
     if is_values_only(s):
         bad = _contains_forbidden(s)
-        ok = ALLOW_SQL_VALUES and (bad is None)
-        logger.debug("[database.is_safe_select] VALUES -> %s (bad=%s)", ok, bad)
-        return ok
+        return ALLOW_SQL_VALUES and (bad is None)
 
     if is_explain(s):
         if not ALLOW_SQL_EXPLAIN:
-            logger.debug("[database.is_safe_select] EXPLAIN no permitido")
             return False
         if _EXPLAIN_ANALYZE_RE.match(s) and not ALLOW_EXPLAIN_ANALYZE:
-            logger.debug("[database.is_safe_select] EXPLAIN ANALYZE no permitido")
             return False
         inner = unwrap_explain(s)
         bad = _contains_forbidden(inner)
-        ok = (_SELECT_RE.match(inner or "") is not None) and (bad is None)
-        logger.debug("[database.is_safe_select] EXPLAIN(inner) -> %s (bad=%s)", ok, bad)
-        return ok
+        return (_SELECT_RE.match(inner or "") is not None) and (bad is None)
 
     if not _SELECT_RE.match(s or ""):
-        logger.debug("[database.is_safe_select] No es SELECT/CTE")
         return False
 
     bad = _contains_forbidden(s)
-    ok = bad is None
-    logger.debug("[database.is_safe_select] SELECT -> %s (bad=%s)", ok, bad)
-    return ok
+    return bad is None
 
 
 def enforce_limit(sql: str, default_limit: int = 100, max_limit: int = 1000) -> str:
@@ -401,18 +302,37 @@ def enforce_limit(sql: str, default_limit: int = 100, max_limit: int = 1000) -> 
     if m:
         n = int(m.group(1))
         if n > max_limit:
-            sql = re.sub(
-                r"\blimit\s+\d+\b", f"LIMIT {max_limit}", sql, flags=re.IGNORECASE
-            )
+            sql = re.sub(r"\blimit\s+\d+\b", f"LIMIT {max_limit}", sql, flags=re.IGNORECASE)
         return sql
     return f"{sql.rstrip()} LIMIT {default_limit}"
 
 
-# --- utilidades de tablas referenciadas ---
-_FROM_JOIN_CAPTURE = re.compile(
-    r'\b(from|join)\s+((?:"[^"]+"|\w+)(?:\s*\.\s*(?:"[^"]+"|\w+))?)',
-    re.IGNORECASE,
+# =========================
+# ✅ FIX REAL DEL PROBLEMA
+# =========================
+
+# 1) Ignorar "FROM" dentro de funciones como SUBSTRING(... FROM 'regex')
+#    y solo capturar FROM/JOIN reales (cláusulas).
+# Heurística: requiere que lo que siga parezca un identificador de tabla (no comilla simple).
+_FROM_JOIN_CLAUSE_RE = re.compile(
+    r"""
+    (?<!\w)                 # no parte de otra palabra
+    \b(from|join)\b         # keyword
+    \s+                     # espacios
+    (?!')                   # <-- IMPORTANTE: si empieza con comilla simple, es SUBSTRING... FROM '...'
+    (?P<tbl>
+        (?:"[^"]+"|\w+)     # "tabla" o tabla
+        (?:\s*\.\s*(?:"[^"]+"|\w+))?   # opcional schema.tabla
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
 )
+
+_NOT_A_TABLE = {"lateral", "unnest", "generate_series", "values"}
+
+
+def _normalize_token(s: str) -> str:
+    return re.sub(r"\s+", "", (s or "").strip().lower())
 
 
 def _build_table_map(allowed_fqn: List[str]) -> Dict[str, str]:
@@ -426,85 +346,81 @@ def _build_table_map(allowed_fqn: List[str]) -> Dict[str, str]:
     return m
 
 
-def _extract_referenced_tables(sql: str) -> List[str]:
-    """Devuelve una lista de tokens de tabla tal como aparecen en el SQL."""
-    refs: List[str] = []
-    for match in _FROM_JOIN_CAPTURE.finditer(sql or ""):
-        raw = match.group(2).strip()
-        refs.append(raw)
-    return refs
-
-
-# --- CTE support: recolectar nombres de CTE definidos en WITH ---
-_CTE_FIRST_RE = re.compile(r'\bwith\s+("?[A-Za-z0-9_ ]+"?)\s+as\s*\(', re.IGNORECASE)
-_CTE_NEXT_RE = re.compile(r',\s*("?[A-Za-z0-9_ ]+"?)\s+as\s*\(', re.IGNORECASE)
+_CTE_DEF_RE = re.compile(r'(?P<name>"[^"]+"|\w+)\s+AS\s*\(', re.IGNORECASE)
 
 
 def _collect_cte_names(sql: str) -> List[str]:
-    """
-    Devuelve los nombres de CTE (identificadores del WITH ... AS (...), incluyendo los separados por comas).
-    Ej.: WITH b AS (...), t2 AS (...)  -> ['b', 't2']
-    """
     names: List[str] = []
     s = sql or ""
-    for m in _CTE_FIRST_RE.finditer(s):
-        nm = m.group(1).strip().strip('"')
+    if not re.search(r"^\s*with\b", s, re.IGNORECASE):
+        return names
+    for m in _CTE_DEF_RE.finditer(s):
+        nm = (m.group("name") or "").strip().strip('"').strip().lower()
         if nm:
-            names.append(nm.lower())
-    for m in _CTE_NEXT_RE.finditer(s):
-        nm = m.group(1).strip().strip('"')
-        if nm:
-            names.append(nm.lower())
+            names.append(nm)
     return names
 
 
-def restrict_to_allowed_tables(sql: str, allowed_fqn: List[str]) -> bool:
-    """
-    Devuelve True SOLO si todas las tablas reales referenciadas en FROM/JOIN
-    pertenecen al conjunto permitido. Ignora referencias a CTEs (definidos en WITH).
-    """
+def _extract_referenced_tables(sql: str) -> List[str]:
+    refs: List[str] = []
+    for m in _FROM_JOIN_CLAUSE_RE.finditer(sql or ""):
+        tbl = (m.group("tbl") or "").strip()
+        if tbl:
+            refs.append(tbl)
+    return refs
+
+
+def _first_disallowed_ref(sql: str, allowed_fqn: List[str]) -> Optional[str]:
     if not sql or not allowed_fqn:
-        return False
-    if is_values_only(sql):
-        return True
+        return "sql/allowed vacío"
 
     s = unwrap_explain(sql) if is_explain(sql) else (sql or "")
-
-    allowed_set = {a.strip().lower() for a in allowed_fqn}
+    allowed_set = {_normalize_token(a) for a in allowed_fqn if a and a.strip()}
     table_map = _build_table_map(allowed_fqn)
-
     cte_names = set(_collect_cte_names(s))
 
     refs = _extract_referenced_tables(s)
     if not refs:
-        return False
+        return "no se detectaron FROM/JOIN"
 
     for r in refs:
-        r_clean = r.strip()
+        r_clean = (r or "").strip()
+        if not r_clean:
+            continue
+
+        head = _normalize_token(r_clean.split("(")[0]).strip('"')
+        if head in _NOT_A_TABLE:
+            continue
 
         if "." not in r_clean:
             name = r_clean.strip().strip('"').lower()
             if name in cte_names:
                 continue
+
             fqn_norm = table_map.get(name)
-            if not fqn_norm or fqn_norm.lower() not in allowed_set:
-                return False
+            if not fqn_norm:
+                return f"tabla no encontrada en allow-list: {r_clean}"
+            if _normalize_token(fqn_norm) not in allowed_set:
+                return f"tabla fuera de allow-list: {r_clean} -> {fqn_norm}"
             continue
 
         parts = [p.strip().strip('"') for p in r_clean.split(".")]
         if len(parts) == 2:
             schema_n, table_n = parts[0].lower(), parts[1]
             fqn_norm = f'{schema_n}."{table_n}"'
-            if fqn_norm.lower() not in allowed_set:
-                return False
+            if _normalize_token(fqn_norm) not in allowed_set:
+                return f"FQN fuera de allow-list: {r_clean} -> {fqn_norm}"
         else:
-            return False
+            return f"token schema.tabla inválido: {r_clean}"
 
-    return True
+    return None
 
 
-# --- Cualificación ---
-_FROM_JOIN_RE = re.compile(
+def restrict_to_allowed_tables(sql: str, allowed_fqn: List[str]) -> bool:
+    return _first_disallowed_ref(sql, allowed_fqn) is None
+
+
+_FROM_JOIN_RE_QUALIFY = re.compile(
     r'\b(from|join)\s+("?[A-Za-z0-9_ ]+"?)(?!\s*\.)', re.IGNORECASE
 )
 
@@ -515,18 +431,27 @@ def qualify_tables(sql: str, allowed_fqn: List[str]) -> str:
     if is_values_only(sql) or is_explain(sql):
         return sql
 
+    cte_names = set(_collect_cte_names(sql))
     table_map = _build_table_map(allowed_fqn)
 
     def repl(match: re.Match) -> str:
         kw = match.group(1)
-        raw_name = match.group(2).strip()
+        raw_name = (match.group(2) or "").strip()
         name_unquoted = raw_name.replace('"', "").strip()
+
+        if name_unquoted.lower() in cte_names:
+            return match.group(0)
+
+        head = _normalize_token(name_unquoted.split("(")[0]).strip('"')
+        if head in _NOT_A_TABLE:
+            return match.group(0)
+
         fqn = table_map.get(name_unquoted.lower())
         if fqn:
             return f"{kw} {fqn}"
         return match.group(0)
 
-    return _FROM_JOIN_RE.sub(repl, sql)
+    return _FROM_JOIN_RE_QUALIFY.sub(repl, sql)
 
 
 # -------- Ejecución --------
@@ -538,31 +463,27 @@ async def query(
 ) -> List[Dict[str, Any]]:
     logger.debug("[database.query] raw=%r", sql_query)
 
-    # 0) limpieza
     sql_query = clean_sql(sql_query)
     logger.debug("[database.query] after clean=%r", sql_query)
 
-    # 0.25) expandir macros (NUMERIC_CLEAN, DATE_PARSE)
     sql_query = expand_macros(sql_query)
 
-    # 0.4) Saneador de EXPLAIN
     sql_query = sanitize_explain(sql_query)
     logger.debug("[database.query] after explain sanitize=%r", sql_query)
 
-    # 0.5) cualificación automática (no para EXPLAIN/VALUES)
     sql_query = qualify_tables(sql_query, allowed_fqn)
     logger.debug("[database.query] after qualify=%r", sql_query)
 
-    # 1) seguridad
     if not is_safe_select(sql_query):
         raise ValueError("Solo se permiten consultas de lectura (SELECT/CTE, EXPLAIN sin ANALYZE, VALUES).")
 
     val_sql = unwrap_explain(sql_query) if is_explain(sql_query) else sql_query
 
-    if not is_values_only(sql_query) and not restrict_to_allowed_tables(val_sql, allowed_fqn):
-        raise ValueError("La consulta referencia tablas no permitidas según el esquema actual.")
+    bad = _first_disallowed_ref(val_sql, allowed_fqn)
+    if (not is_values_only(sql_query)) and bad:
+        # ✅ ahora el error te dirá EXACTAMENTE qué token está rompiendo
+        raise ValueError(f"La consulta referencia tablas no permitidas según el esquema actual. Detalle: {bad}")
 
-    # 2) límite (solo SELECT/CTE)
     if (not is_values_only(sql_query)) and (not is_explain(sql_query)):
         sql = enforce_limit(val_sql, default_limit=default_limit, max_limit=max_limit)
     else:
@@ -570,7 +491,6 @@ async def query(
 
     logger.debug("[database.query] final SQL=%r", sql)
 
-    # 3) ejecutar
     with Session() as session:
         statement = text(sql)
         result = session.execute(statement)
