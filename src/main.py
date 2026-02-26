@@ -1,10 +1,10 @@
-# src/main.py
 import json
 import logging
 import unicodedata
 import time
+import re
 from hashlib import sha1
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Request, Query
 from pydantic import BaseModel
@@ -12,12 +12,12 @@ from pydantic import BaseModel
 from . import database
 from . import llm
 
-# ---- helpers de normalización y configuración ----
 from decimal import Decimal
 from decouple import config as env
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
 
 def _to_number(v):
     if isinstance(v, Decimal):
@@ -26,12 +26,14 @@ def _to_number(v):
         return float(v)
     return v
 
+
 def _norm_key_name(s: str) -> str:
     if not s:
         return ""
     s_norm = unicodedata.normalize("NFKD", s)
     s_no_acc = "".join(ch for ch in s_norm if not unicodedata.combining(ch))
     return s_no_acc.strip().lower()
+
 
 def normalize_rows(
     rows: List[Dict[str, Any]],
@@ -52,10 +54,8 @@ def normalize_rows(
           * Números enteros -> sin decimales y con separador de miles COMA (p. ej., 42,869)
           * Números no enteros -> con 'decimal_places' y separador de miles COMA
     """
-    # Pistas explícitas (soft)
     implied_exact = {_norm_key_name(c) for c in (implied_millis_cols or []) if c and c.strip()}
 
-    # Flags / parámetros
     auto_kw = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
     auto_detect = env("IMPLIED_MILLIS_AUTODETECT", default=True, cast=bool)
     ratio_threshold = env("IMPLIED_MILLIS_RATIO_THRESHOLD", default=0.8, cast=float)
@@ -87,7 +87,7 @@ def normalize_rows(
     if auto_detect and rows:
         for col, vals in col_numeric_values.items():
             if len(vals) < 5:
-                continue  # muestra pequeña
+                continue
             vals_sorted = sorted(vals)
             mid = len(vals_sorted) // 2
             median = (vals_sorted[mid] if len(vals_sorted) % 2 == 1
@@ -99,7 +99,7 @@ def normalize_rows(
 
     # ---------- 2) Aplicar normalización ----------
     out: List[Dict[str, Any]] = []
-    for r in rows:
+    for r in rows or []:
         nr: Dict[str, Any] = {}
         for k, v in (r or {}).items():
             name_low = _norm_key_name(k)
@@ -108,7 +108,6 @@ def normalize_rows(
             if isinstance(val, (int, float)) or isinstance(v, Decimal):
                 valf = float(val)
 
-                # División x1000 si corresponde
                 must_divide = False
                 col_marked = name_low in auto_divide_cols
                 soft_signal = (name_low in implied_exact) or (auto_kw and _name_has_keyword(name_low))
@@ -121,7 +120,6 @@ def normalize_rows(
                 if must_divide:
                     valf = valf / 1000.0
 
-                # Formateo
                 if fmt_strings:
                     if abs(valf - round(valf)) < 1e-9:
                         nr[k] = f"{int(round(valf)):,}"
@@ -135,17 +133,68 @@ def normalize_rows(
 
     return out
 
+
+# ------------------ Filtro anti "totales" / null / vacíos ------------------
+
+_TOTAL_RE = re.compile(r"^\s*(total|gran\s*total|totales)\b", re.IGNORECASE)
+
+def drop_total_like_rows(
+    rows: List[Dict[str, Any]],
+    key_candidates: Tuple[str, ...] = ("Cliente Nombre", "cliente nombre", "Cliente", "cliente"),
+) -> List[Dict[str, Any]]:
+    """
+    Elimina filas basura típicas:
+    - clave None / vacía
+    - clave que empieza con Total/Gran total/Totales
+    Esto blinda el output aunque el LLM meta UNION/ROLLUP.
+    """
+    if not rows:
+        return rows
+
+    # elegir columna clave
+    key_col = None
+    cols = set(rows[0].keys())
+
+    for c in key_candidates:
+        if c in cols:
+            key_col = c
+            break
+
+    if not key_col:
+        # fallback: primera col que sea str/None en la muestra
+        for k in rows[0].keys():
+            v = rows[0].get(k)
+            if isinstance(v, str) or v is None:
+                key_col = k
+                break
+
+    if not key_col:
+        return rows
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        v = r.get(key_col)
+        if v is None:
+            continue
+        if isinstance(v, str):
+            t = v.strip()
+            if not t:
+                continue
+            if _TOTAL_RE.match(t):
+                continue
+        out.append(r)
+    return out
+
+
 # -------- Fallback de resumen local (determinista y limpio) --------
 def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
     if not rows:
         return f"No se encontraron datos para la consulta: “{human_query}”."
 
-    # Detecta posibles columnas de clave (texto) y de valor (numérica)
     sample = rows[0]
     text_cols: List[str] = []
     num_cols: List[str] = []
 
-    # Clasificación simple por tipo / parseo
     for k in sample.keys():
         is_num = False
         for r in rows:
@@ -155,7 +204,7 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
                 break
             if isinstance(v, str):
                 try:
-                    float(v.replace(",", ""))  # por si vienen formateados
+                    float(v.replace(",", ""))
                     is_num = True
                     break
                 except Exception:
@@ -165,10 +214,8 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
         else:
             text_cols.append(k)
 
-    # Heurísticas de nombres para priorizar columnas comunes en tu dataset
     def _score_text(name: str) -> int:
         n = name.lower()
-        # prioriza "Material" o similares
         if "material" in n:
             return 3
         if "cliente" in n:
@@ -185,19 +232,16 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
             return 2
         return 1
 
-    # Elige columnas candidatas
     text_cols.sort(key=_score_text, reverse=True)
     num_cols.sort(key=_score_num, reverse=True)
 
     key_col = text_cols[0] if text_cols else None
     val_col = num_cols[0] if num_cols else None
 
-    # Construcción del resumen
     bullets: List[str] = []
     bullets.append(f"Filas analizadas: {len(rows)}.")
 
     if val_col:
-        # suma total
         total = 0.0
         for r in rows:
             v = r.get(val_col)
@@ -213,7 +257,6 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
             total += float(v)
         bullets.append(f"Suma de “{val_col}”: {total:,.3f}")
 
-    # Top-3 por clave textual (si existen ambas)
     if key_col and val_col:
         agg: Dict[str, float] = {}
         for r in rows:
@@ -236,7 +279,6 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
                 "; ".join([f"{k} = {v:,.3f}" for k, v in top])
             ))
 
-    # Construye el texto final (2–3 frases sin markdown)
     summary_parts = []
     summary_parts.append(f"Consulta: “{human_query}”.")
     if val_col and key_col:
@@ -247,13 +289,14 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
         summary_parts.append("No se identificó una métrica numérica dominante; se muestran datos generales.")
 
     final = " ".join(p if p.endswith(('.', '!', '?')) else p + "." for p in summary_parts)
-    # Añade 2–3 bullets en líneas nuevas
     for b in bullets[:3]:
         final += f"\n- {b}"
     return final
+
+
 # ------------------- LLM SQL cache (LRU+TTL) -------------------
 _SQL_CACHE: Dict[str, Dict[str, Any]] = {}
-SQL_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)  # 5 min
+SQL_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
 SQL_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
 
 def _cache_key(human_query: str, schema_json: Dict[str, Any], dialect: str, default_limit: int) -> str:
@@ -273,13 +316,11 @@ def _cache_get(key: str) -> Optional[str]:
     return item["sql_json"]
 
 def _cache_put(key: str, sql_json: str) -> None:
-    # Evict simple por expiración y tamaño
     if len(_SQL_CACHE) >= SQL_CACHE_MAX:
         oldest = min(_SQL_CACHE.items(), key=lambda kv: kv[1]["exp"])[0]
         _SQL_CACHE.pop(oldest, None)
     _SQL_CACHE[key] = {"exp": time.time() + SQL_CACHE_TTL, "sql_json": sql_json}
 
-# ---------------------------------------------------------
 
 # --------- Auth opcional por API Key ---------
 async def api_key_guard(request: Request, x_api_key: Optional[str] = Header(default=None)):
@@ -289,6 +330,7 @@ async def api_key_guard(request: Request, x_api_key: Optional[str] = Header(defa
         return
     if not x_api_key or x_api_key != required:
         raise HTTPException(status_code=401, detail="API key inválida")
+
 
 # --------- Modelo ---------
 class PostHumanQueryPayload(BaseModel):
@@ -300,19 +342,22 @@ class PostHumanQueryPayload(BaseModel):
     limit: Optional[int] = None
     execute: bool = True
     schema_refresh: bool = False
-    summarize: Optional[bool] = True   # si False → no llamar LLM para respuesta
-    # Control de salida por request (sin tocar .env)
-    format_numbers: Optional[bool] = None         # si None -> usa .env RETURN_FORMATTED_NUMBERS
-    decimals: Optional[int] = None                # si None -> usa .env DECIMAL_PLACES
-    implied_millis_cols: Optional[List[str]] = None  # override por request
+    summarize: Optional[bool] = True
+
+    format_numbers: Optional[bool] = None
+    decimals: Optional[int] = None
+    implied_millis_cols: Optional[List[str]] = None
+
 
 @router.get("/")
 def root() -> Dict[str, str]:
     return {"status": "ok", "docs": "/docs"}
 
+
 @router.get("/healthz")
 def healthz() -> Dict[str, str]:
     return {"status": "healthy"}
+
 
 @router.get("/schema", dependencies=[Depends(api_key_guard)])
 def get_schema(
@@ -332,6 +377,7 @@ def get_schema(
     )
     return schema_json
 
+
 @router.get("/llm/ping", dependencies=[Depends(api_key_guard)])
 async def llm_ping(request: Request) -> Dict[str, Any]:
     try:
@@ -339,7 +385,8 @@ async def llm_ping(request: Request) -> Dict[str, Any]:
         return {"status": "ok", "gemini_reply": (txt or "")[:200]}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
-    
+
+
 @router.get("/configz", dependencies=[Depends(api_key_guard)])
 def configz(request: Request):
     s = request.app.state.settings
@@ -352,6 +399,7 @@ def configz(request: Request):
         "OPENAI_MODEL": getattr(s, "OPENAI_MODEL", ""),
     }
 
+
 @router.get("/llm/models", dependencies=[Depends(api_key_guard)])
 def llm_models() -> Dict[str, Any]:
     try:
@@ -359,106 +407,12 @@ def llm_models() -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
-# ------- DEBUG endpoints --------
-@router.get("/debug/schema")
-def debug_schema(request: Request):
-    settings = request.app.state.settings
-    schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
 
-    schema_json = database.get_schema_json(
-        schemas=schemas,
-        tables=None,
-        max_tables=200,
-        max_columns=5000,
-    )
-    return {"schemas_requested": schemas, "schema_json": schema_json}
-
-@router.get("/debug/tables")
-def debug_tables(request: Request):
-    settings = request.app.state.settings
-    schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
-
-    schema_json = database.get_schema_json(schemas=schemas)
-    tables = [t["table"] for t in schema_json.get("tables", [])]
-    return {"tables_detected": tables}
-    
-@router.post("/debug/llm_sql")
-async def debug_llm_sql(request: Request, payload: PostHumanQueryPayload):
-    settings = request.app.state.settings
-    schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
-    schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
-
-    # Cache LLM -> SQL
-    cache_key = _cache_key(payload.human_query, schema_json, payload.dialect or "postgresql", payload.limit or 100)
-    cached = _cache_get(cache_key)
-    if cached:
-        sql_json = cached
-    else:
-        sql_json = await llm.human_query_to_sql(
-            payload.human_query,
-            schema_json=schema_json,
-            dialect=payload.dialect or "postgresql",
-            default_limit=payload.limit or 100,
-            model=None,  # deja que el provider elija por .env
-        )
-        _cache_put(cache_key, sql_json)
-
-    return {"raw_llm_sql_json": sql_json}
-
-@router.post("/debug/llm_sql_full")
-async def debug_llm_sql_full(request: Request, payload: PostHumanQueryPayload):
-    settings = request.app.state.settings
-
-    schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
-    schema_json = database.get_schema_json(schemas=schemas, tables=payload.tables)
-    allowed_fqn = [f'{t["schema"]}."{t["table"]}"' for t in schema_json.get("tables", [])]
-
-    cache_key = _cache_key(payload.human_query, schema_json, payload.dialect or "postgresql", payload.limit or 100)
-    cached = _cache_get(cache_key)
-    if cached:
-        raw_json = cached
-    else:
-        raw_json = await llm.human_query_to_sql(
-            payload.human_query,
-            schema_json=schema_json,
-            dialect=payload.dialect or "postgresql",
-            default_limit=payload.limit or 100,
-            model=None,  # deja que el provider elija por .env
-        )
-        _cache_put(cache_key, raw_json)
-
-    try:
-        parsed = json.loads(raw_json)
-    except Exception:
-        parsed = {"error": "No se pudo parsear JSON", "raw": raw_json}
-
-    sql_raw = parsed.get("sql_query", "")
-
-    # Pipeline consistente
-    sql_clean = database.clean_sql(sql_raw)
-    sql_clean = database.expand_macros(sql_clean)
-    sql_clean = database.sanitize_explain(sql_clean)
-    sql_clean = database.qualify_tables(sql_clean, allowed_fqn)
-
-    safe = database.is_safe_select(sql_clean)
-    allowed = database.restrict_to_allowed_tables(sql_clean, allowed_fqn)
-    forbidden_hits = database.find_forbidden_tokens(sql_clean) if hasattr(database, "find_forbidden_tokens") else []
-
-    return {
-        "LLM_raw_JSON": raw_json,
-        "sql_processed": sql_clean,
-        "allowed_fqn": allowed_fqn,
-        "is_safe_select": safe,
-        "restrict_ok": allowed,
-        "forbidden_hits": forbidden_hits,
-        "schema_used": schema_json,
-    }
-# ------- /DEBUG endpoints --------
-    
 @router.post("/schema/refresh", dependencies=[Depends(api_key_guard)])
 def refresh_schema() -> Dict[str, str]:
     database.refresh_schema_cache()
     return {"status": "ok", "message": "Schema cache refreshed"}
+
 
 @router.post("/human_query", dependencies=[Depends(api_key_guard)])
 async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[str, Any]:
@@ -488,7 +442,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             result_dict = {"sql_query": sql_query, "original_query": payload.human_query}
             logger.debug("[/human_query] using sql_query_override=%r", sql_query)
         else:
-            # Cache LLM -> SQL
             cache_key = _cache_key(payload.human_query, schema_json, dialect, default_limit)
             cached = _cache_get(cache_key)
             if cached:
@@ -500,7 +453,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                     schema_json=schema_json,
                     dialect=dialect,
                     default_limit=default_limit,
-                    model=None,  # provider por .env
+                    model=None,
                 )
                 _cache_put(cache_key, sql_json)
 
@@ -513,7 +466,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             if not sql_query:
                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
 
-        # Limpieza + macros + saneo EXPLAIN + qualify (consistente para dry-run y ejecución)
+        # Pipeline consistente
         sql_query = database.clean_sql(sql_query)
         sql_query = database.expand_macros(sql_query)
         sql_query = database.sanitize_explain(sql_query)
@@ -522,19 +475,24 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         # 3) Dry-run
         if not payload.execute:
             if not database.is_safe_select(sql_query) or not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
-                logger.debug("[/human_query] FAIL dry-run safe=%s allowed=%s",
-                             database.is_safe_select(sql_query),
-                             database.restrict_to_allowed_tables(sql_query, allowed_fqn))
+                logger.debug(
+                    "[/human_query] FAIL dry-run safe=%s allowed=%s",
+                    database.is_safe_select(sql_query),
+                    database.restrict_to_allowed_tables(sql_query, allowed_fqn)
+                )
                 raise HTTPException(status_code=400, detail="SQL insegura o fuera de las tablas permitidas.")
             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
 
-        # 4) Ejecutar SQL real (database.query repite saneos por defensa en profundidad)
+        # 4) Ejecutar
         rows_raw = await database.query(
             sql_query,
             allowed_fqn=allowed_fqn,
             default_limit=default_limit,
             max_limit=max_limit,
         )
+
+        # 🔒 Blindaje anti totales/null (aunque el LLM se equivoque)
+        rows_raw = drop_total_like_rows(rows_raw)
 
         # 4.1) Normalización post-DB
         implied_cols_env = [s.strip() for s in (env("IMPLIED_MILLIS_COLUMNS", default="") or "").split(",") if s.strip()]
@@ -553,7 +511,10 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             fmt_strings=fmt_strings
         )
 
-        # 5) Resumen opcional en lenguaje natural (usar filas normalizadas)
+        # 🔒 Re-blindaje (por si normalize cambió algo)
+        rows = drop_total_like_rows(rows)
+
+        # 5) Resumen opcional
         if not payload.summarize:
             return {
                 "rows": rows,
@@ -563,8 +524,8 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
 
         try:
             answer = await llm.build_answer(rows, payload.human_query, model=None)
+
             if not (answer or "").strip():
-                # Fallback determinista
                 local_answer = _local_summary_answer(rows, payload.human_query)
                 return {
                     "answer": local_answer,
@@ -574,6 +535,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                     "sql_query": sql_query,
                     "warning": "Resumen generado localmente por falta de respuesta del LLM."
                 }
+
             return {
                 "answer": answer,
                 "answer_source": "llm",
@@ -581,6 +543,7 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                 "row_count": len(rows),
                 "sql_query": sql_query
             }
+
         except Exception as ex:
             logger.exception("Fallo al generar 'answer'.")
             local_answer = _local_summary_answer(rows, payload.human_query)
