@@ -125,9 +125,6 @@ def normalize_rows(
 
 
 def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
-    """
-    Fallback local simple (no LLM) si falla el resumen.
-    """
     if not rows:
         return f"No se encontraron datos para la consulta: “{human_query}”."
 
@@ -154,7 +151,6 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
         else:
             text_cols.append(k)
 
-    # pick best
     def _score_text(name: str) -> int:
         n = _norm_key_name(name)
         if any(x in n for x in ["id", "codigo", "código", "pedido", "orden", "documento", "doc", "cliente"]):
@@ -260,6 +256,94 @@ def _cache_put(key: str, sql_json: str) -> None:
 
 
 # =============================================================================
+# Helpers tipo / blindajes SQL
+# =============================================================================
+
+def _is_text_type(type_str: str) -> bool:
+    t = (type_str or "").lower()
+    return any(x in t for x in ["char", "text", "varchar", "string", "clob"])
+
+def _schema_type_map(schema_json: Dict[str, Any], requested_tables: Optional[List[str]]) -> Dict[str, str]:
+    wanted = {_norm_key_name(t) for t in (requested_tables or []) if t}
+    mp: Dict[str, str] = {}
+    for tb in (schema_json.get("tables", []) or []):
+        tname = _norm_key_name(tb.get("table") or "")
+        if wanted and (tname not in wanted):
+            continue
+        for c in (tb.get("columns", []) or []):
+            nm = c.get("name")
+            tp = c.get("type") or ""
+            if nm and nm not in mp:
+                mp[nm] = tp
+    return mp
+
+def _non_text_columns(schema_json: Dict[str, Any], requested_tables: Optional[List[str]]) -> List[str]:
+    mp = _schema_type_map(schema_json, requested_tables)
+    return [nm for nm, tp in mp.items() if nm and (not _is_text_type(tp))]
+
+def _sql_cast_trim_for_nontext(sql: str, schema_json: Dict[str, Any], dialect: str, requested_tables: Optional[List[str]]) -> str:
+    """
+    Reescribe TRIM("col_no_text") -> TRIM(CAST("col_no_text" AS TEXT)) para Postgres.
+    Debe ejecutarse DESPUÉS de expand_macros (porque NUMERIC_CLEAN introduce TRIM).
+    """
+    s = (sql or "")
+    if not s.strip():
+        return s
+
+    non_text = _non_text_columns(schema_json, requested_tables=requested_tables)
+    if not non_text:
+        return s
+
+    d = (dialect or "").lower()
+    cast_type = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
+    if d in ("mssql", "sqlserver"):
+        cast_type = "NVARCHAR(4000)"
+
+    for col in sorted(non_text, key=len, reverse=True):
+        col_q = re.escape(col)
+        p1 = re.compile(rf"\bTRIM\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
+        s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {cast_type}))', s)
+
+        p2 = re.compile(
+            rf"\bTRIM\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
+            re.IGNORECASE
+        )
+        s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {cast_type}))', s)
+
+    return s
+
+def _sql_rewrite_numeric_clean_for_nontext(sql: str, schema_json: Dict[str, Any], dialect: str, requested_tables: Optional[List[str]]) -> str:
+    """
+    Si el LLM usa NUMERIC_CLEAN("col") sobre una columna NO-TEXT (ej BIGINT),
+    reescribimos a CAST("col" AS numeric) (o CAST(... AS double precision) si prefieres).
+    Esto evita que la macro meta TRIM/regex.
+    """
+    s = (sql or "")
+    if not s.strip():
+        return s
+
+    non_text = _non_text_columns(schema_json, requested_tables=requested_tables)
+    if not non_text:
+        return s
+
+    d = (dialect or "").lower()
+    cast_num = "numeric" if d in ("postgresql", "postgres", "postgre") else "DECIMAL(38,10)"
+
+    for col in sorted(non_text, key=len, reverse=True):
+        col_q = re.escape(col)
+        p = re.compile(rf"\bNUMERIC_CLEAN\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
+        s = p.sub(lambda m: f'CAST("{col}" AS {cast_num})', s)
+
+        p2 = re.compile(
+            rf"\bNUMERIC_CLEAN\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
+            re.IGNORECASE
+        )
+        s = p2.sub(lambda m: f'CAST({m.group("q")}"{col}" AS {cast_num})', s)
+
+    return s
+
+
+# =============================================================================
 # Generalización: detectar intentos y columnas desde schema + query
 # =============================================================================
 
@@ -291,10 +375,6 @@ def _schema_all_columns(schema_json: Dict[str, Any]) -> List[str]:
     return cols
 
 def _schema_columns_for_tables(schema_json: Dict[str, Any], requested_tables: Optional[List[str]]) -> List[str]:
-    """
-    Si el usuario pasa tables=["X"], limitamos columnas a esas tablas.
-    requested_tables puede venir con nombre sin schema; comparamos por "table".
-    """
     if not requested_tables:
         return _schema_all_columns(schema_json)
 
@@ -307,15 +387,9 @@ def _schema_columns_for_tables(schema_json: Dict[str, Any], requested_tables: Op
                 nm = c.get("name")
                 if nm and nm not in cols:
                     cols.append(nm)
-    # fallback si no encontró nada
     return cols or _schema_all_columns(schema_json)
 
 def _find_mentioned_columns(human_query: str, schema_cols: List[str]) -> List[str]:
-    """
-    Heurística general:
-    - si el nombre normalizado de la columna aparece como substring en el query normalizado, se considera mencionada
-    - orden por longitud (preferir matches más específicos)
-    """
     qn = _norm_key_name(human_query)
     hits: List[Tuple[int, str]] = []
     for col in schema_cols:
@@ -343,11 +417,7 @@ def _has_list_intent(human_query: str) -> bool:
     return any(cue in qn for cue in _LIST_CUES)
 
 def _pick_key_column(schema_cols: List[str], human_query: str) -> Optional[str]:
-    """
-    Escoge una columna “identificadora” de manera general.
-    """
     qn = _norm_key_name(human_query)
-
     preferred_keywords = [
         "id", "codigo", "código", "pedido", "orden", "documento", "doc",
         "factura", "boleta", "cliente", "material", "producto", "ruc", "serie", "numero", "nro"
@@ -356,28 +426,22 @@ def _pick_key_column(schema_cols: List[str], human_query: str) -> Optional[str]:
     def score(col: str) -> int:
         n = _norm_key_name(col)
         s = 0
-        # si la columna se menciona en query, sube
         if n and n in qn:
             s += 5
         for kw in preferred_keywords:
             if kw in n:
                 s += 3
-        # penaliza columnas que suenan a métricas
         if any(x in n for x in ["monto", "importe", "total", "cantidad", "valor", "saldo"]):
             s -= 2
         return s
 
     ranked = sorted(schema_cols, key=score, reverse=True)
     best = ranked[0] if ranked else None
-    # requiere mínimo puntaje para evitar elegir cualquier cosa
     if best and score(best) >= 2:
         return best
     return ranked[0] if ranked else None
 
 def _sql_has_column_in_select(sql: str, col: str) -> bool:
-    """
-    Verifica presencia del nombre/alias en el SELECT list (no en WHERE).
-    """
     if not sql or not col:
         return False
     sel = _extract_select_clause(sql)
@@ -386,11 +450,11 @@ def _sql_has_column_in_select(sql: str, col: str) -> bool:
 
     col_esc = re.escape(col)
     patterns = [
-        rf'"\s*{col_esc}\s*"',                      # "Pendiente"
-        rf'\.\s*"\s*{col_esc}\s*"',                 # public."T"."Pendiente"
-        rf'\bas\s+"{col_esc}"\b',                   # ... AS "Pendiente"
-        rf'\bNUMERIC_CLEAN\s*\(\s*[^)]*"{col_esc}"',# NUMERIC_CLEAN(... "Pendiente"
-        rf'\bDATE_PARSE\s*\(\s*[^)]*"{col_esc}"',   # DATE_PARSE("Fecha")
+        rf'"\s*{col_esc}\s*"',
+        rf'\.\s*"\s*{col_esc}\s*"',
+        rf'\bas\s+"{col_esc}"\b',
+        rf'\bNUMERIC_CLEAN\s*\(\s*[^)]*"{col_esc}"',
+        rf'\bDATE_PARSE\s*\(\s*[^)]*"{col_esc}"',
     ]
     return any(re.search(p, sel, flags=re.IGNORECASE | re.DOTALL) for p in patterns)
 
@@ -399,9 +463,6 @@ def _looks_like_distinct_id_only(sql: str) -> bool:
     return ("select distinct" in s) and ("sum(" not in s) and ("group by" not in s)
 
 def _augment_query_for_required_select(human_query: str, key_col: Optional[str], metric_cols: List[str]) -> str:
-    """
-    Instrucción general para forzar que el SELECT traiga las métricas usadas.
-    """
     parts = [human_query.strip(), "| OBLIGATORIO: el SELECT debe incluir:"]
     if key_col:
         parts.append(f'"{key_col}"')
@@ -413,53 +474,7 @@ def _augment_query_for_required_select(human_query: str, key_col: Optional[str],
     parts.append("Devuelve SOLO JSON.")
     return " ".join(parts)
 
-def _build_direct_sql_compare(
-    table_fqn: str,
-    key_col: Optional[str],
-    left_col: str,
-    right_col: str,
-    op: str,
-    limit: int,
-) -> str:
-    """
-    Fallback determinístico para comparaciones tipo A > B, A < B, etc.
-    """
-    # alias estables (pero “generales”)
-    left_alias = left_col
-    right_alias = right_col
-
-    select_cols = []
-    if key_col:
-        select_cols.append(f'"{key_col}" AS "{key_col}"')
-    select_cols.append(f'NUMERIC_CLEAN("{left_col}") AS "{left_alias}"')
-    select_cols.append(f'NUMERIC_CLEAN("{right_col}") AS "{right_alias}"')
-    select_cols.append(f'(NUMERIC_CLEAN("{left_col}") - NUMERIC_CLEAN("{right_col}")) AS "Diferencia"')
-
-    # order by diferencia coherente según operador
-    if op in [">", ">="]:
-        order = '"Diferencia" DESC'
-    elif op in ["<", "<="]:
-        order = '"Diferencia" ASC'
-    else:
-        order = 'ABS("Diferencia") DESC'
-
-    return f"""
-SELECT
-  {", ".join(select_cols)}
-FROM {table_fqn}
-WHERE
-  COALESCE(TRIM("{left_col}"), '') <> ''
-  AND COALESCE(TRIM("{right_col}"), '') <> ''
-  AND NUMERIC_CLEAN("{left_col}") {op} NUMERIC_CLEAN("{right_col}")
-ORDER BY {order}
-LIMIT {int(limit)}
-""".strip()
-
 def _infer_compare_operator(human_query: str) -> str:
-    """
-    Heurística: por defecto si dice “supera/mayor” => '>'
-                si dice “menor/inferior” => '<'
-    """
     qn = _norm_key_name(human_query)
     if ">=" in qn:
         return ">="
@@ -471,13 +486,9 @@ def _infer_compare_operator(human_query: str) -> str:
         return "<"
     if any(x in qn for x in ["menor", "inferior", "less", "lower", "menos que"]):
         return "<"
-    # default: supera/mayor/excede
     return ">"
 
 def _drop_total_like_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Elimina filas con claves textuales nulas/vacías o tipo TOTAL/TOTALES.
-    """
     if not rows:
         return rows
 
@@ -612,7 +623,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             max_columns=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
         )
 
-        # allowed_fqn usando fq_name si existe
         allowed_fqn: List[str] = []
         for t in schema_json.get("tables", []) or []:
             fq = t.get("fq_name")
@@ -625,13 +635,11 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         default_limit = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
         max_limit = getattr(settings, "MAX_ROWS_HARD", 1000)
 
-        # 2) Preparar heurísticas “generalistas”
+        # 2) Heurísticas
         schema_cols = _schema_columns_for_tables(schema_json, payload.tables)
         mentioned_cols = _find_mentioned_columns(payload.human_query, schema_cols)
         compare_intent = _has_comparison_intent(payload.human_query) and (len(mentioned_cols) >= 2)
-        list_intent = _has_list_intent(payload.human_query)
 
-        # Elegir tabla target (primera permitida, o la primera que coincide con payload.tables)
         table_fqn = allowed_fqn[0] if allowed_fqn else None
         if payload.tables:
             wanted = {_norm_key_name(x) for x in payload.tables if x}
@@ -642,14 +650,12 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         if not table_fqn:
             raise HTTPException(status_code=500, detail="No se pudo determinar una tabla objetivo desde el esquema.")
 
-        # Para comparación: define left/right (dos primeras más específicas)
         op = _infer_compare_operator(payload.human_query)
         key_col = _pick_key_column(schema_cols, payload.human_query)
-
         left_col = mentioned_cols[0] if len(mentioned_cols) >= 1 else None
         right_col = mentioned_cols[1] if len(mentioned_cols) >= 2 else None
 
-        # 3) Obtener SQL (override → LLM)
+        # 3) SQL
         if payload.sql_query_override:
             sql_query = payload.sql_query_override
             result_dict = {"sql_query": sql_query, "original_query": payload.human_query}
@@ -679,7 +685,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             if not sql_query:
                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
 
-            # 3.1) Auto-retry general: si es consulta de comparación/listado, exigir que métricas estén en SELECT
             if compare_intent and left_col and right_col:
                 if (_looks_like_distinct_id_only(sql_query)
                     or (not _sql_has_column_in_select(sql_query, left_col))
@@ -690,7 +695,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                         metric_cols=[left_col, right_col],
                     )
                     logger.debug("[/human_query] retry forced_query=%s", forced_query)
-
                     sql_json2 = await llm.human_query_to_sql(
                         forced_query,
                         schema_json=schema_json,
@@ -698,7 +702,6 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                         default_limit=default_limit,
                         model=None,
                     )
-                    logger.debug("[/human_query] retry raw JSON=%s", (sql_json2[:700] if sql_json2 else None))
                     if sql_json2:
                         try:
                             parsed2 = json.loads(sql_json2)
@@ -709,32 +712,51 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
                         except Exception:
                             pass
 
-        # 4) Higiene + macros + EXPLAIN + qualify
+        # =======================
+        # 4) Pipeline CORREGIDO
+        # =======================
+
+        # 4.1 limpieza base
         sql_query = database.clean_sql(sql_query)
-        sql_query = database.expand_macros(sql_query)
         sql_query = database.sanitize_explain(sql_query)
         sql_query = database.qualify_tables(sql_query, allowed_fqn)
 
-        # 5) Validación de seguridad ANTES de ejecutar
+        # 4.2 IMPORTANTÍSIMO: antes de expand_macros, arregla NUMERIC_CLEAN sobre no-text (preventivo)
+        sql_query = _sql_rewrite_numeric_clean_for_nontext(
+            sql_query, schema_json=schema_json, dialect=dialect, requested_tables=payload.tables
+        )
+
+        # 4.3 recién aquí expandimos macros (puede introducir TRIM/regex)
+        sql_query = database.expand_macros(sql_query)
+
+        # 4.4 ahora sí: reescribe TRIM(bigint) => TRIM(CAST(bigint AS TEXT))
+        sql_query = _sql_cast_trim_for_nontext(
+            sql_query, schema_json=schema_json, dialect=dialect, requested_tables=payload.tables
+        )
+
+        # 5) Validación de seguridad
         if not database.is_safe_select(sql_query):
             raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
 
         if not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
-            # Si era comparación y podemos resolver directo, hacemos fallback determinístico
             if compare_intent and left_col and right_col:
-                sql_query = _build_direct_sql_compare(
-                    table_fqn=table_fqn,
-                    key_col=key_col,
-                    left_col=left_col,
-                    right_col=right_col,
-                    op=op,
-                    limit=default_limit,
-                )
+                # fallback determinístico si se sale del schema
+                sql_query = f"""
+SELECT
+  {f'"{key_col}" AS "{key_col}",' if key_col else ''}
+  CAST("{left_col}" AS numeric) AS "{left_col}",
+  CAST("{right_col}" AS numeric) AS "{right_col}",
+  (CAST("{left_col}" AS numeric) - CAST("{right_col}" AS numeric)) AS "Diferencia"
+FROM {table_fqn}
+WHERE "{left_col}" IS NOT NULL AND "{right_col}" IS NOT NULL
+  AND CAST("{left_col}" AS numeric) {op} CAST("{right_col}" AS numeric)
+ORDER BY "Diferencia" DESC
+LIMIT {int(default_limit)}
+""".strip()
+
                 sql_query = database.clean_sql(sql_query)
-                sql_query = database.expand_macros(sql_query)
                 sql_query = database.sanitize_explain(sql_query)
                 sql_query = database.qualify_tables(sql_query, allowed_fqn)
-
                 if not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
                     raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
             else:
@@ -744,58 +766,18 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         if not payload.execute:
             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
 
-        # 6) Ejecutar SQL real
-        try:
-            rows_raw = await database.query(
-                sql_query,
-                allowed_fqn=allowed_fqn,
-                default_limit=default_limit,
-                max_limit=max_limit,
-            )
-        except Exception as ex:
-            msg = str(ex) or ""
-            if "tablas no permitidas" in msg.lower():
-                raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
-            raise
+        # 6) Ejecutar
+        rows_raw = await database.query(
+            sql_query,
+            allowed_fqn=allowed_fqn,
+            default_limit=default_limit,
+            max_limit=max_limit,
+        )
 
-        # 6.1) Post-check general: si era comparación, asegúrate que en filas vienen las 2 métricas
-        if compare_intent and left_col and right_col:
-            def _rows_have_key(rows: List[Dict[str, Any]], colname: str) -> bool:
-                if not rows or not colname:
-                    return False
-                return any(colname in r for r in rows[:5])
-
-            left_ok = _rows_have_key(rows_raw, left_col)
-            right_ok = _rows_have_key(rows_raw, right_col)
-
-            # Si el LLM filtró usando WHERE pero no seleccionó las métricas, re-ejecuta con fallback determinístico
-            if not (left_ok and right_ok):
-                logger.warning("[/human_query] Post-check: faltan métricas comparadas en rows. Re-ejecutando con fallback determinístico.")
-                sql_fallback = _build_direct_sql_compare(
-                    table_fqn=table_fqn,
-                    key_col=key_col,
-                    left_col=left_col,
-                    right_col=right_col,
-                    op=op,
-                    limit=default_limit,
-                )
-                sql_fallback = database.clean_sql(sql_fallback)
-                sql_fallback = database.expand_macros(sql_fallback)
-                sql_fallback = database.sanitize_explain(sql_fallback)
-                sql_fallback = database.qualify_tables(sql_fallback, allowed_fqn)
-
-                rows_raw = await database.query(
-                    sql_fallback,
-                    allowed_fqn=allowed_fqn,
-                    default_limit=default_limit,
-                    max_limit=max_limit,
-                )
-                sql_query = sql_fallback
-
-        # 6.2) Limpieza de filas TOTAL / vacías
+        # 6.2 limpiar TOTALS
         rows_raw = _drop_total_like_rows(rows_raw)
 
-        # 7) Normalización post-DB
+        # 7) Normalizar
         implied_cols_env = [s.strip() for s in (env("IMPLIED_MILLIS_COLUMNS", default="") or "").split(",") if s.strip()]
         implied_cols = payload.implied_millis_cols if payload.implied_millis_cols is not None else implied_cols_env
 

@@ -1,3 +1,4 @@
+# src/providers/gemini_client.py
 from typing import Any, List, Dict, Optional, Tuple
 from decouple import config as env
 import json
@@ -275,6 +276,13 @@ class GeminiProvider:
     - Maneja 404/429 con fallback/espera.
     - human_query_to_sql: salida JSON robusta + repair.
     - build_answer devuelve TEXTO.
+
+    Cambios clave para robustez:
+    - Instrucciones de tipos: NO TRIM/NUMERIC_CLEAN sobre columnas no-text (BIGINT/INT/NUMERIC/DATE).
+    - Policy de filtros por tipo: TEXT -> COALESCE(TRIM(col),'') <> ''; NO-TEXT -> col IS NOT NULL.
+    - Post-proceso “guard rails” para reemplazar TRIM("col_no_text") por TRIM(CAST("col_no_text" AS TEXT)) en Postgres
+      (solo si el LLM lo hace mal).
+    - Opcional: “hard fail” si detecta NUMERIC_CLEAN aplicado sobre no-text (configurable).
     """
 
     def __init__(self) -> None:
@@ -375,7 +383,7 @@ class GeminiProvider:
 
         alias_candidates = [
             "Total", "Total Despachado", "Total Pendiente", "Despachado", "Pendiente",
-            "Monto", "Cantidad", "Importe", "Suma", "Sum"
+            "Monto", "Cantidad", "Importe", "Suma", "Sum", "Diferencia"
         ]
         for a in alias_candidates:
             if re.search(rf'AS\s+"{re.escape(a)}"\b', sql, flags=re.IGNORECASE):
@@ -395,22 +403,17 @@ class GeminiProvider:
         """
         Postgres: date1 - date2 (DATE - DATE) ya devuelve INTEGER (días).
         Evitar DATE_PART('day', date1 - date2).
-
-        Reemplaza:
-          DATE_PART('day', (<expr1> - <expr2>))  -> (<expr1> - <expr2>)
         """
         s = (sql or "")
         if not s.strip():
             return s
 
-        # caso: DATE_PART('day', (A - B))
         p = re.compile(
             r"DATE_PART\s*\(\s*'day'\s*,\s*\(\s*(?P<a>.+?)\s*-\s*(?P<b>.+?)\s*\)\s*\)",
             re.IGNORECASE | re.DOTALL
         )
         s = p.sub(lambda m: f"(({m.group('a').strip()}) - ({m.group('b').strip()}))", s)
 
-        # caso: DATE_PART('day', A - B) sin paréntesis exteriores
         p2 = re.compile(
             r"DATE_PART\s*\(\s*'day'\s*,\s*(?P<a>.+?)\s*-\s*(?P<b>.+?)\s*\)",
             re.IGNORECASE | re.DOTALL
@@ -418,6 +421,110 @@ class GeminiProvider:
         s = p2.sub(lambda m: f"(({m.group('a').strip()}) - ({m.group('b').strip()}))", s)
 
         return s
+
+    # -------------------------- Schema helpers (tipos) -------------------------
+
+    def _schema_type_map(self, schema_json: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Map: "Column Name" -> "TYPE"
+        Nota: si hay columnas repetidas en varias tablas, esto toma la primera ocurrencia;
+        para tu caso (1 tabla) está perfecto.
+        """
+        mp: Dict[str, str] = {}
+        for t in (schema_json.get("tables", []) or []):
+            for c in (t.get("columns", []) or []):
+                nm = c.get("name")
+                tp = (c.get("type") or "")
+                if nm and nm not in mp:
+                    mp[nm] = tp
+        return mp
+
+    def _is_text_type(self, type_str: str) -> bool:
+        t = (type_str or "").lower()
+        return any(x in t for x in ["char", "text", "varchar", "string", "clob"])
+
+    def _non_text_columns(self, schema_json: Dict[str, Any]) -> List[str]:
+        mp = self._schema_type_map(schema_json)
+        out = []
+        for nm, tp in mp.items():
+            if nm and (not self._is_text_type(tp)):
+                out.append(nm)
+        return out
+
+    def _text_columns(self, schema_json: Dict[str, Any]) -> List[str]:
+        mp = self._schema_type_map(schema_json)
+        out = []
+        for nm, tp in mp.items():
+            if nm and self._is_text_type(tp):
+                out.append(nm)
+        return out
+
+    # -------------------------- Guard rails SQL (post) -------------------------
+
+    def _guard_trim_nontext(self, sql: str, schema_json: Dict[str, Any], dialect: str) -> str:
+        """
+        Si el LLM mete TRIM() sobre columnas no-text (BIGINT, etc),
+        reescribimos para evitar errores (p.ej. Postgres btrim(bigint)).
+
+        - Postgres: TRIM(CAST(col AS TEXT))
+        - Otros: TRIM(CAST(col AS VARCHAR))
+        """
+        s = (sql or "")
+        if not s.strip():
+            return s
+
+        non_text = self._non_text_columns(schema_json)
+        if not non_text:
+            return s
+
+        d = (dialect or "").lower()
+        cast_type = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
+        if d in ("mssql", "sqlserver"):
+            cast_type = "NVARCHAR(4000)"
+
+        for col in sorted(non_text, key=len, reverse=True):
+            col_q = re.escape(col)
+
+            # TRIM("Col")
+            p1 = re.compile(rf"\bTRIM\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
+            s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {cast_type}))', s)
+
+            # TRIM(<qualifiers>."Col")
+            p2 = re.compile(
+                rf"\bTRIM\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
+                re.IGNORECASE
+            )
+            s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {cast_type}))', s)
+
+            # COALESCE(TRIM("Col"), '') también lo cubre por el TRIM interno
+
+        return s
+
+    def _guard_numeric_clean_nontext(self, sql: str, schema_json: Dict[str, Any]) -> None:
+        """
+        Opcional: falla temprano si el modelo usa NUMERIC_CLEAN sobre columnas no-text.
+        Activación: env(SQL_FAIL_ON_NUMERIC_CLEAN_NONTEXT)=true
+        """
+        strict = env("SQL_FAIL_ON_NUMERIC_CLEAN_NONTEXT", default=False, cast=bool)
+        if not strict:
+            return
+
+        s = (sql or "")
+        if not s.strip():
+            return
+
+        non_text = self._non_text_columns(schema_json)
+        if not non_text:
+            return
+
+        bad_cols = []
+        for col in non_text:
+            col_q = re.escape(col)
+            if re.search(rf"\bNUMERIC_CLEAN\s*\(\s*\"{col_q}\"\s*\)", s, flags=re.IGNORECASE):
+                bad_cols.append(col)
+
+        if bad_cols:
+            raise RuntimeError(f"SQL inválida: NUMERIC_CLEAN aplicado sobre columnas no-text: {bad_cols}")
 
     # -------------------------- Validación de JSON SQL ------------------------
 
@@ -463,7 +570,7 @@ class GeminiProvider:
             if sql:
                 return json.dumps({"sql_query": sql, "original_query": ""}, ensure_ascii=False)
 
-        if re.search(r"^\s*(with\b|select\b)", t, re.IGNORECASE):
+        if re.search(r"^\s*(with\b|select\b|explain\b)", t, re.IGNORECASE):
             return json.dumps({"sql_query": t, "original_query": ""}, ensure_ascii=False)
 
         raise RuntimeError(f"Gemini devolvió un formato inesperado: {t[:400]}")
@@ -490,6 +597,10 @@ class GeminiProvider:
         ]
         fq_names = [t.get("fq_name") for t in schema_json.get("tables", []) if t.get("fq_name")]
 
+        # info de tipos para el prompt (clave para evitar TRIM(bigint))
+        non_text_cols = self._non_text_columns(schema_json)
+        text_cols = self._text_columns(schema_json)
+
         system_instruction = fr"""
 You are a careful SQL generator for {dialect.upper()}.
 
@@ -507,23 +618,37 @@ IMPORTANT:
 - Do NOT add UNION, ROLLUP, CUBE, GROUPING SETS, or any total/overall rows.
 - Do NOT return “total” rows (no summary rows); return only the per-group rows requested.
 
+FIELD & TYPE RULES (VERY IMPORTANT):
+- The schema provides column types.
+- DO NOT use TRIM(), COALESCE(TRIM(...),''), regex (~), or string comparisons on NON-TEXT columns (e.g., BIGINT/INT/NUMERIC/DATE/TIMESTAMP).
+- For NON-TEXT null checks use: "Col" IS NOT NULL.
+- For TEXT blank checks use: COALESCE(TRIM("Col"), '') <> ''.
+
+NUMERIC_CLEAN usage:
+- Use NUMERIC_CLEAN("Col") ONLY for TEXT columns that represent numbers (amounts/quantities).
+- NEVER apply NUMERIC_CLEAN to identifiers/keys (e.g., orders, ids, codes) if those columns are NON-TEXT.
+- If a metric column is already numeric in schema, use it directly or CAST as needed; do NOT wrap it with NUMERIC_CLEAN.
+
+When grouping by a TEXT key, exclude totals/footer rows and blank keys:
+  WHERE COALESCE(TRIM("Key"), '') <> ''
+    AND "Key" !~* '^\s*total'
+    AND "Key" !~* '^\s*gran\s*total'
+    AND "Key" !~* '^\s*totales'
+
+If grouping by a NON-TEXT key (like BIGINT order id):
+  WHERE "Key" IS NOT NULL
+
 Field coverage (VERY IMPORTANT):
 - If the user asks for specific fields (e.g., “material”, “pedido venta”, “despachado”, “pendiente”),
   you MUST include those corresponding columns in the SELECT list.
 - If the user asks for totals by some key:
-  SELECT <key>, SUM(NUMERIC_CLEAN(<metric>)) AS "<alias>"
+  SELECT <key>, SUM(<metric>) AS "<alias>"
   GROUP BY <key>
 - If the user asks for “despachado y pendiente por pedido/material”, include BOTH metrics in SELECT:
   SUM(NUMERIC_CLEAN("Despachado")) AS "Total Despachado",
   SUM(NUMERIC_CLEAN("Pendiente"))  AS "Total Pendiente"
   and group by the requested keys.
 - Avoid queries that return only identifiers (e.g., SELECT DISTINCT "Pedido Venta") when the user asked totals/metrics.
-
-When grouping by a textual key, exclude totals/footer rows and blank keys:
-  WHERE COALESCE(TRIM("Key"), '') <> ''
-    AND "Key" !~* '^\s*total'
-    AND "Key" !~* '^\s*gran\s*total'
-    AND "Key" !~* '^\s*totales'
 
 POSTGRES DATE DIFF RULE (VERY IMPORTANT):
 - DATE_PARSE(...) returns a DATE.
@@ -542,6 +667,10 @@ Return ONLY valid JSON:
 <allowed_fqn>
 {json.dumps(fq_names, ensure_ascii=False)}
 </allowed_fqn>
+<type_hints>
+text_columns={json.dumps(text_cols, ensure_ascii=False)}
+non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
+</type_hints>
 """.strip()
 
         primary_full = self._resolve_model(model)
@@ -635,13 +764,17 @@ Return ONLY valid JSON:
             if (dialect or "").lower() in ("postgresql", "postgres", "postgre"):
                 sql2 = self._fix_postgres_datepart_day(sql2)
             sql2 = self._auto_order_by(sql2, human_query)
+
+            # guard rails
+            sql2 = self._guard_trim_nontext(sql2, schema_json=schema_json, dialect=dialect)
+            self._guard_numeric_clean_nontext(sql2, schema_json=schema_json)
+
             return sql2
 
         if winner:
             try:
                 obj = json.loads(self._ensure_sql_json(winner))
             except Exception:
-                # repair: pide SOLO JSON válido
                 repair_prompt = (
                     "Devuelve EXCLUSIVAMENTE un JSON válido con el formato:\n"
                     '{ "sql_query": "...", "original_query": "..." }\n'
