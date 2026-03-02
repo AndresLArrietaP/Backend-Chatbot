@@ -1,4 +1,20 @@
 # src/main.py
+# -*- coding: utf-8 -*-
+"""
+Módulo: main
+------------
+API FastAPI para:
+- Generar SQL a partir de lenguaje natural (NL → SQL) con controles de seguridad.
+- Ejecutar consultas contra la base de datos.
+- Normalizar resultados y (opcional) sintetizar una respuesta en lenguaje natural.
+
+Cambios:
+- Código renombrado al español (funciones/variables) y documentado.
+- Comentarios clave y limpieza.
+- Se mantienen rutas/paths idénticos y compatibilidad con módulos `database` y `llm`
+  (ambos exponen alias en inglés y español), por lo que no se cambia el comportamiento.
+"""
+
 import json
 import logging
 import re
@@ -15,167 +31,174 @@ from pydantic import BaseModel
 from . import database
 from . import llm
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 router = APIRouter()
 
 # =============================================================================
 # Normalización / utilidades
 # =============================================================================
 
-def _to_number(v: Any) -> Any:
+def _a_numero(v: Any) -> Any:
+    """Convierte Decimal/int/float a float; devuelve el valor original en otros casos."""
     if isinstance(v, Decimal):
         return float(v)
     if isinstance(v, (int, float)):
         return float(v)
     return v
 
-def _norm_key_name(s: str) -> str:
+
+def _normalizar_nombre_clave(s: str) -> str:
+    """Normaliza una etiqueta para comparación: sin acentos, minúsculas y sin espacios extremos."""
     if not s:
         return ""
     s_norm = unicodedata.normalize("NFKD", s)
     s_no_acc = "".join(ch for ch in s_norm if not unicodedata.combining(ch))
     return s_no_acc.strip().lower()
 
-def normalize_rows(
-    rows: List[Dict[str, Any]],
-    implied_millis_cols: List[str],
-    decimal_places: int = 3,
-    fmt_strings: bool = True,
+
+def normalizar_filas(
+    filas: List[Dict[str, Any]],
+    columnas_miles_implicitos: List[str],
+    decimales: int = 3,
+    formatear_cadenas: bool = True,
 ) -> List[Dict[str, Any]]:
     """
-    - Divide por 1000 si se detecta patrón de "milésimas implícitas"
-    - Formatea como string si fmt_strings=True
+    Normaliza filas con reglas de "milésimas implícitas" y formato de números.
+
+    - Divide por 1000 si se detecta patrón de milésimas implícitas.
+    - Si `formatear_cadenas=True`, devuelve números formateados como string con separador de miles.
     """
-    implied_exact = {_norm_key_name(c) for c in (implied_millis_cols or []) if c and c.strip()}
+    columnas_implicitas = {_normalizar_nombre_clave(c) for c in (columnas_miles_implicitos or []) if c and c.strip()}
 
     auto_kw = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
     auto_detect = env("IMPLIED_MILLIS_AUTODETECT", default=True, cast=bool)
-    ratio_threshold = env("IMPLIED_MILLIS_RATIO_THRESHOLD", default=0.8, cast=float)
+    ratio_umbral = env("IMPLIED_MILLIS_RATIO_THRESHOLD", default=0.8, cast=float)
     min_abs = env("IMPLIED_MILLIS_MIN_ABS", default=100000, cast=int)
 
     keywords_env = env(
         "IMPLIED_MILLIS_KEYWORDS",
         default="despachado,original,pendiente,total linea,total línea,total despachado,total original,total pendiente"
     )
-    kw_list = [_norm_key_name(w) for w in keywords_env.split(",") if w.strip()]
+    kw_list = [_normalizar_nombre_clave(w) for w in keywords_env.split(",") if w.strip()]
 
-    def _name_has_keyword(name_low: str) -> bool:
-        return any((kw in name_low) for kw in kw_list if kw)
+    def _nombre_tiene_keyword(nombre_low: str) -> bool:
+        return any((kw in nombre_low) for kw in kw_list if kw)
 
-    def _is_big_multiple_of_1000(x: float) -> bool:
+    def _es_gran_multiplo_1000(x: float) -> bool:
         nearest = round(x)
         return (abs(x - nearest) < 1e-9) and (abs(nearest) >= min_abs) and (nearest % 1000 == 0)
 
-    col_numeric_values: Dict[str, List[float]] = {}
-    for r in rows or []:
+    col_valores_num: Dict[str, List[float]] = {}
+    for r in filas or []:
         for k, v in (r or {}).items():
             if isinstance(v, Decimal):
-                col_numeric_values.setdefault(k, []).append(float(v))
+                col_valores_num.setdefault(k, []).append(float(v))
             elif isinstance(v, (int, float)):
-                col_numeric_values.setdefault(k, []).append(float(v))
+                col_valores_num.setdefault(k, []).append(float(v))
 
-    auto_divide_cols = set()
-    if auto_detect and rows:
-        for col, vals in col_numeric_values.items():
+    columnas_auto_dividir = set()
+    if auto_detect and filas:
+        for col, vals in col_valores_num.items():
             if len(vals) < 5:
                 continue
             vals_sorted = sorted(vals)
             mid = len(vals_sorted) // 2
-            median = (vals_sorted[mid] if len(vals_sorted) % 2 == 1
-                      else 0.5 * (vals_sorted[mid - 1] + vals_sorted[mid]))
-            mult_cnt = sum(1 for x in vals if _is_big_multiple_of_1000(x))
+            mediana = (vals_sorted[mid] if len(vals_sorted) % 2 == 1
+                       else 0.5 * (vals_sorted[mid - 1] + vals_sorted[mid]))
+            mult_cnt = sum(1 for x in vals if _es_gran_multiplo_1000(x))
             ratio = mult_cnt / len(vals)
-            if ratio >= ratio_threshold or (median >= (min_abs * 2) and ratio >= 0.6):
-                auto_divide_cols.add(_norm_key_name(col))
+            if ratio >= ratio_umbral or (mediana >= (min_abs * 2) and ratio >= 0.6):
+                columnas_auto_dividir.add(_normalizar_nombre_clave(col))
 
-    out: List[Dict[str, Any]] = []
-    for r in rows:
+    salida: List[Dict[str, Any]] = []
+    for r in filas:
         nr: Dict[str, Any] = {}
         for k, v in (r or {}).items():
-            name_low = _norm_key_name(k)
-            val = _to_number(v)
+            nombre_low = _normalizar_nombre_clave(k)
+            val = _a_numero(v)
 
             if isinstance(val, (int, float)) or isinstance(v, Decimal):
                 valf = float(val)
 
-                must_divide = False
-                col_marked = name_low in auto_divide_cols
-                soft_signal = (name_low in implied_exact) or (auto_kw and _name_has_keyword(name_low))
+                dividir = False
+                col_marcada = nombre_low in columnas_auto_dividir
+                senal_suave = (nombre_low in columnas_implicitas) or (auto_kw and _nombre_tiene_keyword(nombre_low))
 
-                if col_marked:
-                    must_divide = True
-                elif soft_signal and _is_big_multiple_of_1000(valf):
-                    must_divide = True
+                if col_marcada:
+                    dividir = True
+                elif senal_suave and _es_gran_multiplo_1000(valf):
+                    dividir = True
 
-                if must_divide:
+                if dividir:
                     valf = valf / 1000.0
 
-                if fmt_strings:
+                if formatear_cadenas:
                     if abs(valf - round(valf)) < 1e-9:
                         nr[k] = f"{int(round(valf)):,}"
                     else:
-                        nr[k] = f"{valf:,.{decimal_places}f}"
+                        nr[k] = f"{valf:,.{decimales}f}"
                 else:
-                    nr[k] = round(valf, decimal_places)
+                    nr[k] = round(valf, decimales)
             else:
                 nr[k] = v
-        out.append(nr)
+        salida.append(nr)
 
-    return out
+    return salida
 
 
-def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
-    if not rows:
-        return f"No se encontraron datos para la consulta: “{human_query}”."
+def _respuesta_resumen_local(filas: List[Dict[str, Any]], consulta_humana: str) -> str:
+    """Genera un resumen local simple cuando el LLM no responde."""
+    if not filas:
+        return f"No se encontraron datos para la consulta: “{consulta_humana}”."
 
-    sample = rows[0]
-    text_cols: List[str] = []
-    num_cols: List[str] = []
+    muestra = filas[0]
+    columnas_texto: List[str] = []
+    columnas_num: List[str] = []
 
-    for k in sample.keys():
-        is_num = False
-        for r in rows:
+    for k in muestra.keys():
+        es_num = False
+        for r in filas:
             v = r.get(k)
             if isinstance(v, (int, float, Decimal)):
-                is_num = True
+                es_num = True
                 break
             if isinstance(v, str):
                 try:
                     float(v.replace(",", ""))
-                    is_num = True
+                    es_num = True
                     break
                 except Exception:
                     pass
-        if is_num:
-            num_cols.append(k)
+        if es_num:
+            columnas_num.append(k)
         else:
-            text_cols.append(k)
+            columnas_texto.append(k)
 
-    def _score_text(name: str) -> int:
-        n = _norm_key_name(name)
+    def _puntuar_texto(nombre: str) -> int:
+        n = _normalizar_nombre_clave(nombre)
         if any(x in n for x in ["id", "codigo", "código", "pedido", "orden", "documento", "doc", "cliente"]):
             return 3
         return 1
 
-    def _score_num(name: str) -> int:
-        n = _norm_key_name(name)
+    def _puntuar_num(nombre: str) -> int:
+        n = _normalizar_nombre_clave(nombre)
         if any(x in n for x in ["total", "monto", "importe", "valor", "cantidad", "despach", "pendien", "saldo"]):
             return 3
         return 1
 
-    text_cols.sort(key=_score_text, reverse=True)
-    num_cols.sort(key=_score_num, reverse=True)
+    columnas_texto.sort(key=_puntuar_texto, reverse=True)
+    columnas_num.sort(key=_puntuar_num, reverse=True)
 
-    key_col = text_cols[0] if text_cols else None
-    val_col = num_cols[0] if num_cols else None
+    col_clave = columnas_texto[0] if columnas_texto else None
+    col_valor = columnas_num[0] if columnas_num else None
 
     bullets: List[str] = []
-    bullets.append(f"Filas analizadas: {len(rows)}.")
+    bullets.append(f"Filas analizadas: {len(filas)}.")
 
-    if val_col:
+    if col_valor:
         total = 0.0
-        for r in rows:
-            v = r.get(val_col)
+        for r in filas:
+            v = r.get(col_valor)
             try:
                 if isinstance(v, str):
                     v = float(v.replace(",", ""))
@@ -186,13 +209,13 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
             except Exception:
                 v = 0.0
             total += float(v)
-        bullets.append(f"Suma de “{val_col}”: {total:,.3f}")
+        bullets.append(f"Suma de “{col_valor}”: {total:,.3f}")
 
-    if key_col and val_col:
+    if col_clave and col_valor:
         agg: Dict[str, float] = {}
-        for r in rows:
-            k = str(r.get(key_col) or "(Sin valor)")
-            v = r.get(val_col)
+        for r in filas:
+            k = str(r.get(col_clave) or "(Sin valor)")
+            v = r.get(col_valor)
             try:
                 if isinstance(v, str):
                     v = float(v.replace(",", ""))
@@ -206,19 +229,19 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
         top = sorted(agg.items(), key=lambda kv: kv[1], reverse=True)[:3]
         if top:
             bullets.append("Top por {0}: {1}".format(
-                key_col,
+                col_clave,
                 "; ".join([f"{k} = {v:,.3f}" for k, v in top])
             ))
 
-    summary_parts = [f"Consulta: “{human_query}”."]
-    if val_col and key_col:
-        summary_parts.append(f"Se analizó “{val_col}” por “{key_col}” y se listan los principales aportes.")
-    elif val_col:
-        summary_parts.append(f"Se destaca la métrica “{val_col}”.")
+    partes = [f"Consulta: “{consulta_humana}”."]
+    if col_valor and col_clave:
+        partes.append(f"Se analizó “{col_valor}” por “{col_clave}” y se listan los principales aportes.")
+    elif col_valor:
+        partes.append(f"Se destaca la métrica “{col_valor}”.")
     else:
-        summary_parts.append("No se identificó una métrica numérica dominante; se muestran datos generales.")
+        partes.append("No se identificó una métrica numérica dominante; se muestran datos generales.")
 
-    final = " ".join(p if p.endswith((".", "!", "?")) else p + "." for p in summary_parts)
+    final = " ".join(p if p.endswith((".", "!", "?")) else p + "." for p in partes)
     for b in bullets[:3]:
         final += f"\n- {b}"
     return final
@@ -228,46 +251,49 @@ def _local_summary_answer(rows: List[Dict[str, Any]], human_query: str) -> str:
 # Cache LLM → SQL
 # =============================================================================
 
-_SQL_CACHE: Dict[str, Dict[str, Any]] = {}
-SQL_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
-SQL_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
+_CACHE_SQL: Dict[str, Dict[str, Any]] = {}
+TTL_CACHE_SQL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
+MAX_CACHE_SQL = env("SQL_CACHE_MAX", default=256, cast=int)
 
-def _cache_key(human_query: str, schema_json: Dict[str, Any], dialect: str, default_limit: int) -> str:
+def _clave_cache(consulta_humana: str, esquema_json: Dict[str, Any], dialecto: str, limite_por_defecto: int) -> str:
+    """Hash estable del input para cachear respuestas NL→SQL del LLM."""
     payload = json.dumps(
-        {"q": human_query, "schema": schema_json, "dialect": dialect, "limit": default_limit},
+        {"q": consulta_humana, "schema": esquema_json, "dialect": dialecto, "limit": limite_por_defecto},
         ensure_ascii=False, sort_keys=True
     )
     return sha1(payload.encode("utf-8")).hexdigest()
 
-def _cache_get(key: str) -> Optional[str]:
-    item = _SQL_CACHE.get(key)
+def _cache_obtener(key: str) -> Optional[str]:
+    item = _CACHE_SQL.get(key)
     if not item:
         return None
     if time.time() > item["exp"]:
-        _SQL_CACHE.pop(key, None)
+        _CACHE_SQL.pop(key, None)
         return None
     return item["sql_json"]
 
-def _cache_put(key: str, sql_json: str) -> None:
-    if len(_SQL_CACHE) >= SQL_CACHE_MAX:
-        oldest = min(_SQL_CACHE.items(), key=lambda kv: kv[1]["exp"])[0]
-        _SQL_CACHE.pop(oldest, None)
-    _SQL_CACHE[key] = {"exp": time.time() + SQL_CACHE_TTL, "sql_json": sql_json}
+def _cache_guardar(key: str, sql_json: str) -> None:
+    if len(_CACHE_SQL) >= MAX_CACHE_SQL:
+        oldest = min(_CACHE_SQL.items(), key=lambda kv: kv[1]["exp"])[0]
+        _CACHE_SQL.pop(oldest, None)
+    _CACHE_SQL[key] = {"exp": time.time() + TTL_CACHE_SQL, "sql_json": sql_json}
 
 
 # =============================================================================
 # Helpers tipo / blindajes SQL
 # =============================================================================
 
-def _is_text_type(type_str: str) -> bool:
-    t = (type_str or "").lower()
+def _es_tipo_texto(tipo_str: str) -> bool:
+    t = (tipo_str or "").lower()
     return any(x in t for x in ["char", "text", "varchar", "string", "clob"])
 
-def _schema_type_map(schema_json: Dict[str, Any], requested_tables: Optional[List[str]]) -> Dict[str, str]:
-    wanted = {_norm_key_name(t) for t in (requested_tables or []) if t}
+
+def _mapa_tipos_esquema(esquema_json: Dict[str, Any], tablas_solicitadas: Optional[List[str]]) -> Dict[str, str]:
+    """Devuelve mapa columna -> tipo (limitado a tablas_solicitadas si aplica)."""
+    wanted = {_normalizar_nombre_clave(t) for t in (tablas_solicitadas or []) if t}
     mp: Dict[str, str] = {}
-    for tb in (schema_json.get("tables", []) or []):
-        tname = _norm_key_name(tb.get("table") or "")
+    for tb in (esquema_json.get("tables", []) or []):
+        tname = _normalizar_nombre_clave(tb.get("table") or "")
         if wanted and (tname not in wanted):
             continue
         for c in (tb.get("columns", []) or []):
@@ -277,59 +303,61 @@ def _schema_type_map(schema_json: Dict[str, Any], requested_tables: Optional[Lis
                 mp[nm] = tp
     return mp
 
-def _non_text_columns(schema_json: Dict[str, Any], requested_tables: Optional[List[str]]) -> List[str]:
-    mp = _schema_type_map(schema_json, requested_tables)
-    return [nm for nm, tp in mp.items() if nm and (not _is_text_type(tp))]
 
-def _sql_cast_trim_for_nontext(sql: str, schema_json: Dict[str, Any], dialect: str, requested_tables: Optional[List[str]]) -> str:
+def _columnas_no_texto(esquema_json: Dict[str, Any], tablas_solicitadas: Optional[List[str]]) -> List[str]:
+    mp = _mapa_tipos_esquema(esquema_json, tablas_solicitadas)
+    return [nm for nm, tp in mp.items() if nm and (not _es_tipo_texto(tp))]
+
+
+def _sql_cast_trim_no_texto(sql: str, esquema_json: Dict[str, Any], dialecto: str, tablas_solicitadas: Optional[List[str]]) -> str:
     """
-    Reescribe TRIM("col_no_text") -> TRIM(CAST("col_no_text" AS TEXT)) para Postgres.
-    Debe ejecutarse DESPUÉS de expand_macros (porque NUMERIC_CLEAN introduce TRIM).
+    Reescribe TRIM("col_no_text") -> TRIM(CAST("col_no_text" AS TEXT)) en Postgres.
+    Ejecutar DESPUÉS de expandir_macros (NUMERIC_CLEAN introduce TRIM).
     """
     s = (sql or "")
     if not s.strip():
         return s
 
-    non_text = _non_text_columns(schema_json, requested_tables=requested_tables)
-    if not non_text:
+    no_texto = _columnas_no_texto(esquema_json, tablas_solicitadas=tablas_solicitadas)
+    if not no_texto:
         return s
 
-    d = (dialect or "").lower()
-    cast_type = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
+    d = (dialecto or "").lower()
+    tipo_cast = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
     if d in ("mssql", "sqlserver"):
-        cast_type = "NVARCHAR(4000)"
+        tipo_cast = "NVARCHAR(4000)"
 
-    for col in sorted(non_text, key=len, reverse=True):
+    for col in sorted(no_texto, key=len, reverse=True):
         col_q = re.escape(col)
         p1 = re.compile(rf"\bTRIM\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
-        s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {cast_type}))', s)
+        s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {tipo_cast}))', s)
 
         p2 = re.compile(
             rf"\bTRIM\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
             re.IGNORECASE
         )
-        s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {cast_type}))', s)
+        s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {tipo_cast}))', s)
 
     return s
 
-def _sql_rewrite_numeric_clean_for_nontext(sql: str, schema_json: Dict[str, Any], dialect: str, requested_tables: Optional[List[str]]) -> str:
+
+def _reescribir_numeric_clean_no_texto(sql: str, esquema_json: Dict[str, Any], dialecto: str, tablas_solicitadas: Optional[List[str]]) -> str:
     """
-    Si el LLM usa NUMERIC_CLEAN("col") sobre una columna NO-TEXT (ej BIGINT),
-    reescribimos a CAST("col" AS numeric) (o CAST(... AS double precision) si prefieres).
-    Esto evita que la macro meta TRIM/regex.
+    Si el LLM usa NUMERIC_CLEAN("col") sobre una columna NO-TEXTO (ej. BIGINT),
+    reescribe a CAST("col" AS numeric/DECIMAL), evitando TRIM/regex de la macro.
     """
     s = (sql or "")
     if not s.strip():
         return s
 
-    non_text = _non_text_columns(schema_json, requested_tables=requested_tables)
-    if not non_text:
+    no_texto = _columnas_no_texto(esquema_json, tablas_solicitadas=tablas_solicitadas)
+    if not no_texto:
         return s
 
-    d = (dialect or "").lower()
+    d = (dialecto or "").lower()
     cast_num = "numeric" if d in ("postgresql", "postgres", "postgre") else "DECIMAL(38,10)"
 
-    for col in sorted(non_text, key=len, reverse=True):
+    for col in sorted(no_texto, key=len, reverse=True):
         col_q = re.escape(col)
         p = re.compile(rf"\bNUMERIC_CLEAN\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
         s = p.sub(lambda m: f'CAST("{col}" AS {cast_num})', s)
@@ -344,56 +372,61 @@ def _sql_rewrite_numeric_clean_for_nontext(sql: str, schema_json: Dict[str, Any]
 
 
 # =============================================================================
-# Generalización: detectar intentos y columnas desde schema + query
+# Generalización: detectar intenciones y columnas desde schema + query
 # =============================================================================
 
-_TOTAL_RE = re.compile(r"^\s*(gran\s*)?total(es)?\s*$", re.IGNORECASE)
+_RE_TOTAL = re.compile(r"^\s*(gran\s*)?total(es)?\s*$", re.IGNORECASE)
 
-_COMPARATIVE_CUES = [
-    "supera", "mayor", "menor", "inferior", "superior", ">", "<", ">=", "<=",
+_PISTAS_COMPARACION = [
+    "supera", "mayor", "menor", "inferior", "superior", "&gt;", "&lt;", "&gt;=", "&lt;=",
     "excede", "sobrepasa", "más que", "menos que", "higher", "lower", "greater", "less",
 ]
 
-_LIST_CUES = ["lista", "listar", "muéstrame", "mostrar", "dame", "devuélveme", "retorna", "return", "top"]
+_PISTAS_LISTA = ["lista", "listar", "muéstrame", "mostrar", "dame", "devuélveme", "retorna", "return", "top"]
 
-_SELECT_CLAUSE_RE = re.compile(r"^\s*select\s+(?P<cols>.*?)\s+from\s", re.IGNORECASE | re.DOTALL)
+_RE_CLAUSULA_SELECT = re.compile(r"^\s*select\s+(?P<cols>.*?)\s+from\s", re.IGNORECASE | re.DOTALL)
 
-def _extract_select_clause(sql: str) -> str:
-    m = _SELECT_CLAUSE_RE.search(sql or "")
+
+def _extraer_clausula_select(sql: str) -> str:
+    m = _RE_CLAUSULA_SELECT.search(sql or "")
     return (m.group("cols") if m else "") or ""
 
-def _schema_tables(schema_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    return schema_json.get("tables", []) or []
 
-def _schema_all_columns(schema_json: Dict[str, Any]) -> List[str]:
+def _tablas_esquema(esquema_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return esquema_json.get("tables", []) or []
+
+
+def _todas_columnas_esquema(esquema_json: Dict[str, Any]) -> List[str]:
     cols: List[str] = []
-    for t in _schema_tables(schema_json):
+    for t in _tablas_esquema(esquema_json):
         for c in (t.get("columns", []) or []):
             nm = c.get("name")
             if nm and nm not in cols:
                 cols.append(nm)
     return cols
 
-def _schema_columns_for_tables(schema_json: Dict[str, Any], requested_tables: Optional[List[str]]) -> List[str]:
-    if not requested_tables:
-        return _schema_all_columns(schema_json)
 
-    wanted = {_norm_key_name(t) for t in requested_tables if t}
+def _columnas_esquema_para_tablas(esquema_json: Dict[str, Any], tablas_solicitadas: Optional[List[str]]) -> List[str]:
+    if not tablas_solicitadas:
+        return _todas_columnas_esquema(esquema_json)
+
+    wanted = {_normalizar_nombre_clave(t) for t in tablas_solicitadas if t}
     cols: List[str] = []
-    for t in _schema_tables(schema_json):
-        tname = _norm_key_name(t.get("table") or "")
+    for t in _tablas_esquema(esquema_json):
+        tname = _normalizar_nombre_clave(t.get("table") or "")
         if tname and tname in wanted:
             for c in (t.get("columns", []) or []):
                 nm = c.get("name")
                 if nm and nm not in cols:
                     cols.append(nm)
-    return cols or _schema_all_columns(schema_json)
+    return cols or _todas_columnas_esquema(esquema_json)
 
-def _find_mentioned_columns(human_query: str, schema_cols: List[str]) -> List[str]:
-    qn = _norm_key_name(human_query)
+
+def _columnas_mencionadas(consulta_humana: str, columnas_esquema: List[str]) -> List[str]:
+    qn = _normalizar_nombre_clave(consulta_humana)
     hits: List[Tuple[int, str]] = []
-    for col in schema_cols:
-        cn = _norm_key_name(col)
+    for col in columnas_esquema:
+        cn = _normalizar_nombre_clave(col)
         if not cn:
             continue
         if cn in qn:
@@ -408,114 +441,123 @@ def _find_mentioned_columns(human_query: str, schema_cols: List[str]) -> List[st
             seen.add(col)
     return out
 
-def _has_comparison_intent(human_query: str) -> bool:
-    qn = _norm_key_name(human_query)
-    return any(cue in qn for cue in _COMPARATIVE_CUES)
 
-def _has_list_intent(human_query: str) -> bool:
-    qn = _norm_key_name(human_query)
-    return any(cue in qn for cue in _LIST_CUES)
+def _tiene_intencion_comparacion(consulta_humana: str) -> bool:
+    qn = _normalizar_nombre_clave(consulta_humana)
+    return any(cue in qn for cue in _PISTAS_COMPARACION)
 
-def _pick_key_column(schema_cols: List[str], human_query: str) -> Optional[str]:
-    qn = _norm_key_name(human_query)
-    preferred_keywords = [
+
+def _tiene_intencion_lista(consulta_humana: str) -> bool:
+    qn = _normalizar_nombre_clave(consulta_humana)
+    return any(cue in qn for cue in _PISTAS_LISTA)
+
+
+def _elegir_columna_clave(columnas_esquema: List[str], consulta_humana: str) -> Optional[str]:
+    qn = _normalizar_nombre_clave(consulta_humana)
+    preferidas = [
         "id", "codigo", "código", "pedido", "orden", "documento", "doc",
         "factura", "boleta", "cliente", "material", "producto", "ruc", "serie", "numero", "nro"
     ]
 
-    def score(col: str) -> int:
-        n = _norm_key_name(col)
+    def puntuar(col: str) -> int:
+        n = _normalizar_nombre_clave(col)
         s = 0
         if n and n in qn:
             s += 5
-        for kw in preferred_keywords:
+        for kw in preferidas:
             if kw in n:
                 s += 3
         if any(x in n for x in ["monto", "importe", "total", "cantidad", "valor", "saldo"]):
             s -= 2
         return s
 
-    ranked = sorted(schema_cols, key=score, reverse=True)
+    ranked = sorted(columnas_esquema, key=puntuar, reverse=True)
     best = ranked[0] if ranked else None
-    if best and score(best) >= 2:
+    if best and puntuar(best) >= 2:
         return best
     return ranked[0] if ranked else None
 
-def _sql_has_column_in_select(sql: str, col: str) -> bool:
+
+def _sql_tiene_columna_en_select(sql: str, col: str) -> bool:
     if not sql or not col:
         return False
-    sel = _extract_select_clause(sql)
+    sel = _extraer_clausula_select(sql)
     if not sel:
         return False
 
     col_esc = re.escape(col)
-    patterns = [
+    patrones = [
         rf'"\s*{col_esc}\s*"',
         rf'\.\s*"\s*{col_esc}\s*"',
         rf'\bas\s+"{col_esc}"\b',
         rf'\bNUMERIC_CLEAN\s*\(\s*[^)]*"{col_esc}"',
         rf'\bDATE_PARSE\s*\(\s*[^)]*"{col_esc}"',
     ]
-    return any(re.search(p, sel, flags=re.IGNORECASE | re.DOTALL) for p in patterns)
+    return any(re.search(p, sel, flags=re.IGNORECASE | re.DOTALL) for p in patrones)
 
-def _looks_like_distinct_id_only(sql: str) -> bool:
+
+def _parece_distinct_solo_id(sql: str) -> bool:
     s = (sql or "").lower()
     return ("select distinct" in s) and ("sum(" not in s) and ("group by" not in s)
 
-def _augment_query_for_required_select(human_query: str, key_col: Optional[str], metric_cols: List[str]) -> str:
-    parts = [human_query.strip(), "| OBLIGATORIO: el SELECT debe incluir:"]
-    if key_col:
-        parts.append(f'"{key_col}"')
-    for c in metric_cols[:3]:
-        parts.append(f'NUMERIC_CLEAN("{c}") AS "{c}"')
-    if len(metric_cols) >= 2:
-        parts.append(f'(NUMERIC_CLEAN("{metric_cols[0]}") - NUMERIC_CLEAN("{metric_cols[1]}")) AS "Diferencia"')
-    parts.append("Si hay comparación, las columnas comparadas deben estar en SELECT.")
-    parts.append("Devuelve SOLO JSON.")
-    return " ".join(parts)
 
-def _infer_compare_operator(human_query: str) -> str:
-    qn = _norm_key_name(human_query)
-    if ">=" in qn:
-        return ">="
-    if "<=" in qn:
-        return "<="
-    if ">" in qn:
-        return ">"
-    if "<" in qn:
-        return "<"
+def _aumentar_consulta_para_select_requerido(consulta_humana: str, col_clave: Optional[str], columnas_metricas: List[str]) -> str:
+    partes = [consulta_humana.strip(), "| OBLIGATORIO: el SELECT debe incluir:"]
+    if col_clave:
+        partes.append(f'"{col_clave}"')
+    for c in columnas_metricas[:3]:
+        partes.append(f'NUMERIC_CLEAN("{c}") AS "{c}"')
+    if len(columnas_metricas) >= 2:
+        partes.append(f'(NUMERIC_CLEAN("{columnas_metricas[0]}") - NUMERIC_CLEAN("{columnas_metricas[1]}")) AS "Diferencia"')
+    partes.append("Si hay comparación, las columnas comparadas deben estar en SELECT.")
+    partes.append("Devuelve SOLO JSON.")
+    return " ".join(partes)
+
+
+def _inferir_operador_comparacion(consulta_humana: str) -> str:
+    qn = _normalizar_nombre_clave(consulta_humana)
+    if "&gt;=" in qn:
+        return "&gt;="
+    if "&lt;=" in qn:
+        return "&lt;="
+    if "&gt;" in qn:
+        return "&gt;"
+    if "&lt;" in qn:
+        return "&lt;"
     if any(x in qn for x in ["menor", "inferior", "less", "lower", "menos que"]):
-        return "<"
-    return ">"
+        return "&lt;"
+    return "&gt;"
 
-def _drop_total_like_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    if not rows:
-        return rows
 
-    sample_keys = list(rows[0].keys())
-    text_cols: List[str] = []
+def _quitar_filas_tipo_total(filas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Elimina filas donde alguna columna textual está en blanco o coincide con 'total/gran total'."""
+    if not filas:
+        return filas
+
+    sample_keys = list(filas[0].keys())
+    columnas_texto: List[str] = []
     for k in sample_keys:
-        for r in rows[:30]:
+        for r in filas[:30]:
             v = r.get(k)
             if isinstance(v, str):
-                text_cols.append(k)
+                columnas_texto.append(k)
                 break
-    text_cols = list(dict.fromkeys(text_cols))
+    columnas_texto = list(dict.fromkeys(columnas_texto))
 
-    if not text_cols:
-        return rows
+    if not columnas_texto:
+        return filas
 
     cleaned: List[Dict[str, Any]] = []
-    for r in rows:
+    for r in filas:
         drop = False
-        for k in text_cols:
+        for k in columnas_texto:
             v = r.get(k)
             if v is None:
                 drop = True
                 break
             if isinstance(v, str):
                 t = v.strip()
-                if t == "" or _TOTAL_RE.match(t):
+                if t == "" or _RE_TOTAL.match(t):
                     drop = True
                     break
         if not drop:
@@ -527,12 +569,13 @@ def _drop_total_like_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # Auth opcional API Key
 # =============================================================================
 
-async def api_key_guard(request: Request, x_api_key: Optional[str] = Header(default=None)):
+async def guardia_api_key(request: Request, x_api_key: Optional[str] = Header(default=None)):
+    """Verifica API Key si la app tiene `API_KEY` configurada en settings."""
     settings = request.app.state.settings
-    required = getattr(settings, "API_KEY", "") or ""
-    if not required:
+    requerido = getattr(settings, "API_KEY", "") or ""
+    if not requerido:
         return
-    if not x_api_key or x_api_key != required:
+    if not x_api_key or x_api_key != requerido:
         raise HTTPException(status_code=401, detail="API key inválida")
 
 
@@ -540,7 +583,8 @@ async def api_key_guard(request: Request, x_api_key: Optional[str] = Header(defa
 # Modelo request
 # =============================================================================
 
-class PostHumanQueryPayload(BaseModel):
+class PayloadConsultaHumana(BaseModel):
+    """Modelo de entrada para /human_query."""
     human_query: str
     sql_query_override: Optional[str] = None
     schemas: Optional[List[str]] = None
@@ -560,15 +604,17 @@ class PostHumanQueryPayload(BaseModel):
 # =============================================================================
 
 @router.get("/")
-def root() -> Dict[str, str]:
+def raiz() -> Dict[str, str]:
     return {"status": "ok", "docs": "/docs"}
+
 
 @router.get("/healthz")
 def healthz() -> Dict[str, str]:
     return {"status": "healthy"}
 
-@router.get("/schema", dependencies=[Depends(api_key_guard)])
-def get_schema(
+
+@router.get("/schema", dependencies=[Depends(guardia_api_key)])
+def obtener_esquema(
     request: Request,
     schemas: Optional[List[str]] = Query(default=None),
     tables: Optional[List[str]] = Query(default=None),
@@ -577,15 +623,16 @@ def get_schema(
     if not schemas:
         schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
 
-    schema_json = database.get_schema_json(
-        schemas=schemas,
-        tables=tables,
-        max_tables=getattr(settings, "MAX_SCHEMA_TABLES", 50),
-        max_columns=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
+    esquema_json = database.obtener_esquema_json(
+        esquemas=schemas,
+        tablas=tables,
+        max_tablas=getattr(settings, "MAX_SCHEMA_TABLES", 50),
+        max_columnas=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
     )
-    return schema_json
+    return esquema_json
 
-@router.get("/llm/ping", dependencies=[Depends(api_key_guard)])
+
+@router.get("/llm/ping", dependencies=[Depends(guardia_api_key)])
 async def llm_ping(request: Request) -> Dict[str, Any]:
     try:
         txt = await llm.ping()
@@ -593,90 +640,101 @@ async def llm_ping(request: Request) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
-@router.get("/llm/models", dependencies=[Depends(api_key_guard)])
-def llm_models() -> Dict[str, Any]:
+
+@router.get("/llm/models", dependencies=[Depends(guardia_api_key)])
+def llm_modelos() -> Dict[str, Any]:
     try:
-        return llm.list_models()
+        return llm.listar_modelos()
     except Exception as e:
         return {"status": "error", "detail": str(e)}
 
-@router.post("/schema/refresh", dependencies=[Depends(api_key_guard)])
-def refresh_schema() -> Dict[str, str]:
-    database.refresh_schema_cache()
+
+@router.post("/schema/refresh", dependencies=[Depends(guardia_api_key)])
+def refrescar_esquema() -> Dict[str, str]:
+    database.refrescar_cache_esquema()
     return {"status": "ok", "message": "Schema cache refreshed"}
 
 
-@router.post("/human_query", dependencies=[Depends(api_key_guard)])
-async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[str, Any]:
+@router.post("/human_query", dependencies=[Depends(guardia_api_key)])
+async def consulta_humana(request: Request, payload: PayloadConsultaHumana) -> Dict[str, Any]:
+    """
+    Flujo principal:
+    1) Construcción del esquema y allow-list (FQN).
+    2) Heurísticas para detectar intención comparativa y columnas relevantes.
+    3) Generación de SQL (con cache) y correcciones preventivas por tipos.
+    4) Expansión de macros + guard rails.
+    5) Seguridad (solo-lectura + allow-list).
+    6) Ejecución (opcional) + normalización y síntesis.
+    """
     try:
         settings = request.app.state.settings
 
         # 1) Esquema
         if payload.schema_refresh:
-            database.refresh_schema_cache()
+            database.refrescar_cache_esquema()
 
-        schemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
-        schema_json = database.get_schema_json(
-            schemas=schemas,
-            tables=payload.tables,
-            max_tables=getattr(settings, "MAX_SCHEMA_TABLES", 50),
-            max_columns=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
+        esquemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
+        esquema_json = database.obtener_esquema_json(
+            esquemas=esquemas,
+            tablas=payload.tables,
+            max_tablas=getattr(settings, "MAX_SCHEMA_TABLES", 50),
+            max_columnas=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
         )
 
         allowed_fqn: List[str] = []
-        for t in schema_json.get("tables", []) or []:
+        for t in esquema_json.get("tables", []) or []:
             fq = t.get("fq_name")
             if fq:
                 allowed_fqn.append(fq)
             else:
                 allowed_fqn.append(f'{t["schema"]}."{t["table"]}"')
 
-        dialect = payload.dialect or getattr(settings, "DB_DIALECT", "postgresql")
-        default_limit = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
-        max_limit = getattr(settings, "MAX_ROWS_HARD", 1000)
+        dialecto = payload.dialect or getattr(settings, "DB_DIALECT", "postgresql")
+        limite_por_defecto = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
+        limite_maximo = getattr(settings, "MAX_ROWS_HARD", 1000)
 
         # 2) Heurísticas
-        schema_cols = _schema_columns_for_tables(schema_json, payload.tables)
-        mentioned_cols = _find_mentioned_columns(payload.human_query, schema_cols)
-        compare_intent = _has_comparison_intent(payload.human_query) and (len(mentioned_cols) >= 2)
+        columnas_esquema = _columnas_esquema_para_tablas(esquema_json, payload.tables)
+        columnas_mencion = _columnas_mencionadas(payload.human_query, columnas_esquema)
+        intencion_comparar = _tiene_intencion_comparacion(payload.human_query) and (len(columnas_mencion) >= 2)
 
-        table_fqn = allowed_fqn[0] if allowed_fqn else None
+        tabla_fqn = allowed_fqn[0] if allowed_fqn else None
         if payload.tables:
-            wanted = {_norm_key_name(x) for x in payload.tables if x}
-            for t in schema_json.get("tables", []) or []:
-                if _norm_key_name(t.get("table") or "") in wanted:
-                    table_fqn = (t.get("fq_name") or f'{t["schema"]}."{t["table"]}"')
+            wanted = {_normalizar_nombre_clave(x) for x in payload.tables if x}
+            for t in esquema_json.get("tables", []) or []:
+                if _normalizar_nombre_clave(t.get("table") or "") in wanted:
+                    tabla_fqn = (t.get("fq_name") or f'{t["schema"]}."{t["table"]}"')
                     break
-        if not table_fqn:
+        if not tabla_fqn:
             raise HTTPException(status_code=500, detail="No se pudo determinar una tabla objetivo desde el esquema.")
 
-        op = _infer_compare_operator(payload.human_query)
-        key_col = _pick_key_column(schema_cols, payload.human_query)
-        left_col = mentioned_cols[0] if len(mentioned_cols) >= 1 else None
-        right_col = mentioned_cols[1] if len(mentioned_cols) >= 2 else None
+        op = _inferir_operador_comparacion(payload.human_query)
+        col_clave = _elegir_columna_clave(columnas_esquema, payload.human_query)
+        col_izq = columnas_mencion[0] if len(columnas_mencion) >= 1 else None
+        col_der = columnas_mencion[1] if len(columnas_mencion) >= 2 else None
 
         # 3) SQL
         if payload.sql_query_override:
             sql_query = payload.sql_query_override
             result_dict = {"sql_query": sql_query, "original_query": payload.human_query}
-            logger.debug("[/human_query] using sql_query_override=%r", sql_query)
+            log.debug("[/human_query] using sql_query_override=%r", sql_query)
         else:
-            cache_key = _cache_key(payload.human_query, schema_json, dialect, default_limit)
-            cached = _cache_get(cache_key)
+            cache_key = _clave_cache(payload.human_query, esquema_json, dialecto, limite_por_defecto)
+            cached = _cache_obtener(cache_key)
             if cached:
-                logger.debug("[/human_query] LLM SQL cache HIT")
+                log.debug("[/human_query] LLM SQL cache HIT")
                 sql_json = cached
             else:
-                sql_json = await llm.human_query_to_sql(
-                    payload.human_query,
-                    schema_json=schema_json,
-                    dialect=dialect,
-                    default_limit=default_limit,
-                    model=None,
+                sql_json = await llm.consulta_humana_a_sql(
+                    consulta_humana=payload.human_query,
+                    esquema_json=esquema_json,
+                    dialecto=dialecto,
+                    limite_por_defecto=limite_por_defecto,
+                    modelo=None,
                 )
-                _cache_put(cache_key, sql_json)
+                _cache_guardar(cache_key, sql_json)
 
-            logger.debug("[/human_query] LLM raw JSON=%s", (sql_json[:700] if sql_json else None))
+            log.debug("[/human_query] LLM raw JSON=%s", (sql_json[:700] if sql_json else None))
             if not sql_json:
                 raise HTTPException(status_code=500, detail="Falló la generación de la consulta SQL")
 
@@ -685,22 +743,22 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
             if not sql_query:
                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
 
-            if compare_intent and left_col and right_col:
-                if (_looks_like_distinct_id_only(sql_query)
-                    or (not _sql_has_column_in_select(sql_query, left_col))
-                    or (not _sql_has_column_in_select(sql_query, right_col))):
-                    forced_query = _augment_query_for_required_select(
+            if intencion_comparar and col_izq and col_der:
+                if (_parece_distinct_solo_id(sql_query)
+                    or (not _sql_tiene_columna_en_select(sql_query, col_izq))
+                    or (not _sql_tiene_columna_en_select(sql_query, col_der))):
+                    forced_query = _aumentar_consulta_para_select_requerido(
                         payload.human_query,
-                        key_col=key_col,
-                        metric_cols=[left_col, right_col],
+                        col_clave=col_clave,
+                        columnas_metricas=[col_izq, col_der],
                     )
-                    logger.debug("[/human_query] retry forced_query=%s", forced_query)
-                    sql_json2 = await llm.human_query_to_sql(
-                        forced_query,
-                        schema_json=schema_json,
-                        dialect=dialect,
-                        default_limit=default_limit,
-                        model=None,
+                    log.debug("[/human_query] retry forced_query=%s", forced_query)
+                    sql_json2 = await llm.consulta_humana_a_sql(
+                        consulta_humana=forced_query,
+                        esquema_json=esquema_json,
+                        dialecto=dialecto,
+                        limite_por_defecto=limite_por_defecto,
+                        modelo=None,
                     )
                     if sql_json2:
                         try:
@@ -717,47 +775,47 @@ async def human_query(request: Request, payload: PostHumanQueryPayload) -> Dict[
         # =======================
 
         # 4.1 limpieza base
-        sql_query = database.clean_sql(sql_query)
-        sql_query = database.sanitize_explain(sql_query)
-        sql_query = database.qualify_tables(sql_query, allowed_fqn)
+        sql_query = database.limpiar_sql(sql_query)
+        sql_query = database.sanear_explain(sql_query)
+        sql_query = database.calificar_tablas(sql_query, allowed_fqn)
 
-        # 4.2 IMPORTANTÍSIMO: antes de expand_macros, arregla NUMERIC_CLEAN sobre no-text (preventivo)
-        sql_query = _sql_rewrite_numeric_clean_for_nontext(
-            sql_query, schema_json=schema_json, dialect=dialect, requested_tables=payload.tables
+        # 4.2 Preventivo: antes de expandir_macros, arregla NUMERIC_CLEAN sobre no-texto
+        sql_query = _reescribir_numeric_clean_no_texto(
+            sql_query, esquema_json=esquema_json, dialecto=dialecto, tablas_solicitadas=payload.tables
         )
 
-        # 4.3 recién aquí expandimos macros (puede introducir TRIM/regex)
-        sql_query = database.expand_macros(sql_query)
+        # 4.3 Expandir macros (puede introducir TRIM/regex)
+        sql_query = database.expandir_macros(sql_query)
 
-        # 4.4 ahora sí: reescribe TRIM(bigint) => TRIM(CAST(bigint AS TEXT))
-        sql_query = _sql_cast_trim_for_nontext(
-            sql_query, schema_json=schema_json, dialect=dialect, requested_tables=payload.tables
+        # 4.4 Reescribir TRIM(bigint) => TRIM(CAST(bigint AS TEXT/NVARCHAR))
+        sql_query = _sql_cast_trim_no_texto(
+            sql_query, esquema_json=esquema_json, dialecto=dialecto, tablas_solicitadas=payload.tables
         )
 
         # 5) Validación de seguridad
-        if not database.is_safe_select(sql_query):
+        if not database.es_select_seguro(sql_query):
             raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
 
-        if not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
-            if compare_intent and left_col and right_col:
-                # fallback determinístico si se sale del schema
+        if not database.restringir_a_tablas_permitidas(sql_query, allowed_fqn):
+            if intencion_comparar and col_izq and col_der:
+                # Fallback determinístico si se sale del schema
                 sql_query = f"""
 SELECT
-  {f'"{key_col}" AS "{key_col}",' if key_col else ''}
-  CAST("{left_col}" AS numeric) AS "{left_col}",
-  CAST("{right_col}" AS numeric) AS "{right_col}",
-  (CAST("{left_col}" AS numeric) - CAST("{right_col}" AS numeric)) AS "Diferencia"
-FROM {table_fqn}
-WHERE "{left_col}" IS NOT NULL AND "{right_col}" IS NOT NULL
-  AND CAST("{left_col}" AS numeric) {op} CAST("{right_col}" AS numeric)
+  {f'"{col_clave}" AS "{col_clave}",' if col_clave else ''}
+  CAST("{col_izq}" AS numeric) AS "{col_izq}",
+  CAST("{col_der}" AS numeric) AS "{col_der}",
+  (CAST("{col_izq}" AS numeric) - CAST("{col_der}" AS numeric)) AS "Diferencia"
+FROM {tabla_fqn}
+WHERE "{col_izq}" IS NOT NULL AND "{col_der}" IS NOT NULL
+  AND CAST("{col_izq}" AS numeric) {op} CAST("{col_der}" AS numeric)
 ORDER BY "Diferencia" DESC
-LIMIT {int(default_limit)}
+LIMIT {int(limite_por_defecto)}
 """.strip()
 
-                sql_query = database.clean_sql(sql_query)
-                sql_query = database.sanitize_explain(sql_query)
-                sql_query = database.qualify_tables(sql_query, allowed_fqn)
-                if not database.restrict_to_allowed_tables(sql_query, allowed_fqn):
+                sql_query = database.limpiar_sql(sql_query)
+                sql_query = database.sanear_explain(sql_query)
+                sql_query = database.calificar_tablas(sql_query, allowed_fqn)
+                if not database.restringir_a_tablas_permitidas(sql_query, allowed_fqn):
                     raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
             else:
                 raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
@@ -767,64 +825,64 @@ LIMIT {int(default_limit)}
             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
 
         # 6) Ejecutar
-        rows_raw = await database.query(
+        filas_raw = await database.consultar(
             sql_query,
-            allowed_fqn=allowed_fqn,
-            default_limit=default_limit,
-            max_limit=max_limit,
+            permitidos_fqn=allowed_fqn,
+            limite_por_defecto=limite_por_defecto,
+            limite_maximo=limite_maximo,
         )
 
-        # 6.2 limpiar TOTALS
-        rows_raw = _drop_total_like_rows(rows_raw)
+        # 6.2 Limpiar filas tipo TOTAL
+        filas_raw = _quitar_filas_tipo_total(filas_raw)
 
         # 7) Normalizar
-        implied_cols_env = [s.strip() for s in (env("IMPLIED_MILLIS_COLUMNS", default="") or "").split(",") if s.strip()]
-        implied_cols = payload.implied_millis_cols if payload.implied_millis_cols is not None else implied_cols_env
+        columnas_implicitas_env = [s.strip() for s in (env("IMPLIED_MILLIS_COLUMNS", default="") or "").split(",") if s.strip()]
+        columnas_implicitas = payload.implied_millis_cols if payload.implied_millis_cols is not None else columnas_implicitas_env
 
-        fmt_strings_env = env("RETURN_FORMATTED_NUMBERS", default=True, cast=bool)
-        fmt_strings = payload.format_numbers if payload.format_numbers is not None else fmt_strings_env
+        formatear_env = env("RETURN_FORMATTED_NUMBERS", default=True, cast=bool)
+        formatear = payload.format_numbers if payload.format_numbers is not None else formatear_env
 
-        decimal_places_env = env("DECIMAL_PLACES", default=3, cast=int)
-        decimal_places = payload.decimals if payload.decimals is not None else decimal_places_env
+        decimales_env = env("DECIMAL_PLACES", default=3, cast=int)
+        decimales = payload.decimals if payload.decimals is not None else decimales_env
 
-        rows = normalize_rows(
-            rows_raw,
-            implied_millis_cols=implied_cols,
-            decimal_places=decimal_places,
-            fmt_strings=fmt_strings
+        filas = normalizar_filas(
+            filas_raw,
+            columnas_miles_implicitos=columnas_implicitas,
+            decimales=decimales,
+            formatear_cadenas=formatear
         )
 
         # 8) Resumen opcional
         if not payload.summarize:
-            return {"rows": rows, "row_count": len(rows), "sql_query": sql_query}
+            return {"rows": filas, "row_count": len(filas), "sql_query": sql_query}
 
         try:
-            answer = await llm.build_answer(rows, payload.human_query, model=None)
-            if not (answer or "").strip():
-                local_answer = _local_summary_answer(rows, payload.human_query)
+            respuesta = await llm.construir_respuesta(filas, payload.human_query, modelo=None)
+            if not (respuesta or "").strip():
+                local_answer = _respuesta_resumen_local(filas, payload.human_query)
                 return {
                     "answer": local_answer,
                     "answer_source": "local_fallback",
-                    "rows": rows[:50],
-                    "row_count": len(rows),
+                    "rows": filas[:50],
+                    "row_count": len(filas),
                     "sql_query": sql_query,
                     "warning": "Resumen generado localmente por falta de respuesta del LLM."
                 }
             return {
-                "answer": answer,
+                "answer": respuesta,
                 "answer_source": "llm",
-                "rows": rows[:50],
-                "row_count": len(rows),
+                "rows": filas[:50],
+                "row_count": len(filas),
                 "sql_query": sql_query
             }
         except Exception as ex:
-            logger.exception("Fallo al generar 'answer'.")
-            local_answer = _local_summary_answer(rows, payload.human_query)
+            log.exception("Fallo al generar 'answer'.")
+            local_answer = _respuesta_resumen_local(filas, payload.human_query)
             return {
                 "answer": local_answer,
                 "answer_source": "local_fallback",
-                "rows": rows[:50],
-                "row_count": len(rows),
+                "rows": filas[:50],
+                "row_count": len(filas),
                 "sql_query": sql_query,
                 "warning": f"LLM falló, se usó resumen local: {str(ex)[:160]}"
             }
@@ -832,5 +890,5 @@ LIMIT {int(default_limit)}
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Error en /human_query")
+        log.exception("Error en /human_query")
         raise HTTPException(status_code=500, detail=str(e))

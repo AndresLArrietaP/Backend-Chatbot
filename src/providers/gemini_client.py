@@ -1,4 +1,22 @@
 # src/providers/gemini_client.py
+# -*- coding: utf-8 -*-
+"""
+Módulo: providers.gemini_client
+--------------------------------
+Cliente del proveedor Gemini (Google GenAI) para:
+- NL → SQL (con salida JSON robusta) con timeouts, hedging y cadena de fallback.
+- Construcción de respuestas en lenguaje natural (build_answer) basada en filas/resultados.
+
+Notas de diseño:
+- Se mantiene la lógica original, pero se renombra a español (funciones, variables y docstrings).
+- Se agregan *alias* de compatibilidad para los nombres en inglés: `human_query_to_sql`, `build_answer`, `list_models`.
+- Se documentan utilidades clave y se limpian comentarios redundantes.
+
+Precauciones:
+- No se modifican literales sensibles (nombres de columnas/tablas, macros, claves .env).
+- Las instrucciones del sistema (prompts) se mantienen con precisión semántica; algunos fragmentos siguen en inglés para mayor exactitud.
+"""
+
 from typing import Any, List, Dict, Optional, Tuple
 from decouple import config as env
 import json
@@ -15,55 +33,68 @@ log = getLogger(__name__)
 
 # ============================= Utilidades comunes =============================
 
-def _to_json_safe(v: Any) -> Any:
+def _a_json_seguro(v: Any) -> Any:
+    """Convierte valores a tipos JSON-seguros (Decimal → float, fechas → ISO, contenedores recursivos)."""
     if isinstance(v, Decimal):
         return float(v)
     if isinstance(v, (datetime, date)):
         return v.isoformat()
     if isinstance(v, list):
-        return [_to_json_safe(x) for x in v]
+        return [_a_json_seguro(x) for x in v]
     if isinstance(v, tuple):
-        return tuple(_to_json_safe(x) for x in v)
+        return tuple(_a_json_seguro(x) for x in v)
     if isinstance(v, dict):
-        return {k: _to_json_safe(val) for k, val in v.items()}
+        return {k: _a_json_seguro(val) for k, val in v.items()}
     return v
 
 
-def _compact_rows_for_summary(rows: List[Dict[str, Any]], max_rows: int, max_chars: int) -> str:
-    """Recorta filas y longitud total para limitar tokens/latencia (solo CONTEXTO, no output final)."""
-    if not rows:
+def _compactar_filas_para_resumen(filas: List[Dict[str, Any]], max_filas: int, max_caracteres: int) -> str:
+    """
+    Recorta filas y longitud total para limitar tokens/latencia (solo CONTEXTO, no output final).
+
+    Args:
+        filas: Lista de filas de resultados (dict).
+        max_filas: Máximo número de filas a incluir.
+        max_caracteres: Máximos caracteres del JSON resultante.
+
+    Returns:
+        Cadena JSON (str) con una muestra compactada de filas.
+    """
+    if not filas:
         return "[]"
 
-    def _norm_row(r: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalizar_fila(r: Dict[str, Any]) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         for k, v in (r or {}).items():
-            v2 = _to_json_safe(v)
+            v2 = _a_json_seguro(v)
             if isinstance(v2, str) and len(v2) > 220:
                 out[k] = v2[:220] + "…"
             else:
                 out[k] = v2
         return out
 
-    data = [_norm_row(r) for r in rows[:max_rows]]
-    s = json.dumps(data, ensure_ascii=False)
+    datos = [_normalizar_fila(r) for r in filas[:max_filas]]
+    s = json.dumps(datos, ensure_ascii=False)
 
-    if len(s) <= max_chars:
+    if len(s) <= max_caracteres:
         return s
 
-    lo, hi = 1, len(data)
-    best = "[]"
+    # Búsqueda binaria del número de filas que permiten no exceder max_caracteres.
+    lo, hi = 1, len(datos)
+    mejor = "[]"
     while lo <= hi:
         mid = (lo + hi) // 2
-        s2 = json.dumps(data[:mid], ensure_ascii=False)
-        if len(s2) <= max_chars:
-            best = s2
+        s2 = json.dumps(datos[:mid], ensure_ascii=False)
+        if len(s2) <= max_caracteres:
+            mejor = s2
             lo = mid + 1
         else:
             hi = mid - 1
-    return best
+    return mejor
 
 
-def _parse_retry_after_secs(msg: str) -> float:
+def _parsear_reintentar_en_segundos(msg: str) -> float:
+    """Extrae (si existe) un 'retry in Xs' del mensaje para esperar X segundos. [1.0, 60.0]."""
     m = re.search(r"retry in\s+([0-9]+(?:\.[0-9]+)?)s", (msg or "").lower())
     if m:
         try:
@@ -74,7 +105,8 @@ def _parse_retry_after_secs(msg: str) -> float:
     return 0.0
 
 
-def _ex_msg(e: Exception) -> str:
+def _mensaje_excepcion(e: Exception) -> str:
+    """Estándar de logging para excepciones de la API Gemini."""
     status = (getattr(e, "status", "") or "")
     code = (getattr(e, "code", "") or "")
     msg = (getattr(e, "message", "") or str(e))
@@ -83,7 +115,11 @@ def _ex_msg(e: Exception) -> str:
 
 # ======================= Perfil analítico determinístico =======================
 
-def _try_float(v: Any) -> Optional[float]:
+def _intentar_float(v: Any) -> Optional[float]:
+    """
+    Intenta convertir diversos formatos numéricos (US/EU y cadenas con símbolos) a float.
+    Devuelve None si no es convertible con seguridad.
+    """
     try:
         if v is None:
             return None
@@ -96,15 +132,15 @@ def _try_float(v: Any) -> Optional[float]:
             if not s:
                 return None
 
-            # EU: 1.234,56
+            # Formato europeo: 1.234,56
             if re.search(r"\d,\d{1,}\s*$", s) and "." in s:
                 s = s.replace(".", "").replace(",", ".")
             else:
-                # US: 1,234.56
+                # Formato US: 1,234.56
                 s = s.replace(",", "")
 
             s = re.sub(r"[^0-9\.\-]", "", s)
-            if s in ("", "-", ".", "-."):
+            if s in ("", "-", ".", "-.") :
                 return None
             return float(s)
     except Exception:
@@ -112,30 +148,40 @@ def _try_float(v: Any) -> Optional[float]:
     return None
 
 
-def _compute_profile(rows: List[Dict[str, Any]], max_keys_top: int = 8) -> Dict[str, Any]:
-    if not rows:
+def _calcular_perfil(filas: List[Dict[str, Any]], max_claves_top: int = 8) -> Dict[str, Any]:
+    """
+    Calcula un perfil determinístico con métricas básicas numéricas y categorías top.
+
+    Args:
+        filas: filas de resultados (lista de dicts).
+        max_claves_top: máximo de categorías destacadas por columna.
+
+    Returns:
+        Dict con claves: row_count, sampled_rows, numeric, categorical.
+    """
+    if not filas:
         return {"row_count": 0, "numeric": {}, "categorical": {}, "notes": ["no_rows"]}
 
-    cols = list(rows[0].keys())
-    num_vals: Dict[str, List[float]] = {c: [] for c in cols}
-    cat_counts: Dict[str, Dict[str, int]] = {c: {} for c in cols}
+    columnas = list(filas[0].keys())
+    valores_num: Dict[str, List[float]] = {c: [] for c in columnas}
+    cuentas_cat: Dict[str, Dict[str, int]] = {c: {} for c in columnas}
 
-    sample = rows[: min(len(rows), 5000)]
+    muestra = filas[: min(len(filas), 5000)]
 
-    for r in sample:
-        for c in cols:
+    for r in muestra:
+        for c in columnas:
             v = r.get(c)
-            fv = _try_float(v)
+            fv = _intentar_float(v)
             if fv is not None:
-                num_vals[c].append(fv)
+                valores_num[c].append(fv)
             else:
                 if isinstance(v, str):
                     t = v.strip()
                     if t:
-                        cat_counts[c][t] = cat_counts[c].get(t, 0) + 1
+                        cuentas_cat[c][t] = cuentas_cat[c].get(t, 0) + 1
 
-    numeric: Dict[str, Any] = {}
-    for c, vals in num_vals.items():
+    numericas: Dict[str, Any] = {}
+    for c, vals in valores_num.items():
         if len(vals) < 5:
             continue
         vs = sorted(vals)
@@ -156,7 +202,7 @@ def _compute_profile(rows: List[Dict[str, Any]], max_keys_top: int = 8) -> Dict[
         out_hi = sum(1 for x in vs if x > upper)
         out_lo = sum(1 for x in vs if x < lower)
 
-        numeric[c] = {
+        numericas[c] = {
             "n": n,
             "min": mn,
             "max": mx,
@@ -170,26 +216,27 @@ def _compute_profile(rows: List[Dict[str, Any]], max_keys_top: int = 8) -> Dict[
             "outliers_lo": out_lo,
         }
 
-    categorical: Dict[str, Any] = {}
-    for c, mp in cat_counts.items():
+    categoricas: Dict[str, Any] = {}
+    for c, mp in cuentas_cat.items():
         if len(mp) < 2:
             continue
-        top = sorted(mp.items(), key=lambda kv: kv[1], reverse=True)[:max_keys_top]
-        total_seen = sum(mp.values())
-        categorical[c] = {
+        top = sorted(mp.items(), key=lambda kv: kv[1], reverse=True)[:max_claves_top]
+        total_vistos = sum(mp.values())
+        categoricas[c] = {
             "distinct_seen": len(mp),
-            "top": [{"value": k, "count": v, "share": (v / total_seen if total_seen else 0.0)} for k, v in top],
+            "top": [{"value": k, "count": v, "share": (v / total_vistos if total_vistos else 0.0)} for k, v in top],
         }
 
     return {
-        "row_count": len(rows),
-        "sampled_rows": len(sample),
-        "numeric": numeric,
-        "categorical": categorical,
+        "row_count": len(filas),
+        "sampled_rows": len(muestra),
+        "numeric": numericas,
+        "categorical": categoricas,
     }
 
 
-def _fmt_num(x: float) -> str:
+def _formatear_numero(x: float) -> str:
+    """Formatea números para lectura humana con reglas simples (miles, 2-4 decimales donde aplique)."""
     try:
         if abs(x) >= 1000:
             return f"{x:,.0f}".replace(",", "_").replace("_", ",")
@@ -200,27 +247,31 @@ def _fmt_num(x: float) -> str:
         return str(x)
 
 
-def _local_fallback_answer(human_query: str, rows: List[Dict[str, Any]], profile: Dict[str, Any]) -> str:
-    rc = int(profile.get("row_count") or 0)
-    sampled = int(profile.get("sampled_rows") or min(rc, 0))
-    numeric = profile.get("numeric") or {}
-    categorical = profile.get("categorical") or {}
+def _respuesta_local_de_respaldo(consulta_humana: str, filas: List[Dict[str, Any]], perfil: Dict[str, Any]) -> str:
+    """
+    Respuesta local cuando el modelo no produce un resumen aceptable.
+    Produce puntos básicos a partir del perfil numérico/categórico.
+    """
+    rc = int(perfil.get("row_count") or 0)
+    muestreadas = int(perfil.get("sampled_rows") or min(rc, 0))
+    numericas = perfil.get("numeric") or {}
+    categoricas = perfil.get("categorical") or {}
 
-    lines: List[str] = []
-    lines.append(f"Se analizaron {rc} filas (muestra usada para perfil: {sampled}).")
+    lineas: List[str] = []
+    lineas.append(f"Se analizaron {rc} filas (muestra usada para perfil: {muestreadas}).")
 
-    def score_metric(m: Dict[str, Any]) -> float:
+    def puntuar_metrica(m: Dict[str, Any]) -> float:
         try:
-            rng = float(m["max"]) - float(m["min"])
-            return rng + 0.1 * float(m.get("outliers_hi", 0) + m.get("outliers_lo", 0))
+            rango = float(m["max"]) - float(m["min"])
+            return rango + 0.1 * float(m.get("outliers_hi", 0) + m.get("outliers_lo", 0))
         except Exception:
             return 0.0
 
-    metrics_sorted: List[Tuple[str, Dict[str, Any]]] = sorted(
-        numeric.items(), key=lambda kv: score_metric(kv[1]), reverse=True
+    ordenadas: List[Tuple[str, Dict[str, Any]]] = sorted(
+        numericas.items(), key=lambda kv: puntuar_metrica(kv[1]), reverse=True
     )[:2]
 
-    for col, m in metrics_sorted:
+    for col, m in ordenadas:
         n = int(m.get("n") or 0)
         mn = float(m.get("min") or 0.0)
         mx = float(m.get("max") or 0.0)
@@ -231,87 +282,99 @@ def _local_fallback_answer(human_query: str, rows: List[Dict[str, Any]], profile
         ohi = int(m.get("outliers_hi") or 0)
         olo = int(m.get("outliers_lo") or 0)
 
-        lines.append(
-            f"- **{col}** (n={n}): min={_fmt_num(mn)}, mediana={_fmt_num(med)}, p90={_fmt_num(p90)}, max={_fmt_num(mx)} "
-            f"(promedio={_fmt_num(mean)})."
+        lineas.append(
+            f"- **{col}** (n={n}): min={_formatear_numero(mn)}, mediana={_formatear_numero(med)}, "
+            f"p90={_formatear_numero(p90)}, max={_formatear_numero(mx)} (promedio={_formatear_numero(mean)})."
         )
         if zeros > 0:
-            lines.append(f"- En **{col}** hay {zeros} valores en cero.")
+            lineas.append(f"- En **{col}** hay {zeros} valores en cero.")
         if (ohi + olo) > 0:
-            lines.append(f"- En **{col}** se detectan outliers por IQR: altos={ohi}, bajos={olo}.")
+            lineas.append(f"- En **{col}** se detectan outliers por IQR: altos={ohi}, bajos={olo}.")
 
-    def pick_cat_keys(cats: Dict[str, Any]) -> List[str]:
+    def escoger_claves_cat(cats: Dict[str, Any]) -> List[str]:
         if not cats:
             return []
-        preferred = ["cliente", "material", "pedido", "codigo", "producto", "ruc", "proveedor"]
-        keys = list(cats.keys())
-        keys_sorted = sorted(
-            keys,
-            key=lambda k: (0 if any(p in k.lower() for p in preferred) else 1, -int(cats[k].get("distinct_seen") or 0)),
+        preferidas = ["cliente", "material", "pedido", "codigo", "producto", "ruc", "proveedor"]
+        claves = list(cats.keys())
+        claves_ordenadas = sorted(
+            claves,
+            key=lambda k: (0 if any(p in k.lower() for p in preferidas) else 1, -int(cats[k].get("distinct_seen") or 0)),
         )
-        return keys_sorted[:2]
+        return claves_ordenadas[:2]
 
-    for k in pick_cat_keys(categorical):
-        top = (categorical.get(k) or {}).get("top") or []
+    for k in escoger_claves_cat(categoricas):
+        top = (categoricas.get(k) or {}).get("top") or []
         if not top:
             continue
         t0 = top[0]
         share = float(t0.get("share") or 0.0)
-        lines.append(
+        lineas.append(
             f"- **{k}**: principal = {t0.get('value')} ({t0.get('count')} registros, {share*100:.1f}% del muestreo categórico)."
         )
 
-    if len(lines) == 1:
-        lines.append("No hay suficientes columnas numéricas/categóricas para un análisis adicional con esta muestra.")
+    if len(lineas) == 1:
+        lineas.append("No hay suficientes columnas numéricas/categóricas para un análisis adicional con esta muestra.")
 
-    return "\n".join(lines).strip()
+    return "\n".join(lineas).strip()
 
 
 # ============================ Proveedor Gemini ================================
 
 class GeminiProvider:
     """
-    - Usa system_instruction en config (no role system).
+    Proveedor Gemini (Google GenAI).
+
+    Características:
+    - Usa system_instruction en config.
     - Filtra candidatos contra modelos visibles por tu clave/proyecto.
     - Maneja 404/429 con fallback/espera.
-    - human_query_to_sql: salida JSON robusta + repair.
-    - build_answer devuelve TEXTO.
+    - NL→SQL robusto con reparación de JSON.
+    - build_answer devuelve TEXTO en lenguaje natural.
 
-    Cambios clave para robustez:
-    - Instrucciones de tipos: NO TRIM/NUMERIC_CLEAN sobre columnas no-text (BIGINT/INT/NUMERIC/DATE).
-    - Policy de filtros por tipo: TEXT -> COALESCE(TRIM(col),'') <> ''; NO-TEXT -> col IS NOT NULL.
-    - Post-proceso “guard rails” para reemplazar TRIM("col_no_text") por TRIM(CAST("col_no_text" AS TEXT)) en Postgres
-      (solo si el LLM lo hace mal).
-    - Opcional: “hard fail” si detecta NUMERIC_CLEAN aplicado sobre no-text (configurable).
+    Guard rails:
+    - Tipos: NO usar TRIM/NUMERIC_CLEAN sobre columnas no-texto (BIGINT/INT/NUMERIC/DATE).
+    - Filtros por tipo: TEXT -> COALESCE(TRIM(col),'') <> ''; NO-TEXT -> col IS NOT NULL.
+    - Post-proceso: reemplaza TRIM(col_no_texto) por TRIM(CAST(col_no_texto AS TEXT/NVARCHAR)) según dialecto.
+    - Opción estricta: fallo temprano si se detecta NUMERIC_CLEAN sobre no-texto (variable de entorno).
     """
 
     def __init__(self) -> None:
+        """Inicializa el cliente Gemini y prelista modelos visibles (si es posible)."""
         api_key = (env("GOOGLE_API_KEY", default="") or "").strip()
         if not api_key:
             raise RuntimeError("Falta GOOGLE_API_KEY en .env")
-        self.client = genai.Client(api_key=api_key)
+        self.cliente = genai.Client(api_key=api_key)
 
-        self._available_names: List[str] = []
+        self._nombres_disponibles: List[str] = []
         try:
-            self._available_names = [m.name for m in self.client.models.list() if getattr(m, "name", "")]
-            log.info("[gemini] modelos visibles: %s", self._available_names)
+            self._nombres_disponibles = [m.name for m in self.cliente.models.list() if getattr(m, "name", "")]
+            log.info("[gemini] modelos visibles: %s", self._nombres_disponibles)
         except Exception as e:
             log.warning("[gemini] No se pudo listar modelos: %s", e)
-            self._available_names = []
+            self._nombres_disponibles = []
 
     # ------------------------- Resolución de modelos --------------------------
 
-    def _resolve_model(self, name: Optional[str]) -> str:
-        nm = (name or env("GEMINI_MODEL", default="gemini-3-flash")).strip()
+    def _resolver_modelo(self, nombre: Optional[str]) -> str:
+        """Normaliza el nombre del modelo principal para NL→SQL."""
+        nm = (nombre or env("GEMINI_MODEL", default="gemini-3-flash")).strip()
         return nm if nm.startswith("models/") else f"models/{nm}"
 
-    def _resolve_answer_model(self, name: Optional[str]) -> str:
-        nm = (name or env("GEMINI_MODEL_ANSWER", default="gemini-3-pro")).strip()
+    def _resolver_modelo_respuesta(self, nombre: Optional[str]) -> str:
+        """Normaliza el nombre del modelo para respuestas/síntesis (build_answer)."""
+        nm = (nombre or env("GEMINI_MODEL_ANSWER", default="gemini-3-pro")).strip()
         return nm if nm.startswith("models/") else f"models/{nm}"
 
-    def _fallback_chain(self, primary_full: str, env_key: str) -> List[str]:
-        raw = env(env_key, default="")
-        env_list = [s.strip() for s in raw.split(",") if s.strip()]
+    def _cadena_fallback(self, primario_full: str, clave_env: str) -> List[str]:
+        """
+        Construye cadena de fallback a partir de:
+        - Modelo primario
+        - Candidatos en .env
+        - Defaults
+        Filtra por modelos realmente visibles cuando es posible.
+        """
+        cruda = env(clave_env, default="")
+        en_lista = [s.strip() for s in cruda.split(",") if s.strip()]
 
         defaults = [
             "models/gemini-3-pro",
@@ -325,22 +388,23 @@ class GeminiProvider:
         def norm(m: str) -> str:
             return m if m.startswith("models/") else f"models/{m}"
 
-        chain_all: List[str] = []
-        seen = set()
-        for m in [primary_full] + [norm(x) for x in env_list] + defaults:
-            if m and m not in seen:
-                chain_all.append(m)
-                seen.add(m)
+        cadena_total: List[str] = []
+        vistos = set()
+        for m in [primario_full] + [norm(x) for x in en_lista] + defaults:
+            if m and m not in vistos:
+                cadena_total.append(m)
+                vistos.add(m)
 
-        if not self._available_names:
-            return chain_all
+        if not self._nombres_disponibles:
+            return cadena_total
 
-        chain = [m for m in chain_all if m in self._available_names]
-        return chain or chain_all
+        cadena = [m for m in cadena_total if m in self._nombres_disponibles]
+        return cadena or cadena_total
 
     # ----------------------------- Timeouts/Hedging ---------------------------
 
-    def _timeouts(self) -> Dict[str, float]:
+    def _tiempos_espera(self) -> Dict[str, float]:
+        """Lee configuración de timeouts/hedging desde .env."""
         return {
             "per_model_timeout": env("LLM_PER_MODEL_TIMEOUT", default=18.0, cast=float),
             "total_timeout": env("LLM_TOTAL_TIMEOUT", default=40.0, cast=float),
@@ -348,11 +412,12 @@ class GeminiProvider:
             "hedge_parallel": env("LLM_HEDGE_PARALLEL", default=2, cast=int),
         }
 
-    async def _call_generate(self, model: str, contents: Any, config: Dict[str, Any], per_model_timeout: float):
+    async def _llamar_generar(self, modelo: str, contenidos: Any, configuracion: Dict[str, Any], timeout_modelo: float):
+        """Envuelve generate_content en un hilo y con timeout por modelo."""
         try:
             resp = await asyncio.wait_for(
-                asyncio.to_thread(self.client.models.generate_content, model=model, contents=contents, config=config),
-                timeout=per_model_timeout
+                asyncio.to_thread(self.cliente.models.generate_content, model=modelo, contents=contenidos, config=configuracion),
+                timeout=timeout_modelo
             )
             return resp
         except Exception as e:
@@ -360,49 +425,50 @@ class GeminiProvider:
 
     # -------------------------- SQL post-fix: ORDER BY ------------------------
 
-    def _sql_has_order_by(self, sql: str) -> bool:
+    def _sql_tiene_order_by(self, sql: str) -> bool:
         return bool(re.search(r"\bORDER\s+BY\b", sql, flags=re.IGNORECASE))
 
-    def _inject_order_by_before_limit(self, sql: str, order_expr: str) -> str:
+    def _inyectar_order_by_antes_de_limit(self, sql: str, expresion_orden: str) -> str:
         m = re.search(r"\bLIMIT\s+\d+\b", sql, flags=re.IGNORECASE)
         if m:
             i = m.start()
-            return sql[:i].rstrip() + f"\nORDER BY {order_expr}\n" + sql[i:].lstrip()
-        return sql.rstrip() + f"\nORDER BY {order_expr}\n"
+            return sql[:i].rstrip() + f"\nORDER BY {expresion_orden}\n" + sql[i:].lstrip()
+        return sql.rstrip() + f"\nORDER BY {expresion_orden}\n"
 
-    def _auto_order_by(self, sql: str, human_query: str = "") -> str:
-        if not sql or self._sql_has_order_by(sql):
+    def _orden_automatico(self, sql: str, consulta_humana: str = "") -> str:
+        """Inserta un ORDER BY razonable antes de LIMIT cuando no existe uno explícito."""
+        if not sql or self._sql_tiene_order_by(sql):
             return sql
 
-        has_limit = bool(re.search(r"\bLIMIT\s+\d+\b", sql, flags=re.IGNORECASE))
-        if not has_limit:
+        tiene_limit = bool(re.search(r"\bLIMIT\s+\d+\b", sql, flags=re.IGNORECASE))
+        if not tiene_limit:
             return sql
 
         if re.search(r'AS\s+"Pendiente"\b', sql, flags=re.IGNORECASE) and re.search(r'AS\s+"Despachado"\b', sql, flags=re.IGNORECASE):
-            return self._inject_order_by_before_limit(sql, '("Pendiente" - "Despachado") DESC, "Pendiente" DESC')
+            return self._inyectar_order_by_antes_de_limit(sql, '("Pendiente" - "Despachado") DESC, "Pendiente" DESC')
 
-        alias_candidates = [
+        alias_candidatos = [
             "Total", "Total Despachado", "Total Pendiente", "Despachado", "Pendiente",
             "Monto", "Cantidad", "Importe", "Suma", "Sum", "Diferencia"
         ]
-        for a in alias_candidates:
+        for a in alias_candidatos:
             if re.search(rf'AS\s+"{re.escape(a)}"\b', sql, flags=re.IGNORECASE):
-                return self._inject_order_by_before_limit(sql, f'"{a}" DESC')
+                return self._inyectar_order_by_antes_de_limit(sql, f'"{a}" DESC')
 
         m = re.search(r'AS\s+"([^"]+)"', sql, flags=re.IGNORECASE)
         if m:
             alias = m.group(1)
             if not any(x in alias.lower() for x in ["pedido", "cliente", "material", "codigo", "id"]):
-                return self._inject_order_by_before_limit(sql, f'"{alias}" DESC')
+                return self._inyectar_order_by_antes_de_limit(sql, f'"{alias}" DESC')
 
         return sql
 
-    # -------------------------- Postgres: DATE_PART('day', A - B) --------------
+    # -------------------------- Postgres: DATE_PART('day', A - B) -------------
 
-    def _fix_postgres_datepart_day(self, sql: str) -> str:
+    def _arreglar_postgres_datepart_day(self, sql: str) -> str:
         """
-        Postgres: date1 - date2 (DATE - DATE) ya devuelve INTEGER (días).
-        Evitar DATE_PART('day', date1 - date2).
+        En Postgres: date1 - date2 (DATE - DATE) ya devuelve INTEGER (días).
+        Evita DATE_PART('day', date1 - date2).
         """
         s = (sql or "")
         if not s.strip():
@@ -422,16 +488,15 @@ class GeminiProvider:
 
         return s
 
-    # -------------------------- Schema helpers (tipos) -------------------------
+    # -------------------------- Ayudas de esquema (tipos) ---------------------
 
-    def _schema_type_map(self, schema_json: Dict[str, Any]) -> Dict[str, str]:
+    def _mapa_tipos_esquema(self, esquema_json: Dict[str, Any]) -> Dict[str, str]:
         """
-        Map: "Column Name" -> "TYPE"
-        Nota: si hay columnas repetidas en varias tablas, esto toma la primera ocurrencia;
-        para tu caso (1 tabla) está perfecto.
+        Mapa: "Nombre Columna" -> "TIPO"
+        Nota: si hay columnas repetidas en varias tablas, toma la primera ocurrencia (para 1 tabla, suficiente).
         """
         mp: Dict[str, str] = {}
-        for t in (schema_json.get("tables", []) or []):
+        for t in (eschema := (esquema_json.get("tables", []) or [])):
             for c in (t.get("columns", []) or []):
                 nm = c.get("name")
                 tp = (c.get("type") or "")
@@ -439,104 +504,101 @@ class GeminiProvider:
                     mp[nm] = tp
         return mp
 
-    def _is_text_type(self, type_str: str) -> bool:
-        t = (type_str or "").lower()
+    def _es_tipo_texto(self, tipo_str: str) -> bool:
+        t = (tipo_str or "").lower()
         return any(x in t for x in ["char", "text", "varchar", "string", "clob"])
 
-    def _non_text_columns(self, schema_json: Dict[str, Any]) -> List[str]:
-        mp = self._schema_type_map(schema_json)
+    def _columnas_no_texto(self, esquema_json: Dict[str, Any]) -> List[str]:
+        mp = self._mapa_tipos_esquema(esquema_json)
         out = []
         for nm, tp in mp.items():
-            if nm and (not self._is_text_type(tp)):
+            if nm and (not self._es_tipo_texto(tp)):
                 out.append(nm)
         return out
 
-    def _text_columns(self, schema_json: Dict[str, Any]) -> List[str]:
-        mp = self._schema_type_map(schema_json)
+    def _columnas_texto(self, esquema_json: Dict[str, Any]) -> List[str]:
+        mp = self._mapa_tipos_esquema(esquema_json)
         out = []
         for nm, tp in mp.items():
-            if nm and self._is_text_type(tp):
+            if nm and self._es_tipo_texto(tp):
                 out.append(nm)
         return out
 
     # -------------------------- Guard rails SQL (post) -------------------------
 
-    def _guard_trim_nontext(self, sql: str, schema_json: Dict[str, Any], dialect: str) -> str:
+    def _proteger_trim_no_texto(self, sql: str, esquema_json: Dict[str, Any], dialecto: str) -> str:
         """
-        Si el LLM mete TRIM() sobre columnas no-text (BIGINT, etc),
-        reescribimos para evitar errores (p.ej. Postgres btrim(bigint)).
-
+        Si el LLM usa TRIM() sobre columnas no-texto (BIGINT, NUMERIC, etc), reescribe para evitar error:
         - Postgres: TRIM(CAST(col AS TEXT))
-        - Otros: TRIM(CAST(col AS VARCHAR))
+        - Otros:    TRIM(CAST(col AS VARCHAR))
+        - SQLServer: TRIM(CAST(col AS NVARCHAR(4000)))
         """
         s = (sql or "")
         if not s.strip():
             return s
 
-        non_text = self._non_text_columns(schema_json)
-        if not non_text:
+        no_texto = self._columnas_no_texto(esquema_json)
+        if not no_texto:
             return s
 
-        d = (dialect or "").lower()
-        cast_type = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
+        d = (dialecto or "").lower()
+        tipo_cast = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
         if d in ("mssql", "sqlserver"):
-            cast_type = "NVARCHAR(4000)"
+            tipo_cast = "NVARCHAR(4000)"
 
-        for col in sorted(non_text, key=len, reverse=True):
+        for col in sorted(no_texto, key=len, reverse=True):
             col_q = re.escape(col)
 
             # TRIM("Col")
             p1 = re.compile(rf"\bTRIM\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
-            s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {cast_type}))', s)
+            s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {tipo_cast}))', s)
 
             # TRIM(<qualifiers>."Col")
             p2 = re.compile(
                 rf"\bTRIM\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
                 re.IGNORECASE
             )
-            s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {cast_type}))', s)
-
-            # COALESCE(TRIM("Col"), '') también lo cubre por el TRIM interno
+            s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {tipo_cast}))', s)
 
         return s
 
-    def _guard_numeric_clean_nontext(self, sql: str, schema_json: Dict[str, Any]) -> None:
+    def _proteger_numeric_clean_no_texto(self, sql: str, esquema_json: Dict[str, Any]) -> None:
         """
-        Opcional: falla temprano si el modelo usa NUMERIC_CLEAN sobre columnas no-text.
-        Activación: env(SQL_FAIL_ON_NUMERIC_CLEAN_NONTEXT)=true
+        Opción estricta: falla temprano si se detecta NUMERIC_CLEAN sobre columnas no-texto.
+        Activación con: SQL_FAIL_ON_NUMERIC_CLEAN_NONTEXT=true en .env
         """
-        strict = env("SQL_FAIL_ON_NUMERIC_CLEAN_NONTEXT", default=False, cast=bool)
-        if not strict:
+        estricto = env("SQL_FAIL_ON_NUMERIC_CLEAN_NONTEXT", default=False, cast=bool)
+        if not estricto:
             return
 
         s = (sql or "")
         if not s.strip():
             return
 
-        non_text = self._non_text_columns(schema_json)
-        if not non_text:
+        no_texto = self._columnas_no_texto(esquema_json)
+        if not no_texto:
             return
 
-        bad_cols = []
-        for col in non_text:
+        columnas_malas = []
+        for col in no_texto:
             col_q = re.escape(col)
             if re.search(rf"\bNUMERIC_CLEAN\s*\(\s*\"{col_q}\"\s*\)", s, flags=re.IGNORECASE):
-                bad_cols.append(col)
+                columnas_malas.append(col)
 
-        if bad_cols:
-            raise RuntimeError(f"SQL inválida: NUMERIC_CLEAN aplicado sobre columnas no-text: {bad_cols}")
+        if columnas_malas:
+            raise RuntimeError(f"SQL inválida: NUMERIC_CLEAN aplicado sobre columnas no-texto: {columnas_malas}")
 
     # -------------------------- Validación de JSON SQL ------------------------
 
-    def _ensure_sql_json(self, payload: str) -> str:
+    def _asegurar_sql_json(self, payload: str) -> str:
         """
         Acepta:
         - JSON limpio {"sql_query":"...","original_query":"..."}
-        - JSON dentro de texto
-        - casos con escapes raros / truncados
-        - fallback: si solo viene SQL, lo envuelve en JSON
+        - JSON embebido en texto
+        - Casos con escapes / truncados
+        - Fallback: si solo viene SQL, lo envuelve en el JSON esperado
         """
-        def _try(s: str) -> Optional[Dict[str, Any]]:
+        def _probar(s: str) -> Optional[Dict[str, Any]]:
             try:
                 obj = json.loads(s)
                 if isinstance(obj, dict) and "sql_query" in obj:
@@ -548,24 +610,24 @@ class GeminiProvider:
 
         t = (payload or "").strip()
 
-        obj = _try(t)
+        obj = _probar(t)
         if obj:
             return json.dumps(obj, ensure_ascii=False)
 
         m = re.search(r"\{.*\}", t, re.DOTALL)
         if m:
-            obj = _try(m.group(0))
+            obj = _probar(m.group(0))
             if obj:
                 return json.dumps(obj, ensure_ascii=False)
 
         # "sql_query": ".... (truncado/escapes)"
         m2 = re.search(r'"sql_query"\s*:\s*"(?P<q>.*)', t, re.DOTALL)
         if m2:
-            raw = m2.group("q")
-            raw = raw.replace('\\"', '"')
-            raw = raw.replace("\\n", "\n").replace("\\t", "\t")
-            last_quote = raw.rfind('"')
-            sql = raw[:last_quote] if last_quote > 0 else raw
+            crudo = m2.group("q")
+            crudo = crudo.replace('\\"', '"')
+            crudo = crudo.replace("\\n", "\n").replace("\\t", "\t")
+            ultima_comilla = crudo.rfind('"')
+            sql = crudo[:ultima_comilla] if ultima_comilla > 0 else crudo
             sql = sql.strip()
             if sql:
                 return json.dumps({"sql_query": sql, "original_query": ""}, ensure_ascii=False)
@@ -575,43 +637,52 @@ class GeminiProvider:
 
         raise RuntimeError(f"Gemini devolvió un formato inesperado: {t[:400]}")
 
-    # -------------------------------- NL -> SQL --------------------------------
+    # -------------------------------- NL -> SQL -------------------------------
 
-    async def human_query_to_sql(
+    async def consulta_humana_a_sql(
         self,
-        human_query: str,
-        schema_json: Dict[str, Any],
-        dialect: str = "postgresql",
-        default_limit: int = 100,
-        model: Optional[str] = None
+        consulta: str,
+        esquema_json: Dict[str, Any],
+        dialecto: str = "postgresql",
+        limite_por_defecto: int = 100,
+        modelo: Optional[str] = None
     ) -> str:
+        """
+        Convierte una consulta en lenguaje natural a SQL válido y seguro (solo lectura), devolviendo JSON:
+        { "sql_query": "...", "original_query": "..." }
 
-        schema_compact = [
+        Aplica:
+        - Hedging + fallback de modelos
+        - Timeouts por modelo y totales
+        - Postprocesos correctivos (ORDER BY, trims, date diff Postgres)
+        - Validación y reparación de JSON
+        """
+        esquema_compacto = [
             {
                 "schema": t["schema"],
                 "table": t["table"],
                 "columns": [{"name": c["name"], "type": c.get("type", "")} for c in t["columns"]],
                 "fq_name": t.get("fq_name"),
             }
-            for t in schema_json.get("tables", [])
+            for t in esquema_json.get("tables", [])
         ]
-        fq_names = [t.get("fq_name") for t in schema_json.get("tables", []) if t.get("fq_name")]
+        fq_names = [t.get("fq_name") for t in esquema_json.get("tables", []) if t.get("fq_name")]
 
-        # info de tipos para el prompt (clave para evitar TRIM(bigint))
-        non_text_cols = self._non_text_columns(schema_json)
-        text_cols = self._text_columns(schema_json)
+        # Pistas de tipos (clave para evitar TRIM(bigint), etc.)
+        columnas_no_texto = self._columnas_no_texto(esquema_json)
+        columnas_texto = self._columnas_texto(esquema_json)
 
         system_instruction = fr"""
-You are a careful SQL generator for {dialect.upper()}.
+You are a careful SQL generator for {dialecto.upper()}.
 
 Hard rules:
 - Output must be READ-ONLY: SELECT/CTE/EXPLAIN (without ANALYZE). No INSERT/UPDATE/DELETE/DDL/CALL.
 - Use only tables/columns from the provided schema. Do not hallucinate.
-- {self._dialect_quote(dialect)}
+- {self._cita_dialecto(dialecto)}
 - Quote identifiers with spaces/accents: "Fecha de Pedido".
 - Prefer fully-qualified names exactly as in <allowed_fqn>.
 - Use macros (server expands): NUMERIC_CLEAN("Col"), DATE_PARSE("Col").
-- Always add LIMIT {default_limit} if missing.
+- Always add LIMIT {limite_por_defecto} if missing.
 - When aggregating, include meaningful ORDER BY (e.g., ORDER BY SUM(...) DESC).
 
 IMPORTANT:
@@ -658,172 +729,178 @@ POSTGRES DATE DIFF RULE (VERY IMPORTANT):
 Return ONLY valid JSON:
 {{
   "sql_query": "...",
-  "original_query": "{human_query}"
+  "original_query": "{consulta}"
 }}
 
 <schema_json>
-{json.dumps(schema_compact, ensure_ascii=False)}
+{json.dumps(esquema_compacto, ensure_ascii=False)}
 </schema_json>
 <allowed_fqn>
 {json.dumps(fq_names, ensure_ascii=False)}
 </allowed_fqn>
 <type_hints>
-text_columns={json.dumps(text_cols, ensure_ascii=False)}
-non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
+text_columns={json.dumps(columnas_texto, ensure_ascii=False)}
+non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
 </type_hints>
 """.strip()
 
-        primary_full = self._resolve_model(model)
-        models = self._fallback_chain(primary_full, "GEMINI_MODEL_CANDIDATES")
+        primario_full = self._resolver_modelo(modelo)
+        modelos = self._cadena_fallback(primario_full, "GEMINI_MODEL_CANDIDATES")
 
-        tcfg = self._timeouts()
-        per_model_timeout = tcfg["per_model_timeout"]
-        total_timeout = tcfg["total_timeout"]
-        hedge_stagger = tcfg["hedge_stagger"]
-        hedge_parallel = max(1, tcfg["hedge_parallel"])
+        tcfg = self._tiempos_espera()
+        timeout_por_modelo = tcfg["per_model_timeout"]
+        timeout_total = tcfg["total_timeout"]
+        escalonado = tcfg["hedge_stagger"]
+        paralelas = max(1, tcfg["hedge_parallel"])
 
-        contents = [{"role": "user", "parts": [{"text": human_query}]}]
-        config = {
+        contenidos = [{"role": "user", "parts": [{"text": consulta}]}]
+        configuracion = {
             "response_mime_type": "application/json",
             "temperature": 0.06,
             "max_output_tokens": int(env("SQL_MAX_OUTPUT_TOKENS", default=2600)),
             "system_instruction": system_instruction,
         }
 
-        start = time.time()
-        tasks: List[asyncio.Task] = []
-        launched = 0
-        errors: List[str] = []
-        winner: Optional[str] = None
+        inicio = time.time()
+        tareas: List[asyncio.Task] = []
+        lanzadas = 0
+        errores: List[str] = []
+        ganador: Optional[str] = None
 
-        async def _launch(m: str):
-            res = await self._call_generate(m, contents, config, per_model_timeout)
+        async def _lanzar(m: str):
+            res = await self._llamar_generar(m, contenidos, configuracion, timeout_por_modelo)
             return m, res
 
-        for i in range(min(hedge_parallel, len(models))):
-            tasks.append(asyncio.create_task(_launch(models[i])))
-            launched += 1
+        for i in range(min(paralelas, len(modelos))):
+            tareas.append(asyncio.create_task(_lanzar(modelos[i])))
+            lanzadas += 1
 
-        while (time.time() - start) < total_timeout and tasks:
-            remaining = max(0.1, total_timeout - (time.time() - start))
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED, timeout=remaining)
+        while (time.time() - inicio) < timeout_total and tareas:
+            restante = max(0.1, timeout_total - (time.time() - inicio))
+            hechas, pendientes = await asyncio.wait(tareas, return_when=asyncio.FIRST_COMPLETED, timeout=restante)
 
-            if not done:
-                if launched < len(models):
-                    await asyncio.sleep(hedge_stagger)
-                    tasks.append(asyncio.create_task(_launch(models[launched])))
-                    launched += 1
+            if not hechas:
+                if lanzadas < len(modelos):
+                    await asyncio.sleep(escalonado)
+                    tareas.append(asyncio.create_task(_lanzar(modelos[lanzadas])))
+                    lanzadas += 1
                 else:
                     break
                 continue
 
-            for d in done:
+            for d in hechas:
                 mdl, res = await d
                 if isinstance(res, Exception):
-                    msg = _ex_msg(res)
-                    errors.append(f"{mdl}: {msg}")
+                    msg = _mensaje_excepcion(res)
+                    errores.append(f"{mdl}: {msg}")
 
                     status = (getattr(res, "status", "") or "").upper()
                     code = (getattr(res, "code", "") or "")
                     code_str = str(code).upper()
 
+                    # 404 / modelo no disponible: probar siguiente
                     if status == "NOT_FOUND" or "not found" in msg.lower() or "no longer available" in msg.lower():
                         continue
 
+                    # 429 / cuota: dormir y seguir intentando si hay tiempo
                     if status == "RESOURCE_EXHAUSTED" or code_str == "429":
-                        wait_s = _parse_retry_after_secs(msg)
-                        if wait_s > 0:
-                            await asyncio.sleep(wait_s)
+                        esperar_s = _parsear_reintentar_en_segundos(msg)
+                        if esperar_s > 0:
+                            await asyncio.sleep(esperar_s)
                         continue
 
                     continue
 
-                for p in pending:
+                # Cancelar el resto y elegir primer ganador
+                for p in pendientes:
                     p.cancel()
 
-                txt = (res.text or "").strip()
-                if txt:
-                    log.info("[gemini.human_query_to_sql] winner=%s (lat=%.2fs)", mdl, time.time() - start)
-                    winner = txt
-                    tasks.clear()
+                texto = (res.text or "").strip()
+                if texto:
+                    log.info("[gemini.consulta_humana_a_sql] ganador=%s (lat=%.2fs)", mdl, time.time() - inicio)
+                    ganador = texto
+                    tareas.clear()
                     break
 
-                errors.append(f"{mdl}: respuesta vacía")
+                errores.append(f"{mdl}: respuesta vacía")
 
-            tasks = [t for t in tasks if not t.done()]
-            if winner:
+            tareas = [t for t in tareas if not t.done()]
+            if ganador:
                 break
 
-            if launched < len(models) and len(tasks) < hedge_parallel:
-                await asyncio.sleep(hedge_stagger)
-                tasks.append(asyncio.create_task(_launch(models[launched])))
-                launched += 1
+            if lanzadas < len(modelos) and len(tareas) < paralelas:
+                await asyncio.sleep(escalonado)
+                tareas.append(asyncio.create_task(_lanzar(modelos[lanzadas])))
+                lanzadas += 1
 
-        def _postprocess_sql(sql: str) -> str:
+        def _posprocesar_sql(sql: str) -> str:
+            """Aplica correcciones y guard-rails al SQL."""
             sql2 = (sql or "").strip()
-            if (dialect or "").lower() in ("postgresql", "postgres", "postgre"):
-                sql2 = self._fix_postgres_datepart_day(sql2)
-            sql2 = self._auto_order_by(sql2, human_query)
+            if (dialecto or "").lower() in ("postgresql", "postgres", "postgre"):
+                sql2 = self._arreglar_postgres_datepart_day(sql2)
+            sql2 = self._orden_automatico(sql2, consulta)
 
-            # guard rails
-            sql2 = self._guard_trim_nontext(sql2, schema_json=schema_json, dialect=dialect)
-            self._guard_numeric_clean_nontext(sql2, schema_json=schema_json)
+            # Guard rails de tipos
+            sql2 = self._proteger_trim_no_texto(sql2, esquema_json=esquema_json, dialecto=dialecto)
+            self._proteger_numeric_clean_no_texto(sql2, esquema_json=esquema_json)
 
             return sql2
 
-        if winner:
+        if ganador:
             try:
-                obj = json.loads(self._ensure_sql_json(winner))
+                obj = json.loads(self._asegurar_sql_json(ganador))
             except Exception:
-                repair_prompt = (
+                # Reparar JSON con un pase adicional
+                prompt_reparacion = (
                     "Devuelve EXCLUSIVAMENTE un JSON válido con el formato:\n"
                     '{ "sql_query": "...", "original_query": "..." }\n'
                     "Sin markdown, sin texto extra.\n\n"
-                    f"Texto a corregir:\n{winner[:9000]}"
+                    f"Texto a corregir:\n{ganador[:9000]}"
                 )
-                repair_contents = [{"role": "user", "parts": [{"text": repair_prompt}]}]
-                repair_resp = await asyncio.to_thread(
-                    self.client.models.generate_content,
-                    model=models[0],
-                    contents=repair_contents,
+                contenidos_reparar = [{"role": "user", "parts": [{"text": prompt_reparacion}]}]
+                resp_reparar = await asyncio.to_thread(
+                    self.cliente.models.generate_content,
+                    model=modelos[0],
+                    contents=contenidos_reparar,
                     config={
                         "response_mime_type": "application/json",
                         "temperature": 0.0,
                         "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=900)),
                     },
                 )
-                obj = json.loads(self._ensure_sql_json((repair_resp.text or "").strip()))
+                obj = json.loads(self._asegurar_sql_json((resp_reparar.text or "").strip()))
 
-            sql = _postprocess_sql(obj.get("sql_query") or "")
+            sql = _posprocesar_sql(obj.get("sql_query") or "")
             obj["sql_query"] = sql
             return json.dumps(obj, ensure_ascii=False)
 
         # Fallback secuencial si todo falló
-        for mdl in models:
+        for mdl in modelos:
             try:
                 res = await asyncio.wait_for(
-                    asyncio.to_thread(self.client.models.generate_content, model=mdl, contents=contents, config=config),
-                    timeout=per_model_timeout * 1.4
+                    asyncio.to_thread(self.cliente.models.generate_content, model=mdl, contents=contenidos, config=configuracion),
+                    timeout=timeout_por_modelo * 1.4
                 )
                 txt = (res.text or "").strip()
                 if txt:
-                    obj = json.loads(self._ensure_sql_json(txt))
-                    obj["sql_query"] = _postprocess_sql(obj.get("sql_query") or "")
-                    log.info("[gemini.human_query_to_sql] winner(sequential)=%s", mdl)
+                    obj = json.loads(self._asegurar_sql_json(txt))
+                    obj["sql_query"] = _posprocesar_sql(obj.get("sql_query") or "")
+                    log.info("[gemini.consulta_humana_a_sql] ganador(secuencial)=%s", mdl)
                     return json.dumps(obj, ensure_ascii=False)
             except Exception as e:
-                errors.append(f"{mdl}: {_ex_msg(e)}")
+                errores.append(f"{mdl}: {_mensaje_excepcion(e)}")
 
-        raise RuntimeError("Fallo human_query_to_sql: " + " ; ".join(errors[-8:]))
+        raise RuntimeError("Fallo consulta_humana_a_sql: " + " ; ".join(errores[-8:]))
 
-    # ---------------------------- Answer Rendering ----------------------------
+    # ---------------------------- Render de respuesta -------------------------
 
-    def _render_answer_obj(self, obj: Dict[str, Any]) -> str:
-        summary = (obj.get("summary") or "").strip()
-        insights = obj.get("insights") or []
-        caveats = obj.get("caveats") or []
+    def _renderizar_objeto_respuesta(self, obj: Dict[str, Any]) -> str:
+        """Normaliza/limpia el objeto JSON de respuesta y lo renderiza como texto."""
+        resumen = (obj.get("summary") or "").strip()
+        hallazgos = obj.get("insights") or []
+        salvedades = obj.get("caveats") or []
 
-        def clean_list(xs, max_n):
+        def limpiar_lista(xs, max_n):
             out = []
             for x in (xs or [])[:max_n]:
                 if isinstance(x, str):
@@ -833,20 +910,21 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
                         out.append(t)
             return out
 
-        ins = clean_list(insights, 10)
-        cav = clean_list(caveats, 4)
+        ins = limpiar_lista(hallazgos, 10)
+        cav = limpiar_lista(salvedades, 4)
 
-        lines: List[str] = []
-        if summary:
-            lines.append(summary if summary.endswith((".", "!", "?")) else summary + ".")
+        lineas: List[str] = []
+        if resumen:
+            lineas.append(resumen if resumen.endswith((".", "!", "?")) else resumen + ".")
         for t in ins:
-            lines.append(f"- {t}")
+            lineas.append(f"- {t}")
         for t in cav:
-            lines.append(f"Nota: {t}")
-        return "\n".join(lines).strip()
+            lineas.append(f"Nota: {t}")
+        return "\n".join(lineas).strip()
 
-    def _looks_truncated(self, text: str) -> bool:
-        t = (text or "").strip()
+    def _parece_truncado(self, texto: str) -> bool:
+        """Heurística simple para detectar texto cortado/incompleto."""
+        t = (texto or "").strip()
         if not t:
             return True
         if re.search(r"\b\d+\.\s*$", t):
@@ -857,27 +935,31 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
             return True
         return False
 
-    def _looks_hallucinated(self, rendered: str, row_keys: List[str]) -> bool:
-        text = (rendered or "").lower()
-        keys = " ".join([k.lower() for k in (row_keys or [])])
+    def _parece_alucinada(self, renderizado: str, claves_fila: List[str]) -> bool:
+        """
+        Heurística simple para detectar alucinaciones obvias cuando las columnas no soportan el contenido.
+        """
+        texto = (renderizado or "").lower()
+        claves = " ".join([k.lower() for k in (claves_fila or [])])
 
-        suspicious_terms = [
+        terminos_sospechosos = [
             "asia", "asia-pacífico", "pacifico", "marketing", "campaña", "roi", "retención",
             "lealtad", "proyecciones", "mercados emergentes", "interanual", "cambiari",
             "lanzamiento", "producto alfa", "canales tradicionales"
         ]
 
-        if any(t in text for t in suspicious_terms):
-            related_cols = ["roi", "marketing", "campaña", "retención", "mercado", "región", "producto", "proyección"]
-            if not any(rc in keys for rc in related_cols):
+        if any(t in texto for t in terminos_sospechosos):
+            cols_rel = ["roi", "marketing", "campaña", "retención", "mercado", "región", "producto", "proyección"]
+            if not any(rc in claves for rc in cols_rel):
                 return True
 
-        if "crecim" in text and not any(x in keys for x in ["fecha", "mes", "año", "trimestre", "periodo", "week"]):
+        if "crecim" in texto and not any(x in claves for x in ["fecha", "mes", "año", "trimestre", "periodo", "week"]):
             return True
 
         return False
 
-    def _first_json(self, s: str) -> Optional[Dict[str, Any]]:
+    def _primer_json(self, s: str) -> Optional[Dict[str, Any]]:
+        """Obtiene el primer objeto JSON embebido en el texto (si existe)."""
         s = (s or "").strip()
         try:
             obj = json.loads(s)
@@ -896,15 +978,16 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
             return None
         return None
 
-    async def _repair_or_continue_json(
+    async def _reparar_o_continuar_json(
         self,
         mdl: str,
         schema_json_str: str,
-        last_txt: str,
+        ultimo_texto: str,
         timeout_s: float,
-        base_config: Dict[str, Any],
+        config_base: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        repair_prompt = (
+        """Reparación/continuación para producir un JSON válido conforme al schema esperado."""
+        prompt_reparar = (
             "El texto anterior está incompleto o inválido.\n"
             "Devuelve SOLO un JSON válido que cumpla EXACTAMENTE el schema.\n"
             "Reglas:\n"
@@ -912,37 +995,45 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
             "- Usa únicamente lo presente en `rows` y `profile`.\n"
             "- Asegura que `summary` termine en frase completa.\n\n"
             f"Schema:\n{schema_json_str}\n\n"
-            f"Texto a reparar:\n{(last_txt or '')[:12000]}"
+            f"Texto a reparar:\n{(ultimo_texto or '')[:12000]}"
         )
-        contents = [{"role": "user", "parts": [{"text": repair_prompt}]}]
+        contenidos = [{"role": "user", "parts": [{"text": prompt_reparar}]}]
         try:
             resp = await asyncio.wait_for(
-                asyncio.to_thread(self.client.models.generate_content, model=mdl, contents=contents, config=base_config),
+                asyncio.to_thread(self.cliente.models.generate_content, model=mdl, contents=contenidos, config=config_base),
                 timeout=timeout_s
             )
             txt = (resp.text or "").strip()
-            obj = self._first_json(txt)
+            obj = self._primer_json(txt)
             return obj
         except Exception:
             return None
 
     # -------------------------------- Resumen --------------------------------
 
-    async def build_answer(
+    async def construir_respuesta(
         self,
-        rows: List[Dict[str, Any]],
-        human_query: str,
-        model: Optional[str] = None
+        filas: List[Dict[str, Any]],
+        consulta_humana: str,
+        modelo: Optional[str] = None
     ) -> str:
+        """
+        Construye una respuesta en lenguaje natural a partir de:
+        - filas (muestra compactada)
+        - un perfil estadístico determinístico
+        - un schema JSON de salida: {"summary": str, "insights": [str], "caveats": [str]}
 
-        max_rows = int(env("ANSWER_MAX_ROWS", default=400))
-        max_chars = int(env("ANSWER_MAX_CHARS", default=12000))
-        rows_json = _compact_rows_for_summary(rows, max_rows=max_rows, max_chars=max_chars)
+        Retorna:
+            Texto en español con resumen + bullets y notas cuando apliquen.
+        """
+        max_filas = int(env("ANSWER_MAX_ROWS", default=400))
+        max_caracteres = int(env("ANSWER_MAX_CHARS", default=12000))
+        filas_json = _compactar_filas_para_resumen(filas, max_filas, max_caracteres)
 
-        profile = _compute_profile(rows, max_keys_top=8)
-        profile_json = json.dumps(profile, ensure_ascii=False)[:14000]
+        perfil = _calcular_perfil(filas, max_claves_top=8)
+        perfil_json = json.dumps(perfil, ensure_ascii=False)[:14000]
 
-        row_keys = list(rows[0].keys()) if rows else []
+        claves_fila = list(filas[0].keys()) if filas else []
 
         schema = {
             "type": "object",
@@ -970,56 +1061,56 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
             "- No dejes frases cortadas.\n\n"
             "Devuelve EXCLUSIVAMENTE un JSON válido con este schema (sin markdown):\n"
             '{ "summary": "...", "insights": ["..."], "caveats": ["..."] }\n\n'
-            f"Pregunta:\n{human_query}\n\n"
-            f"Columnas disponibles:\n{json.dumps(row_keys, ensure_ascii=False)}\n\n"
-            f"Profile (estadístico real):\n{profile_json}\n\n"
-            f"Rows (muestra truncada):\n{rows_json}\n"
+            f"Pregunta:\n{consulta_humana}\n\n"
+            f"Columnas disponibles:\n{json.dumps(claves_fila, ensure_ascii=False)}\n\n"
+            f"Profile (estadístico real):\n{perfil_json}\n\n"
+            f"Rows (muestra truncada):\n{filas_json}\n"
         ).strip()
 
-        primary_full = self._resolve_answer_model(model)
-        models = self._fallback_chain(primary_full, "GEMINI_MODEL_ANSWER_CANDIDATES")
+        primario_full = self._resolver_modelo_respuesta(modelo)
+        modelos = self._cadena_fallback(primario_full, "GEMINI_MODEL_ANSWER_CANDIDATES")
 
-        per_model_timeout = float(env("ANSWER_PER_MODEL_TIMEOUT", default=55.0))
-        total_timeout = float(env("ANSWER_TOTAL_TIMEOUT", default=140.0))
+        timeout_por_modelo = float(env("ANSWER_PER_MODEL_TIMEOUT", default=55.0))
+        timeout_total = float(env("ANSWER_TOTAL_TIMEOUT", default=140.0))
 
-        base_contents = [{"role": "user", "parts": [{"text": prompt}]}]
-        base_config = {
+        contenidos_base = [{"role": "user", "parts": [{"text": prompt}]}]
+        config_base = {
             "response_mime_type": "application/json",
             "temperature": float(env("ANSWER_TEMPERATURE", default=0.14)),
             "max_output_tokens": int(env("ANSWER_MAX_OUTPUT_TOKENS", default=4096)),
             "system_instruction": system_instruction,
         }
 
-        start = time.time()
-        errors: List[str] = []
+        inicio = time.time()
+        errores: List[str] = []
         schema_str = system_instruction
 
-        async def _invoke(mdl: str, contents, config, timeout_s: float):
+        async def _invocar(mdl: str, contenidos, config, timeout_s: float):
             try:
                 resp = await asyncio.wait_for(
-                    asyncio.to_thread(self.client.models.generate_content, model=mdl, contents=contents, config=config),
+                    asyncio.to_thread(self.cliente.models.generate_content, model=mdl, contents=contenidos, config=config),
                     timeout=timeout_s
                 )
                 return resp.text or ""
             except Exception as e:
                 return e
 
-        for mdl in models:
-            rem = total_timeout - (time.time() - start)
+        for mdl in modelos:
+            rem = timeout_total - (time.time() - inicio)
             if rem <= 0.5:
                 break
 
-            for attempt in range(2):
-                rem2 = total_timeout - (time.time() - start)
+            for intento in range(2):
+                rem2 = timeout_total - (time.time() - inicio)
                 if rem2 <= 0.5:
                     break
 
-                timeout_this = min(per_model_timeout * (1.0 + 0.25 * attempt), rem2)
-                txt = await _invoke(mdl, base_contents, base_config, timeout_this)
+                timeout_este = min(timeout_por_modelo * (1.0 + 0.25 * intento), rem2)
+                txt = await _invocar(mdl, contenidos_base, config_base, timeout_este)
 
                 if isinstance(txt, Exception):
-                    msg = _ex_msg(txt)
-                    errors.append(f"{mdl}: {msg}")
+                    msg = _mensaje_excepcion(txt)
+                    errores.append(f"{mdl}: {msg}")
 
                     status = (getattr(txt, "status", "") or "").upper()
                     code = (getattr(txt, "code", "") or "")
@@ -1029,83 +1120,86 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
                         break
 
                     if status == "RESOURCE_EXHAUSTED" or code_str == "429":
-                        wait_s = _parse_retry_after_secs(msg)
-                        if wait_s > 0 and rem2 > wait_s:
-                            await asyncio.sleep(wait_s)
+                        esperar_s = _parsear_reintentar_en_segundos(msg)
+                        if esperar_s > 0 and rem2 > esperar_s:
+                            await asyncio.sleep(esperar_s)
                         continue
 
                     continue
 
-                obj = self._first_json(txt)
+                obj = self._primer_json(txt)
                 if obj and isinstance(obj, dict) and (obj.get("summary") or "").strip():
-                    rendered = self._render_answer_obj(obj)
+                    renderizado = self._renderizar_objeto_respuesta(obj)
 
-                    if rendered and not self._looks_hallucinated(rendered, row_keys) and not self._looks_truncated(rendered):
-                        log.info("[gemini.build_answer] winner=%s attempt=%d lat=%.2fs", mdl, attempt + 1, time.time() - start)
-                        return rendered
+                    if renderizado and not self._parece_alucinada(renderizado, claves_fila) and not self._parece_truncado(renderizado):
+                        log.info("[gemini.construir_respuesta] ganador=%s intento=%d lat=%.2fs", mdl, intento + 1, time.time() - inicio)
+                        return renderizado
 
-                    if rendered and self._looks_truncated(rendered) and rem2 > 8.0:
-                        obj2 = await self._repair_or_continue_json(
+                    if renderizado and self._parece_truncado(renderizado) and rem2 > 8.0:
+                        obj2 = await self._reparar_o_continuar_json(
                             mdl=mdl,
                             schema_json_str=schema_str,
-                            last_txt=txt,
+                            ultimo_texto=txt,
                             timeout_s=min(22.0, rem2),
-                            base_config=base_config,
+                            config_base=config_base,
                         )
                         if obj2 and (obj2.get("summary") or "").strip():
-                            rendered2 = self._render_answer_obj(obj2)
-                            if rendered2 and not self._looks_hallucinated(rendered2, row_keys) and not self._looks_truncated(rendered2):
-                                log.info("[gemini.build_answer] winner(repair)=%s lat=%.2fs", mdl, time.time() - start)
-                                return rendered2
+                            renderizado2 = self._renderizar_objeto_respuesta(obj2)
+                            if renderizado2 and not self._parece_alucinada(renderizado2, claves_fila) and not self._parece_truncado(renderizado2):
+                                log.info("[gemini.construir_respuesta] ganador(repair)=%s lat=%.2fs", mdl, time.time() - inicio)
+                                return renderizado2
 
-                fix_prompt = (
+                # Intento de fix rápido del JSON
+                prompt_fix = (
                     "Corrige el siguiente texto a un JSON VÁLIDO que cumpla exactamente el schema. "
                     "NO des explicaciones. NO agregues contexto que no esté en `rows`/`profile`. "
                     "Asegura que `summary` termine en frase completa.\n"
                     f"{(txt or '')[:12000]}"
                 )
-                fix_contents = [{"role": "user", "parts": [{"text": fix_prompt}]}]
-                fix_txt = await _invoke(mdl, fix_contents, base_config, min(22.0, rem2))
+                contenidos_fix = [{"role": "user", "parts": [{"text": prompt_fix}]}]
+                txt_fix = await _invocar(mdl, contenidos_fix, config_base, min(22.0, rem2))
 
-                if not isinstance(fix_txt, Exception):
-                    obj2 = self._first_json(fix_txt)
+                if not isinstance(txt_fix, Exception):
+                    obj2 = self._primer_json(txt_fix)
                     if obj2 and isinstance(obj2, dict) and (obj2.get("summary") or "").strip():
-                        rendered2 = self._render_answer_obj(obj2)
-                        if rendered2 and not self._looks_hallucinated(rendered2, row_keys) and not self._looks_truncated(rendered2):
-                            log.info("[gemini.build_answer] winner(fix)=%s lat=%.2fs", mdl, time.time() - start)
-                            return rendered2
+                        renderizado2 = self._renderizar_objeto_respuesta(obj2)
+                        if renderizado2 and not self._parece_alucinada(renderizado2, claves_fila) and not self._parece_truncado(renderizado2):
+                            log.info("[gemini.construir_respuesta] ganador(fix)=%s lat=%.2fs", mdl, time.time() - inicio)
+                            return renderizado2
 
-                errors.append(f"{mdl}: sin JSON válido/aceptable (attempt {attempt + 1})")
+                errores.append(f"{mdl}: sin JSON válido/aceptable (intento {intento + 1})")
 
-        log.warning("[gemini.build_answer] fallback local. errores: %s", "; ".join(errors[-8:]))
-        return _local_fallback_answer(human_query=human_query, rows=rows, profile=profile)
+        log.warning("[gemini.construir_respuesta] fallback local. errores: %s", "; ".join(errores[-8:]))
+        return _respuesta_local_de_respaldo(consulta_humana=consulta_humana, filas=filas, perfil=perfil)
 
     # --------------------------------- Ping -----------------------------------
 
-    async def ping(self, model: Optional[str] = None) -> str:
-        primary_full = self._resolve_model(model)
-        models = self._fallback_chain(primary_full, "GEMINI_MODEL_CANDIDATES")
-        last = ""
-        for m in models:
+    async def ping(self, modelo: Optional[str] = None) -> str:
+        """Comprueba disponibilidad devolviendo el primer texto no vacío."""
+        primario_full = self._resolver_modelo(modelo)
+        modelos = self._cadena_fallback(primario_full, "GEMINI_MODEL_CANDIDATES")
+        ultimo = ""
+        for m in modelos:
             try:
                 resp = await asyncio.to_thread(
-                    self.client.models.generate_content,
+                    self.cliente.models.generate_content,
                     model=m,
                     contents=[{"role": "user", "parts": [{"text": "ping"}]}],
                 )
                 t = (resp.text or "").strip()
                 if t:
                     return t
-                last = t
+                ultimo = t
             except Exception as e:
                 log.warning("[gemini] ping falló con %s: %s", m, e)
                 continue
-        return last
+        return ultimo
 
     # --------------------------------- Aux ------------------------------------
 
-    def _dialect_quote(self, dialect: str) -> str:
-        d = (dialect or "postgresql").lower()
+    def _cita_dialecto(self, dialecto: str) -> str:
+        """Indica cómo citar identificadores para distintos SGBD."""
+        d = (dialecto or "postgresql").lower()
         if d in ("postgresql", "sqlite"):
             return 'Use double quotes for identifiers.'
         if d == "mysql":
@@ -1114,12 +1208,13 @@ non_text_columns={json.dumps(non_text_cols, ensure_ascii=False)}
             return 'Use square brackets for identifiers.'
         return 'Use double quotes by default.'
 
-    def list_models(self) -> Dict[str, Any]:
+    def listar_modelos(self) -> Dict[str, Any]:
+        """Devuelve el listado de modelos visibles por la clave/proyecto actual."""
         items = []
         try:
-            for m in self.client.models.list():
-                methods = getattr(m, "supported_generation_methods", None) or getattr(m, "generation_methods", None)
-                items.append({"name": m.name, "methods": methods})
+            for m in self.cliente.models.list():
+                metodos = getattr(m, "supported_generation_methods", None) or getattr(m, "generation_methods", None)
+                items.append({"name": m.name, "methods": metodos})
             return {"status": "ok", "models": items}
         except Exception as e:
             return {"status": "error", "detail": str(e)}
