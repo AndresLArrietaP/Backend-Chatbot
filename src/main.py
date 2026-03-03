@@ -22,7 +22,7 @@ import time
 import unicodedata
 from decimal import Decimal
 from hashlib import sha1
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from decouple import config as env
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -145,6 +145,28 @@ def normalizar_filas(
 
     return salida
 
+def _parse_list_param(v: Optional[Union[List[str], str]]) -> Optional[List[str]]:
+    """
+    Acepta:
+    - None
+    - ["a", "b"] (multi query)
+    - "a,b" (csv)
+    - "a" (single)
+    """
+    if v is None:
+        return None
+    if isinstance(v, list):
+        out = []
+        for item in v:
+            if item is None:
+                continue
+            out.extend([x.strip() for x in str(item).split(",") if x.strip()])
+        return out or None
+    # string
+    s = str(v).strip()
+    if not s:
+        return None
+    return [x.strip() for x in s.split(",") if x.strip()] or None
 
 def _respuesta_resumen_local(filas: List[Dict[str, Any]], consulta_humana: str) -> str:
     """Genera un resumen local simple cuando el LLM no responde."""
@@ -616,16 +638,20 @@ def healthz() -> Dict[str, str]:
 @router.get("/schema", dependencies=[Depends(guardia_api_key)])
 def obtener_esquema(
     request: Request,
-    schemas: Optional[List[str]] = Query(default=None),
-    tables: Optional[List[str]] = Query(default=None),
+    schemas: Optional[Union[List[str], str]] = Query(default=None),
+    tables: Optional[Union[List[str], str]] = Query(default=None),
 ) -> Dict[str, Any]:
     settings = request.app.state.settings
-    if not schemas:
-        schemas = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
+
+    schemas_list = _parse_list_param(schemas)
+    tables_list = _parse_list_param(tables)
+
+    if not schemas_list:
+        schemas_list = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
 
     esquema_json = database.obtener_esquema_json(
-        esquemas=schemas,
-        tablas=tables,
+        esquemas=schemas_list,
+        tablas=tables_list,
         max_tablas=getattr(settings, "MAX_SCHEMA_TABLES", 50),
         max_columnas=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
     )
