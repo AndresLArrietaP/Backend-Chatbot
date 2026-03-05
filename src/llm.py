@@ -9,13 +9,13 @@ Responsabilidades:
 - Convertir una consulta en lenguaje natural a SQL (NL→SQL).
 - Pedir al proveedor que genere una respuesta textual (build_answer).
 
-API principal (la que quieres mantener):
+API principal (la que usas en tu backend):
 ✅ consulta_humana_a_sql(...)
 
 Notas:
 - Este módulo trabaja con un proveedor creado por `src.providers.factory`.
-- Mantiene wrappers/alias por compatibilidad con código anterior, pero el flujo recomendado
-  es usar `await consulta_humana_a_sql(...)` desde tu endpoint.
+- Mantiene wrappers/alias por compatibilidad con código anterior.
+- Evita sesgar el dialecto mencionando explícitamente LIMIT/TOP en refuerzos.
 """
 
 from __future__ import annotations
@@ -48,12 +48,15 @@ def _es_intencion_comparativa(texto: str) -> bool:
 def _reforzar_consulta_comparativa(q: str) -> str:
     """
     Refuerzo genérico:
-    Si la consulta implica comparar A vs B, se pide al LLM que incluya A, B y (A-B).
+    Si la consulta implica comparar A vs B, pide incluir A, B y (A-B).
+    No menciona LIMIT/TOP para no sesgar el dialecto; solo pide ordenar
+    por Diferencia cuando se esté limitando filas.
     """
     return (
         q.strip()
         + " | IMPORTANTE: Si la consulta implica comparar 2 campos (A vs B), el SELECT DEBE incluir "
-          "las 2 métricas y una columna Diferencia = (A - B), y ordenar por Diferencia DESC cuando haya LIMIT."
+          "las 2 métricas y una columna Diferencia = (A - B), y ordenar por Diferencia DESC cuando "
+          "se esté limitando la cantidad de filas devueltas."
     )
 
 
@@ -92,14 +95,16 @@ async def consulta_humana_a_sql(
     """
     Convierte NL → SQL mediante el proveedor activo.
 
-    Returns:
-        Un JSON string con forma:
-          {"sql_query":"...", "original_query":"..."}
+    Args:
+        consulta_humana: prompt del usuario en lenguaje natural
+        esquema_json: salida de database.obtener_esquema_json(...)
+        dialecto: 'mssql'/'sqlserver' o 'postgresql', etc.
+        limite_por_defecto: número de filas a limitar (TOP/LIMIT según dialecto)
+        modelo: override opcional del modelo del proveedor
 
-    Comportamiento:
-    - Si detecta intención comparativa, refuerza la instrucción al LLM.
-    - Si el proveedor devuelve algo no-JSON o sin sql_query, lo retorna tal cual.
-      (Esto permite depurar o aplicar reparaciones posteriores si existieran.)
+    Returns:
+        JSON string con forma:
+          {"sql_query":"...", "original_query":"..."}
     """
     q = (consulta_humana or "").strip()
     if not q:
@@ -107,7 +112,7 @@ async def consulta_humana_a_sql(
 
     q_reforzada = _reforzar_consulta_comparativa(q) if _es_intencion_comparativa(q) else q
 
-    # Compatibilidad: proveedor puede exponer métodos en español o inglés
+    # Compatibilidad: proveedor puede exponer métodos en español o en inglés
     if hasattr(_proveedor, "consulta_humana_a_sql"):
         salida = await _proveedor.consulta_humana_a_sql(
             consulta=q_reforzada,
@@ -166,7 +171,7 @@ async def human_query_to_sql(
     default_limit: int = 100,
     model: Optional[str] = None,
 ) -> str:
-    """Alias async legacy."""
+    """Alias async legacy para mantener compatibilidad."""
     return await consulta_humana_a_sql(
         consulta_humana=human_query,
         esquema_json=schema_json,

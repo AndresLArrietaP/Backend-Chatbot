@@ -672,6 +672,43 @@ class GeminiProvider:
         columnas_no_texto = self._columnas_no_texto(esquema_json)
         columnas_texto = self._columnas_texto(esquema_json)
 
+        # --- justo antes de construir system_instruction, agrega este helper local ---
+        def _reglas_por_dialecto(d: str) -> str:
+            dd = (d or "").lower().strip()
+
+            if dd in ("mssql", "sqlserver"):
+                return f"""
+DIALECT: SQL SERVER (T-SQL / Azure SQL)
+
+- Use square brackets for identifiers, especially if they contain spaces or accents:
+  Example: [Fecha de Pedido], [NroMuestraBDAccess].
+- Prefer fully-qualified names EXACTLY as they appear in <allowed_fqn> (e.g., [dbo].[Project]).
+- Do NOT use LIMIT. Use TOP ({limite_por_defecto}) in the SELECT clause.
+- Do NOT use Postgres-only macros or syntax:
+  - NO NUMERIC_CLEAN(...)
+  - NO DATE_PARSE(...)
+  - NO regex operators (~, !~*)
+- For numeric text cleanup (only if the column is TEXT in schema), use TRY_CONVERT/TRY_CAST patterns, e.g.:
+  TRY_CONVERT(decimal(38,10), REPLACE(REPLACE(LTRIM(RTRIM([Col])), '.', ''), ',', '.'))
+  (Keep it simple; avoid complex regex.)
+- For DATE parsing of TEXT (only if needed), use TRY_CONVERT(date, ...) with a known style when possible.
+- When using TOP, if the query is an aggregation or ranking, include an ORDER BY that matches the intent
+  (e.g., ORDER BY SUM(...) DESC, ORDER BY [Fecha] DESC).
+""".strip()
+
+            # Default: Postgres-style
+            return f"""
+DIALECT: POSTGRESQL
+
+- Use double quotes for identifiers with spaces/accents: "Fecha de Pedido".
+- Prefer fully-qualified names EXACTLY as they appear in <allowed_fqn>.
+- You MAY use macros (server expands): NUMERIC_CLEAN("Col"), DATE_PARSE("Col").
+- Always add LIMIT {limite_por_defecto} if missing.
+- Regex operators (~, !~*) are allowed only in Postgres.
+""".strip()
+
+
+# --- Reemplaza tu system_instruction actual por este ---
         system_instruction = fr"""
 You are a careful SQL generator for {dialecto.upper()}.
 
@@ -679,11 +716,10 @@ Hard rules:
 - Output must be READ-ONLY: SELECT/CTE/EXPLAIN (without ANALYZE). No INSERT/UPDATE/DELETE/DDL/CALL.
 - Use only tables/columns from the provided schema. Do not hallucinate.
 - {self._cita_dialecto(dialecto)}
-- Quote identifiers with spaces/accents: "Fecha de Pedido".
 - Prefer fully-qualified names exactly as in <allowed_fqn>.
-- Use macros (server expands): NUMERIC_CLEAN("Col"), DATE_PARSE("Col").
-- Always add LIMIT {limite_por_defecto} if missing.
-- When aggregating, include meaningful ORDER BY (e.g., ORDER BY SUM(...) DESC).
+- Always include a row limit in the dialect-appropriate way.
+
+{_reglas_por_dialecto(dialecto)}
 
 IMPORTANT:
 - Do NOT add UNION, ROLLUP, CUBE, GROUPING SETS, or any total/overall rows.
@@ -691,40 +727,38 @@ IMPORTANT:
 
 FIELD & TYPE RULES (VERY IMPORTANT):
 - The schema provides column types.
-- DO NOT use TRIM(), COALESCE(TRIM(...),''), regex (~), or string comparisons on NON-TEXT columns (e.g., BIGINT/INT/NUMERIC/DATE/TIMESTAMP).
-- For NON-TEXT null checks use: "Col" IS NOT NULL.
-- For TEXT blank checks use: COALESCE(TRIM("Col"), '') <> ''.
+- DO NOT use TRIM(), COALESCE(TRIM(...),''), regex, or string comparisons on NON-TEXT columns
+  (e.g., BIGINT/INT/NUMERIC/DATE/DATETIME/UNIQUEIDENTIFIER).
+- For NON-TEXT null checks use: [Col] IS NOT NULL  (or "Col" IS NOT NULL in Postgres).
+- For TEXT blank checks:
+  - SQL Server: COALESCE(LTRIM(RTRIM([Col])), '') <> ''
+  - Postgres:   COALESCE(TRIM("Col"), '') <> ''
 
-NUMERIC_CLEAN usage:
-- Use NUMERIC_CLEAN("Col") ONLY for TEXT columns that represent numbers (amounts/quantities).
-- NEVER apply NUMERIC_CLEAN to identifiers/keys (e.g., orders, ids, codes) if those columns are NON-TEXT.
-- If a metric column is already numeric in schema, use it directly or CAST as needed; do NOT wrap it with NUMERIC_CLEAN.
+NUMERIC cleanup rules:
+- If a metric column is already numeric in schema, use it directly (or CAST/TRY_CAST if needed).
+- NEVER apply numeric cleanup to identifiers/keys.
+- If the user asks for totals by some key:
+  SELECT <key>, SUM(<metric>) AS <alias>
+  GROUP BY <key>
+  ORDER BY SUM(<metric>) DESC
 
-When grouping by a TEXT key, exclude totals/footer rows and blank keys:
-  WHERE COALESCE(TRIM("Key"), '') <> ''
-    AND "Key" !~* '^\s*total'
-    AND "Key" !~* '^\s*gran\s*total'
-    AND "Key" !~* '^\s*totales'
-
-If grouping by a NON-TEXT key (like BIGINT order id):
-  WHERE "Key" IS NOT NULL
+Footer/total rows exclusion:
+- If grouping by a TEXT key:
+  - SQL Server example:
+      WHERE COALESCE(LTRIM(RTRIM([Key])), '') <> ''
+        AND LOWER(LTRIM(RTRIM([Key]))) NOT LIKE 'total%'
+        AND LOWER(LTRIM(RTRIM([Key]))) NOT LIKE 'gran total%'
+        AND LOWER(LTRIM(RTRIM([Key]))) NOT LIKE 'totales%'
+  - Postgres example:
+      WHERE COALESCE(TRIM("Key"), '') <> ''
+        AND "Key" !~* '^\s*total'
+        AND "Key" !~* '^\s*gran\s*total'
+        AND "Key" !~* '^\s*totales'
 
 Field coverage (VERY IMPORTANT):
 - If the user asks for specific fields (e.g., “material”, “pedido venta”, “despachado”, “pendiente”),
   you MUST include those corresponding columns in the SELECT list.
-- If the user asks for totals by some key:
-  SELECT <key>, SUM(<metric>) AS "<alias>"
-  GROUP BY <key>
-- If the user asks for “despachado y pendiente por pedido/material”, include BOTH metrics in SELECT:
-  SUM(NUMERIC_CLEAN("Despachado")) AS "Total Despachado",
-  SUM(NUMERIC_CLEAN("Pendiente"))  AS "Total Pendiente"
-  and group by the requested keys.
-- Avoid queries that return only identifiers (e.g., SELECT DISTINCT "Pedido Venta") when the user asked totals/metrics.
-
-POSTGRES DATE DIFF RULE (VERY IMPORTANT):
-- DATE_PARSE(...) returns a DATE.
-- Day difference is computed as: (DATE_PARSE(b) - DATE_PARSE(a)) returning INTEGER.
-- DO NOT use DATE_PART('day', DATE_PARSE(b) - DATE_PARSE(a)). Avoid DATE_PART('day', <date1> - <date2>).
+- Avoid queries that return only identifiers when the user asked totals/metrics.
 
 Return ONLY valid JSON:
 {{

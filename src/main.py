@@ -924,24 +924,32 @@
 """
 Módulo: main
 ------------
-Router principal de la API.
+Router principal de la API (FastAPI) para NL→SQL sobre Azure SQL (SQL Server).
 
-Endpoints:
-- GET  /health
-- GET  /schema
-- POST /schema/refresh
-- POST /human_query
-- POST /sql
+Incluye:
+- Endpoints base:
+  - GET  /            -> raíz
+  - GET  /health      -> health check
+  - GET  /schema      -> introspección del esquema (cacheado)
+  - POST /schema/refresh -> refresca caché de esquema
+  - POST /human_query -> NL→SQL + ejecución opcional
+  - POST /sql         -> ejecutar SQL directo (solo lectura)
 
-Flujo NL→SQL (human_query):
-1) Obtiene esquema (y construye allow-list de tablas).
-2) Llama al LLM (consulta_humana_a_sql) -> obtiene JSON {sql_query,...}
-3) Limpia y asegura el SQL (solo lectura, tablas permitidas).
-4) (Opcional) ejecuta y devuelve filas.
+- Endpoints LLM utilitarios (de la versión anterior):
+  - GET  /llm/ping
+  - GET  /llm/models
 
-Nota MSSQL:
-- DB_DIALECT=mssql
-- No se usa fallback “tipo Postgres” (LIMIT/comillas) para no romper.
+Seguridad:
+- Solo consultas de lectura (SELECT/CTE, EXPLAIN si está permitido, VALUES si está permitido).
+- Allow-list por tablas consultables según el esquema retornado.
+- Guardia opcional por API key:
+    Si configuras `API_KEY` en settings (vía config.py/.env),
+    entonces valida el header `x-api-key`.
+    Si NO configuras `API_KEY`, no exige nada.
+
+Notas MSSQL:
+- DB_DIALECT=mssql → se usa TOP en lugar de LIMIT desde database.py.
+- No hay fallback determinístico tipo Postgres (evita errores de sintaxis).
 """
 
 import json
@@ -950,10 +958,10 @@ import time
 import unicodedata
 from decimal import Decimal
 from hashlib import sha1
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from decouple import config as env
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
@@ -963,60 +971,40 @@ from . import llm
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG if env("DEBUG", default=False, cast=bool) else logging.INFO)
 
-DB_DIALECT = (env("DB_DIALECT", default="postgresql") or "").strip().lower()
-
-
-def es_mssql() -> bool:
-    return DB_DIALECT.startswith("mssql")
-
-
+# =========================
+#  Router
+# =========================
 router = APIRouter()
 
-# ----------------------------- Configuración ---------------------------------
+# =========================
+#  Configuración (env)
+# =========================
+DB_DIALECT = (env("DB_DIALECT", default="postgresql") or "").strip().lower()
 
 TARGET_SCHEMAS = [s.strip() for s in (env("TARGET_SCHEMAS", default="public") or "").split(",") if s.strip()]
 
 MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
 MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
+
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
 MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
 
 DECIMAL_PLACES = env("DECIMAL_PLACES", default=3, cast=int)
 
-SQL_CACHE_TTL_SECONDS = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
-SQL_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
+# Cache (para schema)
+SCHEMA_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
+SCHEMA_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
 
-# ----------------------------- Cache esquema ---------------------------------
+# =========================
+#  Helpers
+# =========================
 
-_SCHEMA_CACHE: Dict[str, Tuple[float, Any]] = {}
+def es_mssql() -> bool:
+    return DB_DIALECT.startswith("mssql")
 
-
-def _cache_get(key: str) -> Optional[Any]:
-    rec = _SCHEMA_CACHE.get(key)
-    if not rec:
-        return None
-    ts, val = rec
-    if (time.time() - ts) > SQL_CACHE_TTL_SECONDS:
-        _SCHEMA_CACHE.pop(key, None)
-        return None
-    return val
-
-
-def _cache_set(key: str, val: Any) -> None:
-    if len(_SCHEMA_CACHE) >= SQL_CACHE_MAX:
-        oldest_key = min(_SCHEMA_CACHE.items(), key=lambda kv: kv[1][0])[0]
-        _SCHEMA_CACHE.pop(oldest_key, None)
-    _SCHEMA_CACHE[key] = (time.time(), val)
-
-
-def _hash_payload(obj: Any) -> str:
-    raw = json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return sha1(raw).hexdigest()
-
-
-# ----------------------------- Normalización ---------------------------------
 
 def _normalizar_str(s: str) -> str:
+    """Quita acentos y espacios extra, útil para inputs del usuario."""
     s = s or ""
     s = unicodedata.normalize("NFKD", s)
     s = "".join([c for c in s if not unicodedata.combining(c)])
@@ -1024,13 +1012,11 @@ def _normalizar_str(s: str) -> str:
 
 
 def _a_jsonable(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Convierte Decimals a float redondeado, para serializar JSON sin problemas.
-    """
+    """Convierte Decimals a float redondeado para JSON."""
     out: List[Dict[str, Any]] = []
-    for r in rows:
-        nr = {}
-        for k, v in r.items():
+    for r in rows or []:
+        nr: Dict[str, Any] = {}
+        for k, v in (r or {}).items():
             if isinstance(v, Decimal):
                 nr[k] = float(round(v, DECIMAL_PLACES))
             else:
@@ -1039,7 +1025,82 @@ def _a_jsonable(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-# ----------------------------- Modelos ---------------------------------------
+def _hash_payload(obj: Any) -> str:
+    raw = json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return sha1(raw).hexdigest()
+
+
+def _parse_list_param(v: Optional[Union[List[str], str]]) -> Optional[List[str]]:
+    """
+    Soporta:
+      - None
+      - ["a","b"]
+      - "a,b"
+      - "a"
+    """
+    if v is None:
+        return None
+    if isinstance(v, list):
+        out: List[str] = []
+        for item in v:
+            if item is None:
+                continue
+            out.extend([x.strip() for x in str(item).split(",") if x.strip()])
+        return out or None
+    s = str(v).strip()
+    if not s:
+        return None
+    return [x.strip() for x in s.split(",") if x.strip()] or None
+
+
+# =========================
+#  Cache de /schema
+# =========================
+_SCHEMA_CACHE: Dict[str, Tuple[float, Any]] = {}
+
+
+def _cache_get(key: str) -> Optional[Any]:
+    rec = _SCHEMA_CACHE.get(key)
+    if not rec:
+        return None
+    ts, val = rec
+    if (time.time() - ts) > SCHEMA_CACHE_TTL:
+        _SCHEMA_CACHE.pop(key, None)
+        return None
+    return val
+
+
+def _cache_set(key: str, val: Any) -> None:
+    if len(_SCHEMA_CACHE) >= SCHEMA_CACHE_MAX:
+        oldest = min(_SCHEMA_CACHE.items(), key=lambda kv: kv[1][0])[0]
+        _SCHEMA_CACHE.pop(oldest, None)
+    _SCHEMA_CACHE[key] = (time.time(), val)
+
+
+# =========================
+#  Guardia opcional API Key
+# =========================
+async def guardia_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="x-api-key"),
+) -> None:
+    """
+    Verifica API Key si la app tiene `API_KEY` configurada en settings.
+
+    - Si NO hay API_KEY configurada: no hace nada (rutas abiertas).
+    - Si hay API_KEY: exige header `x-api-key` igual al valor configurado.
+    """
+    settings = getattr(request.app.state, "settings", None)
+    requerido = (getattr(settings, "API_KEY", "") if settings else "") or ""
+    if not requerido:
+        return
+    if not x_api_key or x_api_key != requerido:
+        raise HTTPException(status_code=401, detail="API key inválida")
+
+
+# =========================
+#  Modelos Pydantic
+# =========================
 
 class SchemaRequest(BaseModel):
     schemas: Optional[List[str]] = Field(default=None)
@@ -1053,6 +1114,7 @@ class HumanQueryRequest(BaseModel):
     tables: Optional[List[str]] = None
     limit: Optional[int] = None
     dialect: Optional[str] = None
+    schema_refresh: bool = False  # como en tu versión antigua (opcional)
 
 
 class SQLQueryRequest(BaseModel):
@@ -1061,17 +1123,60 @@ class SQLQueryRequest(BaseModel):
     limit: Optional[int] = None
 
 
-# ----------------------------- Endpoints -------------------------------------
+# =============================================================================
+# Endpoints base
+# =============================================================================
+
+@router.get("/")
+def raiz() -> Dict[str, str]:
+    return {"status": "ok", "docs": "/docs"}
+
 
 @router.get("/health")
 def health() -> Dict[str, Any]:
     return {"ok": True, "dialect": DB_DIALECT}
 
 
-@router.get("/schema")
-def schema_get(schemas: Optional[str] = None, tables: Optional[str] = None) -> Dict[str, Any]:
-    sch_list = [s.strip() for s in (schemas or "").split(",") if s.strip()] or TARGET_SCHEMAS
-    tbl_list = [t.strip() for t in (tables or "").split(",") if t.strip()] or None
+# =============================================================================
+# Endpoints LLM (recuperados)
+# =============================================================================
+
+@router.get("/llm/ping", dependencies=[Depends(guardia_api_key)])
+async def llm_ping() -> Dict[str, Any]:
+    """
+    Ping al proveedor LLM activo. Útil para validar conectividad y credenciales.
+    """
+    try:
+        txt = await llm.ping()
+        return {"status": "ok", "reply": (txt or "")[:200]}
+    except Exception as e:
+        log.exception("Error en /llm/ping")
+        return {"status": "error", "detail": str(e)}
+
+
+@router.get("/llm/models", dependencies=[Depends(guardia_api_key)])
+def llm_modelos() -> Dict[str, Any]:
+    """
+    Devuelve modelos disponibles del proveedor activo.
+    """
+    try:
+        return llm.listar_modelos()
+    except Exception as e:
+        log.exception("Error en /llm/models")
+        return {"status": "error", "detail": str(e)}
+
+
+# =============================================================================
+# Esquema (cacheado)
+# =============================================================================
+
+@router.get("/schema", dependencies=[Depends(guardia_api_key)])
+def schema_get(
+    schemas: Optional[Union[List[str], str]] = Query(default=None),
+    tables: Optional[Union[List[str], str]] = Query(default=None),
+) -> Dict[str, Any]:
+    sch_list = _parse_list_param(schemas) or TARGET_SCHEMAS
+    tbl_list = _parse_list_param(tables) or None
 
     payload_key = _hash_payload({"schemas": sch_list, "tables": tbl_list})
     cached = _cache_get(payload_key)
@@ -1088,8 +1193,13 @@ def schema_get(schemas: Optional[str] = None, tables: Optional[str] = None) -> D
     return data
 
 
-@router.post("/schema/refresh")
+@router.post("/schema/refresh", dependencies=[Depends(guardia_api_key)])
 def schema_refresh(req: SchemaRequest) -> Dict[str, Any]:
+    """
+    Refresca caché de esquema:
+    - limpia cache interno de database
+    - limpia cache local de este módulo
+    """
     database.invalidar_cache_esquema()
     _SCHEMA_CACHE.clear()
 
@@ -1105,20 +1215,25 @@ def schema_refresh(req: SchemaRequest) -> Dict[str, Any]:
     return {"ok": True, "schema": data}
 
 
-@router.post("/human_query")
+# =============================================================================
+# NL → SQL (principal)
+# =============================================================================
+
+@router.post("/human_query", dependencies=[Depends(guardia_api_key)])
 async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     """
-    NL→SQL principal.
+    Flujo principal NL→SQL.
 
-    Si execute=false:
-      retorna sql generado sin ejecutar.
-
-    Si execute=true:
-      ejecuta el SQL y retorna filas.
+    - schema_refresh=true fuerza refrescar esquema antes de generar SQL.
+    - execute=false devuelve solo el SQL (dry-run).
     """
     human = _normalizar_str(payload.human_query)
     if not human:
         raise HTTPException(status_code=400, detail="human_query vacío.")
+
+    if payload.schema_refresh:
+        database.invalidar_cache_esquema()
+        _SCHEMA_CACHE.clear()
 
     limite_por_defecto = int(payload.limit or MAX_ROWS_DEFAULT)
     limite_maximo = int(MAX_ROWS_HARD)
@@ -1132,7 +1247,6 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         max_tablas=MAX_SCHEMA_TABLES,
         max_columnas=MAX_SCHEMA_COLUMNS,
     )
-
     allowed_fqn = [f"{t['schema']}.{t['table']}" for t in esquema_json.get("tables", [])]
 
     dialecto = payload.dialect or ("mssql" if es_mssql() else "postgresql")
@@ -1146,31 +1260,32 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         modelo=None,
     )
 
-    obj = None
     try:
         obj = json.loads(sql_json)
     except Exception:
         obj = None
 
     if not isinstance(obj, dict) or "sql_query" not in obj:
-        raise HTTPException(status_code=500, detail="El LLM no devolvió un JSON válido con 'sql_query'.")
+        raise HTTPException(status_code=500, detail="El LLM no devolvió JSON válido con 'sql_query'.")
 
-    sql_query = str(obj["sql_query"] or "").strip()
+    sql_query = str(obj.get("sql_query") or "").strip()
     if not sql_query:
         raise HTTPException(status_code=500, detail="El LLM devolvió 'sql_query' vacío.")
 
-    # 2) Guardrails
+    # 2) Guardrails (limpieza + seguridad)
     sql_query = database.limpiar_sql(sql_query)
     sql_query = database.sanear_explain(sql_query)
     sql_query = database.calificar_tablas(sql_query, allowed_fqn)
+    sql_query = database.preferir_left_join_por_nullable(sql_query, esquema_json)
 
     if not database.es_select_seguro(sql_query):
         raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
 
     if not database.restringir_a_tablas_permitidas(sql_query, allowed_fqn):
-        # En MSSQL no aplicamos fallback Postgres
+        # MSSQL: no fallback Postgres
         raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
 
+    # Dry run
     if not payload.execute:
         return {
             "ok": True,
@@ -1180,7 +1295,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             "executed": False,
         }
 
-    # 3) Ejecutar (en threadpool para no bloquear event loop)
+    # 3) Ejecutar en threadpool
     try:
         rows = await run_in_threadpool(
             database.consultar,
@@ -1200,13 +1315,18 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             "row_count": len(rows),
         }
     except Exception as e:
+        log.exception("Error ejecutando SQL en /human_query")
         raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e)}")
 
 
-@router.post("/sql")
+# =============================================================================
+# SQL directo
+# =============================================================================
+
+@router.post("/sql", dependencies=[Depends(guardia_api_key)])
 async def sql_query(payload: SQLQueryRequest) -> Dict[str, Any]:
     """
-    Ejecuta SQL directo (solo lectura) contra el esquema permitido.
+    Ejecuta SQL directo con guardrails (solo lectura + allow-list).
     """
     sql = database.limpiar_sql(payload.sql)
     if not sql:
@@ -1246,4 +1366,5 @@ async def sql_query(payload: SQLQueryRequest) -> Dict[str, Any]:
         rows = _a_jsonable(rows)
         return {"ok": True, "sql": sql, "executed": True, "rows": rows, "row_count": len(rows)}
     except Exception as e:
+        log.exception("Error ejecutando SQL en /sql")
         raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e)}")
