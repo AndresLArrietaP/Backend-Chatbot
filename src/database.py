@@ -766,7 +766,7 @@ invalidate_schema_cache = invalidar_cache_esquema
 refrescar_cache_esquema = invalidar_cache_esquema  # compat con tu versión vieja
 
 # =============================================================================
-# Limpieza de SQL (robusta como tu versión antigua)
+# Limpieza de SQL (robusta)
 # =============================================================================
 
 _RE_BLOQUES_CODIGO = re.compile(
@@ -816,7 +816,7 @@ clean_sql = limpiar_sql
 # =============================================================================
 # Macros (NUMERIC_CLEAN, DATE_PARSE)
 # - En Postgres: se expanden
-# - En MSSQL: se desactivan (para no romper por regex / ~ / to_date)
+# - En MSSQL: se desactivan
 # =============================================================================
 
 _RE_NUMERIC_CLEAN = re.compile(r"NUMERIC_CLEAN\(\s*([^)]+?)\s*\)", re.IGNORECASE | re.DOTALL)
@@ -824,10 +824,7 @@ _RE_DATE_PARSE = re.compile(r"DATE_PARSE\(\s*([^)]+?)\s*\)", re.IGNORECASE | re.
 
 
 def expandir_numeric_clean(sql: str) -> str:
-    """
-    Expande NUMERIC_CLEAN(expr) a SQL Postgres robusto.
-    (Solo se usa si NO es MSSQL.)
-    """
+    """Expande NUMERIC_CLEAN(expr) a SQL Postgres robusto (solo Postgres)."""
     def repl(m: re.Match) -> str:
         expr = (m.group(1) or "").strip()
         s = f"TRIM({expr})"
@@ -864,10 +861,7 @@ def expandir_numeric_clean(sql: str) -> str:
 
 
 def expandir_date_parse(sql: str) -> str:
-    """
-    Expande DATE_PARSE(expr) a un CASE en Postgres.
-    (Solo se usa si NO es MSSQL.)
-    """
+    """Expande DATE_PARSE(expr) a un CASE en Postgres (solo Postgres)."""
     def repl(m: re.Match) -> str:
         expr = (m.group(1) or "").strip()
         col = expr
@@ -890,12 +884,7 @@ def expandir_date_parse(sql: str) -> str:
 
 
 def expandir_macros(sql: str) -> str:
-    """
-    Expande macros soportadas.
-
-    Importante:
-    - En MSSQL se desactiva (las macros están escritas con sintaxis Postgres).
-    """
+    """Expande macros soportadas (solo Postgres). En MSSQL se desactiva."""
     if es_mssql():
         return sql or ""
     s = sql or ""
@@ -956,9 +945,7 @@ def sanear_explain(sql: str) -> str:
 
 
 def _enmascarar_literales(sql: str) -> str:
-    """
-    Reemplaza literales por placeholders para evitar falsos positivos al detectar palabras prohibidas.
-    """
+    """Reemplaza literales por placeholders para evitar falsos positivos al detectar palabras prohibidas."""
     s = sql or ""
     s = _RE_LITERAL_DOLAR.sub("$$''$$", s)
     s = _RE_LITERAL_SIMPLE.sub("''", s)
@@ -986,12 +973,7 @@ def _contiene_prohibidos(sql: str) -> Optional[str]:
 
 
 def es_select_seguro(sql: str) -> bool:
-    """
-    Verifica solo-lectura permitido:
-    - VALUES (si está permitido)
-    - EXPLAIN (sin ANALYZE si no está permitido) sobre SELECT/CTE
-    - SELECT/CTE puro
-    """
+    """Verifica solo-lectura permitido (VALUES/EXPLAIN/SELECT) y sin palabras prohibidas."""
     s = (sql or "").strip()
     if not s:
         return False
@@ -1018,14 +1000,7 @@ def es_select_seguro(sql: str) -> bool:
 # =============================================================================
 
 def _forzar_top_mssql(sql: str, n: int) -> str:
-    """
-    Inserta/recorta TOP(n) en SQL Server.
-
-    Soporta:
-    - SELECT ...
-    - SELECT DISTINCT ...
-    - WITH ... SELECT ...
-    """
+    """Inserta/recorta TOP(n) en SQL Server."""
     s = (sql or "").strip()
 
     # Si ya existe TOP, recortar si excede
@@ -1062,30 +1037,21 @@ def _forzar_top_mssql(sql: str, n: int) -> str:
 def forzar_limit(sql: str, limite_por_defecto: int = 100, limite_maximo: int = 1000) -> str:
     """
     Asegura un límite por defecto y recorta límites excesivos.
-
-    - MSSQL: usa TOP(N) y elimina cualquier LIMIT residual.
+    - MSSQL: usa TOP(N) y elimina LIMIT residual.
     - Postgres: usa LIMIT.
     """
     s = (sql or "").strip()
 
     if es_mssql():
-        # 1) Si el LLM puso LIMIT (estilo Postgres), lo eliminamos
-        #    (solo si aparece como cláusula final típica).
+        # borrar LIMIT final si aparece (errores del LLM)
         s = re.sub(r"\s+LIMIT\s+\d+\s*$", "", s, flags=re.IGNORECASE).strip()
 
-        # 2) Determinar N: si venía LIMIT, intenta capturarlo antes de eliminarlo (mejor)
         m_lim = re.search(r"\bLIMIT\s+(\d+)\b", sql or "", re.IGNORECASE)
-        if m_lim:
-            n = int(m_lim.group(1))
-        else:
-            n = int(limite_por_defecto)
-
+        n = int(m_lim.group(1)) if m_lim else int(limite_por_defecto)
         n = min(max(n, 1), int(limite_maximo))
-
-        # 3) Insertar/recortar TOP(N)
         return _forzar_top_mssql(s, n)
 
-    # -------- Postgres --------
+    # Postgres
     m = re.search(r"\blimit\s+(\d+)\b", s, re.IGNORECASE)
     if m:
         n = int(m.group(1))
@@ -1100,16 +1066,15 @@ def forzar_limit(sql: str, limite_por_defecto: int = 100, limite_maximo: int = 1
 # ✅ Allow-list + calificación avanzada (con CTEs)
 # =============================================================================
 
-# Detecta FROM/JOIN evitando casos como SUBSTRING(... FROM 'regex').
 _RE_CLAUSULA_FROM_JOIN = re.compile(
     r"""
     (?<!\w)
     \b(from|join)\b
     \s+
-    (?!')                              # evita FROM '...'
+    (?!')
     (?P<tbl>
-        (?:\[[^\]]+\]|\w+|\"[^\"]+\")  # [dbo] o dbo o "dbo"
-        (?:\s*\.\s*(?:\[[^\]]+\]|\w+|\"[^\"]+\"))?   # .[Table] o .Table o ."Table"
+        (?:\[[^\]]+\]|\w+|\"[^\"]+\")
+        (?:\s*\.\s*(?:\[[^\]]+\]|\w+|\"[^\"]+\"))?
     )
     """,
     re.IGNORECASE | re.VERBOSE,
@@ -1119,7 +1084,6 @@ _NO_ES_TABLA = {"lateral", "unnest", "generate_series", "values"}
 
 
 def _normalizar_token(s: str) -> str:
-    """Normaliza token para comparaciones: minúsculas, sin espacios, sin brackets/quotes."""
     if not s:
         return ""
     s = s.strip().lower()
@@ -1129,11 +1093,7 @@ def _normalizar_token(s: str) -> str:
 
 
 def _construir_mapa_tablas(permitidos_fqn: List[str]) -> Dict[str, str]:
-    """
-    Mapa table_name -> fqn_formateado
-    - MSSQL: [schema].[table]
-    - Postgres: schema."table"
-    """
+    """Mapa table_name -> fqn_formateado."""
     m: Dict[str, str] = {}
     for f in permitidos_fqn or []:
         if not f or "." not in f:
@@ -1141,14 +1101,10 @@ def _construir_mapa_tablas(permitidos_fqn: List[str]) -> Dict[str, str]:
         schema, table = f.split(".", 1)
         schema = schema.strip()
         table = table.strip()
-
-        # table viene como "Table" (pg) o Table (allowed_fqn de main es schema.table)
         table_clean = table.replace('"', "").replace("[", "").replace("]", "").strip()
-
         key = table_clean.lower()
         if key in m:
             continue
-
         if es_mssql():
             m[key] = f"[{schema}].[{table_clean}]"
         else:
@@ -1160,7 +1116,6 @@ _RE_DEFINICION_CTE = re.compile(r'(?P<name>"[^"]+"|\w+)\s+AS\s*\(', re.IGNORECAS
 
 
 def _recopilar_nombres_cte(sql: str) -> List[str]:
-    """Recupera nombres de CTE definidos en WITH ... AS (...)."""
     names: List[str] = []
     s = sql or ""
     if not re.search(r"^\s*with\b", s, re.IGNORECASE):
@@ -1173,7 +1128,6 @@ def _recopilar_nombres_cte(sql: str) -> List[str]:
 
 
 def _extraer_refs_tablas(sql: str) -> List[str]:
-    """Extrae tokens de tabla detectados en FROM/JOIN (schema.tabla o tabla)."""
     refs: List[str] = []
     for m in _RE_CLAUSULA_FROM_JOIN.finditer(sql or ""):
         tbl = (m.group("tbl") or "").strip()
@@ -1183,13 +1137,6 @@ def _extraer_refs_tablas(sql: str) -> List[str]:
 
 
 def _primera_ref_no_permitida(sql: str, permitidos_fqn: List[str]) -> Optional[str]:
-    """
-    Verifica referencias contra allow-list y devuelve detalle del primer token no permitido.
-    Soporta:
-    - CTEs (WITH x AS (...))
-    - Tablas sin schema (se validan por mapa)
-    - Tablas schema.tabla (normalizadas)
-    """
     if not sql or not permitidos_fqn:
         return "sql/allowed vacío"
 
@@ -1211,7 +1158,6 @@ def _primera_ref_no_permitida(sql: str, permitidos_fqn: List[str]) -> Optional[s
         if head in _NO_ES_TABLA:
             continue
 
-        # Sin schema explícito
         if "." not in r_clean:
             name = _normalizar_token(r_clean)
             if name in nombres_cte:
@@ -1223,7 +1169,6 @@ def _primera_ref_no_permitida(sql: str, permitidos_fqn: List[str]) -> Optional[s
                 return f"tabla fuera de allow-list: {r_clean} -> {fqn_fmt}"
             continue
 
-        # Con schema.tabla
         parts = [p.strip().strip('"').strip("[]") for p in r_clean.split(".")]
         if len(parts) != 2:
             return f"token schema.tabla inválido: {r_clean}"
@@ -1231,11 +1176,7 @@ def _primera_ref_no_permitida(sql: str, permitidos_fqn: List[str]) -> Optional[s
         schema_n = parts[0].strip().lower()
         table_n = parts[1].strip()
 
-        if es_mssql():
-            fqn_fmt = f"[{schema_n}].[{table_n}]"
-        else:
-            fqn_fmt = f'{schema_n}."{table_n}"'
-
+        fqn_fmt = f"[{schema_n}].[{table_n}]" if es_mssql() else f'{schema_n}."{table_n}"'
         if _normalizar_token(fqn_fmt) not in allowed_set:
             return f"FQN fuera de allow-list: {r_clean} -> {fqn_fmt}"
 
@@ -1243,7 +1184,6 @@ def _primera_ref_no_permitida(sql: str, permitidos_fqn: List[str]) -> Optional[s
 
 
 def restringir_a_tablas_permitidas(sql: str, permitidos_fqn: List[str]) -> bool:
-    """True si todas las tablas referenciadas pertenecen a la allow-list."""
     s = limpiar_sql(sql)
     inner = desenvolver_explain(s) if es_explain(s) else s
     return _primera_ref_no_permitida(inner, permitidos_fqn) is None
@@ -1256,10 +1196,7 @@ _RE_CALIFICAR_FROM_JOIN = re.compile(
 
 
 def calificar_tablas(sql: str, permitidos_fqn: List[str]) -> str:
-    """
-    Califica nombres de tabla sin schema usando la allow-list.
-    Respeta CTEs y tokens especiales (values/unnest/etc.).
-    """
+    """Califica nombres de tabla sin schema usando la allow-list."""
     if not sql or not permitidos_fqn:
         return sql
     if es_solo_values(sql) or es_explain(sql):
@@ -1289,85 +1226,98 @@ def calificar_tablas(sql: str, permitidos_fqn: List[str]) -> str:
     return _RE_CALIFICAR_FROM_JOIN.sub(repl, sql)
 
 
-# Alias legacy
-qualify_tables = calificar_tablas
+qualify_tables = calificar_tablas  # legacy
 
 # =============================================================================
-# Ejecución
+# ✅ Auto-LEFT JOIN por FKs nullable (FIX definitivo para alias [T1]/[T2])
 # =============================================================================
 
-_RE_JOIN_ON = re.compile(
-    r"""
-    (?P<jtype>\binner\s+join\b|\bleft\s+join\b|\bjoin\b)\s+
-    (?P<table>(?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+))?)      # [dbo].[T] o dbo.T o T
-    (?:\s+as\s+(?P<alias>\w+)|\s+(?P<alias2>\w+))?              # alias opcional
-    \s+on\s+
-    (?P<left>(?:\w+)\.(?:\[[^\]]+\]|\w+))\s*=\s*(?P<right>(?:\w+)\.(?:\[[^\]]+\]|\w+))
+# Identificadores MSSQL y alias (permite [T1], [ComponentId], dbo, [dbo].[Table], etc.)
+_ALIAS = r"(?:\[[^\]]+\]|\w+)"
+_IDENT = r"(?:\[[^\]]+\]|\w+|\"[^\"]+\")"
+
+_RE_FROM_JOIN_ALIAS = re.compile(
+    rf"""
+    \b(from|join)\s+
+    (?P<table>{_IDENT}(?:\s*\.\s*{_IDENT})?)         # dbo.Table o [dbo].[Table] o Table
+    (?:\s+as\s+(?P<alias>{_ALIAS})|\s+(?P<alias2>{_ALIAS}))?
     """,
     re.IGNORECASE | re.VERBOSE,
 )
 
+_RE_JOIN_ON2 = re.compile(
+    rf"""
+    (?P<jtype>\binner\s+join\b|\bleft\s+join\b|\bjoin\b)\s+
+    (?P<table>{_IDENT}(?:\s*\.\s*{_IDENT})?)         # dbo.Table o [dbo].[Table] o Table
+    (?:\s+as\s+(?P<alias>{_ALIAS})|\s+(?P<alias2>{_ALIAS}))?
+    \s+on\s+
+    (?P<left>{_ALIAS}\s*\.\s*{_IDENT})\s*=\s*(?P<right>{_ALIAS}\s*\.\s*{_IDENT})
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _strip_ident(s: str) -> str:
+    return (s or "").strip().strip("[]").strip('"').strip()
+
+
 def _schema_nullable_map(esquema_json: Dict[str, Any]) -> Dict[Tuple[str, str], bool]:
-    """
-    Mapa (table, column) -> nullable, usando schema_json.
-    table: nombre de tabla sin schema (tal como viene en schema_json["tables"][i]["table"])
-    column: nombre exacto de columna.
-    """
     mp: Dict[Tuple[str, str], bool] = {}
     for tb in (esquema_json.get("tables") or []):
-        tname = (tb.get("table") or "").strip()
+        tname = (tb.get("table") or "").strip().lower()
         for c in (tb.get("columns") or []):
-            cname = (c.get("name") or "").strip()
+            cname = (c.get("name") or "").strip().lower()
             if tname and cname:
-                mp[(tname.lower(), cname.lower())] = bool(c.get("nullable", True))
+                mp[(tname, cname)] = bool(c.get("nullable", True))
     return mp
 
-def _alias_to_table_map(sql: str, esquema_json: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Heurística simple: mapea alias -> table (sin schema).
-    Lee FROM/JOIN y captura el último token de tabla.
-    """
-    # Tablas disponibles (sin schema)
-    known_tables: Set[str] = { (t.get("table") or "").strip().lower() for t in (esquema_json.get("tables") or []) if t.get("table") }
 
+def _alias_to_table_map(sql: str, esquema_json: Dict[str, Any]) -> Dict[str, str]:
+    known_tables: Set[str] = {(t.get("table") or "").strip().lower() for t in (esquema_json.get("tables") or []) if t.get("table")}
     alias_map: Dict[str, str] = {}
 
-    # Captura FROM/JOIN <schema.table> [AS] alias
-    pat = re.compile(
-        r"""
-        \b(from|join)\s+
-        (?P<table>(?:\[[^\]]+\]|\w+)(?:\.(?:\[[^\]]+\]|\w+))?)     # dbo.T o [dbo].[T] o T
-        (?:\s+as\s+(?P<alias>\w+)|\s+(?P<alias2>\w+))?
-        """,
-        re.IGNORECASE | re.VERBOSE,
-    )
-
-    for m in pat.finditer(sql or ""):
+    for m in _RE_FROM_JOIN_ALIAS.finditer(sql or ""):
         raw_table = m.group("table") or ""
         alias = (m.group("alias") or m.group("alias2") or "").strip()
+        if not alias:
+            continue
+
         # tabla sin schema
-        t = raw_table.replace("[", "").replace("]", "").replace('"', "")
+        t = raw_table.replace('"', "")
+        t = t.replace("[", "").replace("]", "")
         t = t.split(".")[-1].strip().lower()
-        if t in known_tables and alias:
-            alias_map[alias.lower()] = t
+
+        a = _strip_ident(alias).lower()
+        if t in known_tables:
+            alias_map[a] = t
 
     return alias_map
 
+
 def _col_from_ref(ref: str) -> Tuple[str, str]:
-    """
-    ref: alias.[Col] o alias.Col
-    return (alias, col) en lower.
-    """
+    # ref: [T2].[ComponentId] o T2.ComponentId
     a, c = ref.split(".", 1)
-    c = c.strip().strip("[]").strip('"')
-    return a.strip().lower(), c.lower()
+    a = _strip_ident(a).lower()
+    c = _strip_ident(c).lower()
+    return a, c
+
 
 def preferir_left_join_por_nullable(sql: str, esquema_json: Dict[str, Any]) -> str:
     """
-    Reescribe JOIN -> LEFT JOIN cuando el lado FK usado en el ON sea nullable
-    según schema_json. No toca joins ya LEFT.
+    Reescribe JOIN/INNER JOIN -> LEFT JOIN cuando el lado FK usado en el ON
+    sea nullable según schema_json.
+
+    Soporta aliases tipo [T1], [T2] y columnas en brackets.
+
+    Nota:
+    - Esto NO cambia el ON, solo el tipo de JOIN.
+    - Si ya es LEFT JOIN, lo deja intacto.
     """
     if not sql or not esquema_json:
+        return sql
+
+    # feature flag opcional (por si deseas apagarlo rápido)
+    if env("SQL_AUTO_LEFT_JOIN_NULLABLE", default=True, cast=bool) is False:
         return sql
 
     nullable_map = _schema_nullable_map(esquema_json)
@@ -1375,17 +1325,12 @@ def preferir_left_join_por_nullable(sql: str, esquema_json: Dict[str, Any]) -> s
 
     def repl(m: re.Match) -> str:
         jtype = (m.group("jtype") or "").lower()
-        table = m.group("table") or ""
-        alias = (m.group("alias") or m.group("alias2") or "").strip()
-        left_ref = m.group("left")
-        right_ref = m.group("right")
-
-        # Si ya es LEFT JOIN, no tocar
         if "left join" in jtype:
             return m.group(0)
 
-        # Determinar lado FK: normalmente es el campo *_Id en la tabla de hechos (ej ec.ComponentId)
-        # Tomamos ambos y elegimos el que sea nullable en el schema.
+        left_ref = (m.group("left") or "").replace(" ", "")
+        right_ref = (m.group("right") or "").replace(" ", "")
+
         aL, cL = _col_from_ref(left_ref)
         aR, cR = _col_from_ref(right_ref)
 
@@ -1395,16 +1340,27 @@ def preferir_left_join_por_nullable(sql: str, esquema_json: Dict[str, Any]) -> s
         is_nullable_L = bool(tL and (nullable_map.get((tL, cL)) is True))
         is_nullable_R = bool(tR and (nullable_map.get((tR, cR)) is True))
 
-        # Si cualquiera de los lados es nullable, preferimos LEFT JOIN
         if is_nullable_L or is_nullable_R:
-            # Reemplaza el tipo de join por LEFT JOIN (mantiene el resto)
             original = m.group(0)
-            original = re.sub(r"\b(inner\s+join|join)\b", "LEFT JOIN", original, count=1, flags=re.IGNORECASE)
-            return original
+            changed = re.sub(r"\b(inner\s+join|join)\b", "LEFT JOIN", original, count=1, flags=re.IGNORECASE)
+
+            if changed != original:
+                log.debug(
+                    "[database.preferir_left_join_por_nullable] %s -> LEFT JOIN (nullable: %s.%s=%s, %s.%s=%s)",
+                    (m.group("table") or "").strip(),
+                    tL, cL, is_nullable_L,
+                    tR, cR, is_nullable_R,
+                )
+            return changed
 
         return m.group(0)
 
-    return _RE_JOIN_ON.sub(repl, sql)
+    return _RE_JOIN_ON2.sub(repl, sql)
+
+
+# =============================================================================
+# Ejecución
+# =============================================================================
 
 def consultar(
     sql_query: str,
@@ -1420,9 +1376,6 @@ def consultar(
     - Califica tablas
     - Valida lectura y allow-list
     - Aplica límite por defecto (TOP/LIMIT)
-
-    Returns:
-        Lista de filas como dict.
     """
     log.debug("[database.consultar] raw=%r", (sql_query or "")[:500])
 
@@ -1445,7 +1398,7 @@ def consultar(
     else:
         sql_final = sql_query
 
-    log.debug("[database.consultar] final=%r", sql_final[:500])
+    log.debug("[database.consultar] final=%r", sql_final[:800])
 
     with Session() as session:
         result = session.execute(text(sql_final))

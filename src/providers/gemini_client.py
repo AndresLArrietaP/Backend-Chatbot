@@ -694,6 +694,9 @@ DIALECT: SQL SERVER (T-SQL / Azure SQL)
 - For DATE parsing of TEXT (only if needed), use TRY_CONVERT(date, ...) with a known style when possible.
 - When using TOP, if the query is an aggregation or ranking, include an ORDER BY that matches the intent
   (e.g., ORDER BY SUM(...) DESC, ORDER BY [Fecha] DESC).
+- JOIN strategy:
+  - If the join key is nullable in the schema (FK nullable), prefer LEFT JOIN to avoid dropping rows.
+  - Use INNER JOIN only when the user explicitly asks for “only matching records” or the FK is NOT NULL.
 """.strip()
 
             # Default: Postgres-style
