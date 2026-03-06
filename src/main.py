@@ -1,924 +1,3 @@
-# # src/main.py
-# # -*- coding: utf-8 -*-
-# """
-# Módulo: main
-# ------------
-# API FastAPI para:
-# - Generar SQL a partir de lenguaje natural (NL → SQL) con controles de seguridad.
-# - Ejecutar consultas contra la base de datos.
-# - Normalizar resultados y (opcional) sintetizar una respuesta en lenguaje natural.
-
-# Cambios:
-# - Código renombrado al español (funciones/variables) y documentado.
-# - Comentarios clave y limpieza.
-# - Se mantienen rutas/paths idénticos y compatibilidad con módulos `database` y `llm`
-#   (ambos exponen alias en inglés y español), por lo que no se cambia el comportamiento.
-# """
-
-# import json
-# import logging
-# import re
-# import time
-# import unicodedata
-# from decimal import Decimal
-# from hashlib import sha1
-# from typing import Any, Dict, List, Optional, Tuple, Union
-
-# from decouple import config as env
-# from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-# from pydantic import BaseModel
-
-# from . import database
-# from . import llm
-
-# log = logging.getLogger(__name__)
-# router = APIRouter()
-
-# # =============================================================================
-# # Normalización / utilidades
-# # =============================================================================
-
-# def _a_numero(v: Any) -> Any:
-#     """Convierte Decimal/int/float a float; devuelve el valor original en otros casos."""
-#     if isinstance(v, Decimal):
-#         return float(v)
-#     if isinstance(v, (int, float)):
-#         return float(v)
-#     return v
-
-
-# def _normalizar_nombre_clave(s: str) -> str:
-#     """Normaliza una etiqueta para comparación: sin acentos, minúsculas y sin espacios extremos."""
-#     if not s:
-#         return ""
-#     s_norm = unicodedata.normalize("NFKD", s)
-#     s_no_acc = "".join(ch for ch in s_norm if not unicodedata.combining(ch))
-#     return s_no_acc.strip().lower()
-
-
-# def normalizar_filas(
-#     filas: List[Dict[str, Any]],
-#     columnas_miles_implicitos: List[str],
-#     decimales: int = 3,
-#     formatear_cadenas: bool = True,
-# ) -> List[Dict[str, Any]]:
-#     """
-#     Normaliza filas con reglas de "milésimas implícitas" y formato de números.
-
-#     - Divide por 1000 si se detecta patrón de milésimas implícitas.
-#     - Si `formatear_cadenas=True`, devuelve números formateados como string con separador de miles.
-#     """
-#     columnas_implicitas = {_normalizar_nombre_clave(c) for c in (columnas_miles_implicitos or []) if c and c.strip()}
-
-#     auto_kw = env("IMPLIED_MILLIS_AUTO_HEURISTIC", default=True, cast=bool)
-#     auto_detect = env("IMPLIED_MILLIS_AUTODETECT", default=True, cast=bool)
-#     ratio_umbral = env("IMPLIED_MILLIS_RATIO_THRESHOLD", default=0.8, cast=float)
-#     min_abs = env("IMPLIED_MILLIS_MIN_ABS", default=100000, cast=int)
-
-#     keywords_env = env(
-#         "IMPLIED_MILLIS_KEYWORDS",
-#         default="despachado,original,pendiente,total linea,total línea,total despachado,total original,total pendiente"
-#     )
-#     kw_list = [_normalizar_nombre_clave(w) for w in keywords_env.split(",") if w.strip()]
-
-#     def _nombre_tiene_keyword(nombre_low: str) -> bool:
-#         return any((kw in nombre_low) for kw in kw_list if kw)
-
-#     def _es_gran_multiplo_1000(x: float) -> bool:
-#         nearest = round(x)
-#         return (abs(x - nearest) < 1e-9) and (abs(nearest) >= min_abs) and (nearest % 1000 == 0)
-
-#     col_valores_num: Dict[str, List[float]] = {}
-#     for r in filas or []:
-#         for k, v in (r or {}).items():
-#             if isinstance(v, Decimal):
-#                 col_valores_num.setdefault(k, []).append(float(v))
-#             elif isinstance(v, (int, float)):
-#                 col_valores_num.setdefault(k, []).append(float(v))
-
-#     columnas_auto_dividir = set()
-#     if auto_detect and filas:
-#         for col, vals in col_valores_num.items():
-#             if len(vals) < 5:
-#                 continue
-#             vals_sorted = sorted(vals)
-#             mid = len(vals_sorted) // 2
-#             mediana = (vals_sorted[mid] if len(vals_sorted) % 2 == 1
-#                        else 0.5 * (vals_sorted[mid - 1] + vals_sorted[mid]))
-#             mult_cnt = sum(1 for x in vals if _es_gran_multiplo_1000(x))
-#             ratio = mult_cnt / len(vals)
-#             if ratio >= ratio_umbral or (mediana >= (min_abs * 2) and ratio >= 0.6):
-#                 columnas_auto_dividir.add(_normalizar_nombre_clave(col))
-
-#     salida: List[Dict[str, Any]] = []
-#     for r in filas:
-#         nr: Dict[str, Any] = {}
-#         for k, v in (r or {}).items():
-#             nombre_low = _normalizar_nombre_clave(k)
-#             val = _a_numero(v)
-
-#             if isinstance(val, (int, float)) or isinstance(v, Decimal):
-#                 valf = float(val)
-
-#                 dividir = False
-#                 col_marcada = nombre_low in columnas_auto_dividir
-#                 senal_suave = (nombre_low in columnas_implicitas) or (auto_kw and _nombre_tiene_keyword(nombre_low))
-
-#                 if col_marcada:
-#                     dividir = True
-#                 elif senal_suave and _es_gran_multiplo_1000(valf):
-#                     dividir = True
-
-#                 if dividir:
-#                     valf = valf / 1000.0
-
-#                 if formatear_cadenas:
-#                     if abs(valf - round(valf)) < 1e-9:
-#                         nr[k] = f"{int(round(valf)):,}"
-#                     else:
-#                         nr[k] = f"{valf:,.{decimales}f}"
-#                 else:
-#                     nr[k] = round(valf, decimales)
-#             else:
-#                 nr[k] = v
-#         salida.append(nr)
-
-#     return salida
-
-# def _parse_list_param(v: Optional[Union[List[str], str]]) -> Optional[List[str]]:
-#     """
-#     Acepta:
-#     - None
-#     - ["a", "b"] (multi query)
-#     - "a,b" (csv)
-#     - "a" (single)
-#     """
-#     if v is None:
-#         return None
-#     if isinstance(v, list):
-#         out = []
-#         for item in v:
-#             if item is None:
-#                 continue
-#             out.extend([x.strip() for x in str(item).split(",") if x.strip()])
-#         return out or None
-#     # string
-#     s = str(v).strip()
-#     if not s:
-#         return None
-#     return [x.strip() for x in s.split(",") if x.strip()] or None
-
-# def _respuesta_resumen_local(filas: List[Dict[str, Any]], consulta_humana: str) -> str:
-#     """Genera un resumen local simple cuando el LLM no responde."""
-#     if not filas:
-#         return f"No se encontraron datos para la consulta: “{consulta_humana}”."
-
-#     muestra = filas[0]
-#     columnas_texto: List[str] = []
-#     columnas_num: List[str] = []
-
-#     for k in muestra.keys():
-#         es_num = False
-#         for r in filas:
-#             v = r.get(k)
-#             if isinstance(v, (int, float, Decimal)):
-#                 es_num = True
-#                 break
-#             if isinstance(v, str):
-#                 try:
-#                     float(v.replace(",", ""))
-#                     es_num = True
-#                     break
-#                 except Exception:
-#                     pass
-#         if es_num:
-#             columnas_num.append(k)
-#         else:
-#             columnas_texto.append(k)
-
-#     def _puntuar_texto(nombre: str) -> int:
-#         n = _normalizar_nombre_clave(nombre)
-#         if any(x in n for x in ["id", "codigo", "código", "pedido", "orden", "documento", "doc", "cliente"]):
-#             return 3
-#         return 1
-
-#     def _puntuar_num(nombre: str) -> int:
-#         n = _normalizar_nombre_clave(nombre)
-#         if any(x in n for x in ["total", "monto", "importe", "valor", "cantidad", "despach", "pendien", "saldo"]):
-#             return 3
-#         return 1
-
-#     columnas_texto.sort(key=_puntuar_texto, reverse=True)
-#     columnas_num.sort(key=_puntuar_num, reverse=True)
-
-#     col_clave = columnas_texto[0] if columnas_texto else None
-#     col_valor = columnas_num[0] if columnas_num else None
-
-#     bullets: List[str] = []
-#     bullets.append(f"Filas analizadas: {len(filas)}.")
-
-#     if col_valor:
-#         total = 0.0
-#         for r in filas:
-#             v = r.get(col_valor)
-#             try:
-#                 if isinstance(v, str):
-#                     v = float(v.replace(",", ""))
-#                 elif isinstance(v, Decimal):
-#                     v = float(v)
-#                 elif not isinstance(v, (int, float)):
-#                     v = 0.0
-#             except Exception:
-#                 v = 0.0
-#             total += float(v)
-#         bullets.append(f"Suma de “{col_valor}”: {total:,.3f}")
-
-#     if col_clave and col_valor:
-#         agg: Dict[str, float] = {}
-#         for r in filas:
-#             k = str(r.get(col_clave) or "(Sin valor)")
-#             v = r.get(col_valor)
-#             try:
-#                 if isinstance(v, str):
-#                     v = float(v.replace(",", ""))
-#                 elif isinstance(v, Decimal):
-#                     v = float(v)
-#                 elif not isinstance(v, (int, float)):
-#                     v = 0.0
-#             except Exception:
-#                 v = 0.0
-#             agg[k] = agg.get(k, 0.0) + float(v)
-#         top = sorted(agg.items(), key=lambda kv: kv[1], reverse=True)[:3]
-#         if top:
-#             bullets.append("Top por {0}: {1}".format(
-#                 col_clave,
-#                 "; ".join([f"{k} = {v:,.3f}" for k, v in top])
-#             ))
-
-#     partes = [f"Consulta: “{consulta_humana}”."]
-#     if col_valor and col_clave:
-#         partes.append(f"Se analizó “{col_valor}” por “{col_clave}” y se listan los principales aportes.")
-#     elif col_valor:
-#         partes.append(f"Se destaca la métrica “{col_valor}”.")
-#     else:
-#         partes.append("No se identificó una métrica numérica dominante; se muestran datos generales.")
-
-#     final = " ".join(p if p.endswith((".", "!", "?")) else p + "." for p in partes)
-#     for b in bullets[:3]:
-#         final += f"\n- {b}"
-#     return final
-
-
-# # =============================================================================
-# # Cache LLM → SQL
-# # =============================================================================
-
-# _CACHE_SQL: Dict[str, Dict[str, Any]] = {}
-# TTL_CACHE_SQL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
-# MAX_CACHE_SQL = env("SQL_CACHE_MAX", default=256, cast=int)
-
-# def _clave_cache(consulta_humana: str, esquema_json: Dict[str, Any], dialecto: str, limite_por_defecto: int) -> str:
-#     """Hash estable del input para cachear respuestas NL→SQL del LLM."""
-#     payload = json.dumps(
-#         {"q": consulta_humana, "schema": esquema_json, "dialect": dialecto, "limit": limite_por_defecto},
-#         ensure_ascii=False, sort_keys=True
-#     )
-#     return sha1(payload.encode("utf-8")).hexdigest()
-
-# def _cache_obtener(key: str) -> Optional[str]:
-#     item = _CACHE_SQL.get(key)
-#     if not item:
-#         return None
-#     if time.time() > item["exp"]:
-#         _CACHE_SQL.pop(key, None)
-#         return None
-#     return item["sql_json"]
-
-# def _cache_guardar(key: str, sql_json: str) -> None:
-#     if len(_CACHE_SQL) >= MAX_CACHE_SQL:
-#         oldest = min(_CACHE_SQL.items(), key=lambda kv: kv[1]["exp"])[0]
-#         _CACHE_SQL.pop(oldest, None)
-#     _CACHE_SQL[key] = {"exp": time.time() + TTL_CACHE_SQL, "sql_json": sql_json}
-
-
-# # =============================================================================
-# # Helpers tipo / blindajes SQL
-# # =============================================================================
-
-# def _es_tipo_texto(tipo_str: str) -> bool:
-#     t = (tipo_str or "").lower()
-#     return any(x in t for x in ["char", "text", "varchar", "string", "clob"])
-
-
-# def _mapa_tipos_esquema(esquema_json: Dict[str, Any], tablas_solicitadas: Optional[List[str]]) -> Dict[str, str]:
-#     """Devuelve mapa columna -> tipo (limitado a tablas_solicitadas si aplica)."""
-#     wanted = {_normalizar_nombre_clave(t) for t in (tablas_solicitadas or []) if t}
-#     mp: Dict[str, str] = {}
-#     for tb in (esquema_json.get("tables", []) or []):
-#         tname = _normalizar_nombre_clave(tb.get("table") or "")
-#         if wanted and (tname not in wanted):
-#             continue
-#         for c in (tb.get("columns", []) or []):
-#             nm = c.get("name")
-#             tp = c.get("type") or ""
-#             if nm and nm not in mp:
-#                 mp[nm] = tp
-#     return mp
-
-
-# def _columnas_no_texto(esquema_json: Dict[str, Any], tablas_solicitadas: Optional[List[str]]) -> List[str]:
-#     mp = _mapa_tipos_esquema(esquema_json, tablas_solicitadas)
-#     return [nm for nm, tp in mp.items() if nm and (not _es_tipo_texto(tp))]
-
-
-# def _sql_cast_trim_no_texto(sql: str, esquema_json: Dict[str, Any], dialecto: str, tablas_solicitadas: Optional[List[str]]) -> str:
-#     """
-#     Reescribe TRIM("col_no_text") -> TRIM(CAST("col_no_text" AS TEXT)) en Postgres.
-#     Ejecutar DESPUÉS de expandir_macros (NUMERIC_CLEAN introduce TRIM).
-#     """
-#     s = (sql or "")
-#     if not s.strip():
-#         return s
-
-#     no_texto = _columnas_no_texto(esquema_json, tablas_solicitadas=tablas_solicitadas)
-#     if not no_texto:
-#         return s
-
-#     d = (dialecto or "").lower()
-#     tipo_cast = "TEXT" if d in ("postgresql", "postgres", "postgre") else "VARCHAR"
-#     if d in ("mssql", "sqlserver"):
-#         tipo_cast = "NVARCHAR(4000)"
-
-#     for col in sorted(no_texto, key=len, reverse=True):
-#         col_q = re.escape(col)
-#         p1 = re.compile(rf"\bTRIM\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
-#         s = p1.sub(lambda m: f'TRIM(CAST("{col}" AS {tipo_cast}))', s)
-
-#         p2 = re.compile(
-#             rf"\bTRIM\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
-#             re.IGNORECASE
-#         )
-#         s = p2.sub(lambda m: f'TRIM(CAST({m.group("q")}"{col}" AS {tipo_cast}))', s)
-
-#     return s
-
-
-# def _reescribir_numeric_clean_no_texto(sql: str, esquema_json: Dict[str, Any], dialecto: str, tablas_solicitadas: Optional[List[str]]) -> str:
-#     """
-#     Si el LLM usa NUMERIC_CLEAN("col") sobre una columna NO-TEXTO (ej. BIGINT),
-#     reescribe a CAST("col" AS numeric/DECIMAL), evitando TRIM/regex de la macro.
-#     """
-#     s = (sql or "")
-#     if not s.strip():
-#         return s
-
-#     no_texto = _columnas_no_texto(esquema_json, tablas_solicitadas=tablas_solicitadas)
-#     if not no_texto:
-#         return s
-
-#     d = (dialecto or "").lower()
-#     cast_num = "numeric" if d in ("postgresql", "postgres", "postgre") else "DECIMAL(38,10)"
-
-#     for col in sorted(no_texto, key=len, reverse=True):
-#         col_q = re.escape(col)
-#         p = re.compile(rf"\bNUMERIC_CLEAN\s*\(\s*\"{col_q}\"\s*\)", re.IGNORECASE)
-#         s = p.sub(lambda m: f'CAST("{col}" AS {cast_num})', s)
-
-#         p2 = re.compile(
-#             rf"\bNUMERIC_CLEAN\s*\(\s*(?P<q>(?:\w+|\"[^\"]+\")\s*\.\s*)+\"{col_q}\"\s*\)",
-#             re.IGNORECASE
-#         )
-#         s = p2.sub(lambda m: f'CAST({m.group("q")}"{col}" AS {cast_num})', s)
-
-#     return s
-
-
-# # =============================================================================
-# # Generalización: detectar intenciones y columnas desde schema + query
-# # =============================================================================
-
-# _RE_TOTAL = re.compile(r"^\s*(gran\s*)?total(es)?\s*$", re.IGNORECASE)
-
-# _PISTAS_COMPARACION = [
-#     "supera", "mayor", "menor", "inferior", "superior", "&gt;", "&lt;", "&gt;=", "&lt;=",
-#     "excede", "sobrepasa", "más que", "menos que", "higher", "lower", "greater", "less",
-# ]
-
-# _PISTAS_LISTA = ["lista", "listar", "muéstrame", "mostrar", "dame", "devuélveme", "retorna", "return", "top"]
-
-# _RE_CLAUSULA_SELECT = re.compile(r"^\s*select\s+(?P<cols>.*?)\s+from\s", re.IGNORECASE | re.DOTALL)
-
-
-# def _extraer_clausula_select(sql: str) -> str:
-#     m = _RE_CLAUSULA_SELECT.search(sql or "")
-#     return (m.group("cols") if m else "") or ""
-
-
-# def _tablas_esquema(esquema_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-#     return esquema_json.get("tables", []) or []
-
-
-# def _todas_columnas_esquema(esquema_json: Dict[str, Any]) -> List[str]:
-#     cols: List[str] = []
-#     for t in _tablas_esquema(esquema_json):
-#         for c in (t.get("columns", []) or []):
-#             nm = c.get("name")
-#             if nm and nm not in cols:
-#                 cols.append(nm)
-#     return cols
-
-
-# def _columnas_esquema_para_tablas(esquema_json: Dict[str, Any], tablas_solicitadas: Optional[List[str]]) -> List[str]:
-#     if not tablas_solicitadas:
-#         return _todas_columnas_esquema(esquema_json)
-
-#     wanted = {_normalizar_nombre_clave(t) for t in tablas_solicitadas if t}
-#     cols: List[str] = []
-#     for t in _tablas_esquema(esquema_json):
-#         tname = _normalizar_nombre_clave(t.get("table") or "")
-#         if tname and tname in wanted:
-#             for c in (t.get("columns", []) or []):
-#                 nm = c.get("name")
-#                 if nm and nm not in cols:
-#                     cols.append(nm)
-#     return cols or _todas_columnas_esquema(esquema_json)
-
-
-# def _columnas_mencionadas(consulta_humana: str, columnas_esquema: List[str]) -> List[str]:
-#     qn = _normalizar_nombre_clave(consulta_humana)
-#     hits: List[Tuple[int, str]] = []
-#     for col in columnas_esquema:
-#         cn = _normalizar_nombre_clave(col)
-#         if not cn:
-#             continue
-#         if cn in qn:
-#             hits.append((len(cn), col))
-#     hits.sort(key=lambda x: x[0], reverse=True)
-
-#     out: List[str] = []
-#     seen = set()
-#     for _, col in hits:
-#         if col not in seen:
-#             out.append(col)
-#             seen.add(col)
-#     return out
-
-
-# def _tiene_intencion_comparacion(consulta_humana: str) -> bool:
-#     qn = _normalizar_nombre_clave(consulta_humana)
-#     return any(cue in qn for cue in _PISTAS_COMPARACION)
-
-
-# def _tiene_intencion_lista(consulta_humana: str) -> bool:
-#     qn = _normalizar_nombre_clave(consulta_humana)
-#     return any(cue in qn for cue in _PISTAS_LISTA)
-
-
-# def _elegir_columna_clave(columnas_esquema: List[str], consulta_humana: str) -> Optional[str]:
-#     qn = _normalizar_nombre_clave(consulta_humana)
-#     preferidas = [
-#         "id", "codigo", "código", "pedido", "orden", "documento", "doc",
-#         "factura", "boleta", "cliente", "material", "producto", "ruc", "serie", "numero", "nro"
-#     ]
-
-#     def puntuar(col: str) -> int:
-#         n = _normalizar_nombre_clave(col)
-#         s = 0
-#         if n and n in qn:
-#             s += 5
-#         for kw in preferidas:
-#             if kw in n:
-#                 s += 3
-#         if any(x in n for x in ["monto", "importe", "total", "cantidad", "valor", "saldo"]):
-#             s -= 2
-#         return s
-
-#     ranked = sorted(columnas_esquema, key=puntuar, reverse=True)
-#     best = ranked[0] if ranked else None
-#     if best and puntuar(best) >= 2:
-#         return best
-#     return ranked[0] if ranked else None
-
-
-# def _sql_tiene_columna_en_select(sql: str, col: str) -> bool:
-#     if not sql or not col:
-#         return False
-#     sel = _extraer_clausula_select(sql)
-#     if not sel:
-#         return False
-
-#     col_esc = re.escape(col)
-#     patrones = [
-#         rf'"\s*{col_esc}\s*"',
-#         rf'\.\s*"\s*{col_esc}\s*"',
-#         rf'\bas\s+"{col_esc}"\b',
-#         rf'\bNUMERIC_CLEAN\s*\(\s*[^)]*"{col_esc}"',
-#         rf'\bDATE_PARSE\s*\(\s*[^)]*"{col_esc}"',
-#     ]
-#     return any(re.search(p, sel, flags=re.IGNORECASE | re.DOTALL) for p in patrones)
-
-
-# def _parece_distinct_solo_id(sql: str) -> bool:
-#     s = (sql or "").lower()
-#     return ("select distinct" in s) and ("sum(" not in s) and ("group by" not in s)
-
-
-# def _aumentar_consulta_para_select_requerido(consulta_humana: str, col_clave: Optional[str], columnas_metricas: List[str]) -> str:
-#     partes = [consulta_humana.strip(), "| OBLIGATORIO: el SELECT debe incluir:"]
-#     if col_clave:
-#         partes.append(f'"{col_clave}"')
-#     for c in columnas_metricas[:3]:
-#         partes.append(f'NUMERIC_CLEAN("{c}") AS "{c}"')
-#     if len(columnas_metricas) >= 2:
-#         partes.append(f'(NUMERIC_CLEAN("{columnas_metricas[0]}") - NUMERIC_CLEAN("{columnas_metricas[1]}")) AS "Diferencia"')
-#     partes.append("Si hay comparación, las columnas comparadas deben estar en SELECT.")
-#     partes.append("Devuelve SOLO JSON.")
-#     return " ".join(partes)
-
-
-# def _inferir_operador_comparacion(consulta_humana: str) -> str:
-#     qn = _normalizar_nombre_clave(consulta_humana)
-#     if "&gt;=" in qn:
-#         return "&gt;="
-#     if "&lt;=" in qn:
-#         return "&lt;="
-#     if "&gt;" in qn:
-#         return "&gt;"
-#     if "&lt;" in qn:
-#         return "&lt;"
-#     if any(x in qn for x in ["menor", "inferior", "less", "lower", "menos que"]):
-#         return "&lt;"
-#     return "&gt;"
-
-
-# def _quitar_filas_tipo_total(filas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-#     """Elimina filas donde alguna columna textual está en blanco o coincide con 'total/gran total'."""
-#     if not filas:
-#         return filas
-
-#     sample_keys = list(filas[0].keys())
-#     columnas_texto: List[str] = []
-#     for k in sample_keys:
-#         for r in filas[:30]:
-#             v = r.get(k)
-#             if isinstance(v, str):
-#                 columnas_texto.append(k)
-#                 break
-#     columnas_texto = list(dict.fromkeys(columnas_texto))
-
-#     if not columnas_texto:
-#         return filas
-
-#     cleaned: List[Dict[str, Any]] = []
-#     for r in filas:
-#         drop = False
-#         for k in columnas_texto:
-#             v = r.get(k)
-#             if v is None:
-#                 drop = True
-#                 break
-#             if isinstance(v, str):
-#                 t = v.strip()
-#                 if t == "" or _RE_TOTAL.match(t):
-#                     drop = True
-#                     break
-#         if not drop:
-#             cleaned.append(r)
-#     return cleaned
-
-
-# # =============================================================================
-# # Auth opcional API Key
-# # =============================================================================
-
-# async def guardia_api_key(request: Request, x_api_key: Optional[str] = Header(default=None)):
-#     """Verifica API Key si la app tiene `API_KEY` configurada en settings."""
-#     settings = request.app.state.settings
-#     requerido = getattr(settings, "API_KEY", "") or ""
-#     if not requerido:
-#         return
-#     if not x_api_key or x_api_key != requerido:
-#         raise HTTPException(status_code=401, detail="API key inválida")
-
-
-# # =============================================================================
-# # Modelo request
-# # =============================================================================
-
-# class PayloadConsultaHumana(BaseModel):
-#     """Modelo de entrada para /human_query."""
-#     human_query: str
-#     sql_query_override: Optional[str] = None
-#     schemas: Optional[List[str]] = None
-#     tables: Optional[List[str]] = None
-#     dialect: Optional[str] = None
-#     limit: Optional[int] = None
-#     execute: bool = True
-#     schema_refresh: bool = False
-#     summarize: Optional[bool] = True
-#     format_numbers: Optional[bool] = None
-#     decimals: Optional[int] = None
-#     implied_millis_cols: Optional[List[str]] = None
-
-
-# # =============================================================================
-# # Endpoints
-# # =============================================================================
-
-# @router.get("/")
-# def raiz() -> Dict[str, str]:
-#     return {"status": "ok", "docs": "/docs"}
-
-
-# @router.get("/healthz")
-# def healthz() -> Dict[str, str]:
-#     return {"status": "healthy"}
-
-
-# @router.get("/schema", dependencies=[Depends(guardia_api_key)])
-# def obtener_esquema(
-#     request: Request,
-#     schemas: Optional[Union[List[str], str]] = Query(default=None),
-#     tables: Optional[Union[List[str], str]] = Query(default=None),
-# ) -> Dict[str, Any]:
-#     settings = request.app.state.settings
-
-#     schemas_list = _parse_list_param(schemas)
-#     tables_list = _parse_list_param(tables)
-
-#     if not schemas_list:
-#         schemas_list = [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
-
-#     esquema_json = database.obtener_esquema_json(
-#         esquemas=schemas_list,
-#         tablas=tables_list,
-#         max_tablas=getattr(settings, "MAX_SCHEMA_TABLES", 50),
-#         max_columnas=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
-#     )
-#     return esquema_json
-
-
-# @router.get("/llm/ping", dependencies=[Depends(guardia_api_key)])
-# async def llm_ping(request: Request) -> Dict[str, Any]:
-#     try:
-#         txt = await llm.ping()
-#         return {"status": "ok", "gemini_reply": (txt or "")[:200]}
-#     except Exception as e:
-#         return {"status": "error", "detail": str(e)}
-
-
-# @router.get("/llm/models", dependencies=[Depends(guardia_api_key)])
-# def llm_modelos() -> Dict[str, Any]:
-#     try:
-#         return llm.listar_modelos()
-#     except Exception as e:
-#         return {"status": "error", "detail": str(e)}
-
-
-# @router.post("/schema/refresh", dependencies=[Depends(guardia_api_key)])
-# def refrescar_esquema() -> Dict[str, str]:
-#     database.refrescar_cache_esquema()
-#     return {"status": "ok", "message": "Schema cache refreshed"}
-
-
-# @router.post("/human_query", dependencies=[Depends(guardia_api_key)])
-# async def consulta_humana(request: Request, payload: PayloadConsultaHumana) -> Dict[str, Any]:
-#     """
-#     Flujo principal:
-#     1) Construcción del esquema y allow-list (FQN).
-#     2) Heurísticas para detectar intención comparativa y columnas relevantes.
-#     3) Generación de SQL (con cache) y correcciones preventivas por tipos.
-#     4) Expansión de macros + guard rails.
-#     5) Seguridad (solo-lectura + allow-list).
-#     6) Ejecución (opcional) + normalización y síntesis.
-#     """
-#     try:
-#         settings = request.app.state.settings
-
-#         # 1) Esquema
-#         if payload.schema_refresh:
-#             database.refrescar_cache_esquema()
-
-#         esquemas = payload.schemas or [s.strip() for s in getattr(settings, "TARGET_SCHEMAS", "public").split(",")]
-#         esquema_json = database.obtener_esquema_json(
-#             esquemas=esquemas,
-#             tablas=payload.tables,
-#             max_tablas=getattr(settings, "MAX_SCHEMA_TABLES", 50),
-#             max_columnas=getattr(settings, "MAX_SCHEMA_COLUMNS", 2000),
-#         )
-
-#         allowed_fqn: List[str] = []
-#         for t in esquema_json.get("tables", []) or []:
-#             fq = t.get("fq_name")
-#             if fq:
-#                 allowed_fqn.append(fq)
-#             else:
-#                 allowed_fqn.append(f'{t["schema"]}."{t["table"]}"')
-
-#         dialecto = payload.dialect or getattr(settings, "DB_DIALECT", "postgresql")
-#         limite_por_defecto = payload.limit or getattr(settings, "MAX_ROWS_DEFAULT", 100)
-#         limite_maximo = getattr(settings, "MAX_ROWS_HARD", 1000)
-
-#         # 2) Heurísticas
-#         columnas_esquema = _columnas_esquema_para_tablas(esquema_json, payload.tables)
-#         columnas_mencion = _columnas_mencionadas(payload.human_query, columnas_esquema)
-#         intencion_comparar = _tiene_intencion_comparacion(payload.human_query) and (len(columnas_mencion) >= 2)
-
-#         tabla_fqn = allowed_fqn[0] if allowed_fqn else None
-#         if payload.tables:
-#             wanted = {_normalizar_nombre_clave(x) for x in payload.tables if x}
-#             for t in esquema_json.get("tables", []) or []:
-#                 if _normalizar_nombre_clave(t.get("table") or "") in wanted:
-#                     tabla_fqn = (t.get("fq_name") or f'{t["schema"]}."{t["table"]}"')
-#                     break
-#         if not tabla_fqn:
-#             raise HTTPException(status_code=500, detail="No se pudo determinar una tabla objetivo desde el esquema.")
-
-#         op = _inferir_operador_comparacion(payload.human_query)
-#         col_clave = _elegir_columna_clave(columnas_esquema, payload.human_query)
-#         col_izq = columnas_mencion[0] if len(columnas_mencion) >= 1 else None
-#         col_der = columnas_mencion[1] if len(columnas_mencion) >= 2 else None
-
-#         # 3) SQL
-#         if payload.sql_query_override:
-#             sql_query = payload.sql_query_override
-#             result_dict = {"sql_query": sql_query, "original_query": payload.human_query}
-#             log.debug("[/human_query] using sql_query_override=%r", sql_query)
-#         else:
-#             cache_key = _clave_cache(payload.human_query, esquema_json, dialecto, limite_por_defecto)
-#             cached = _cache_obtener(cache_key)
-#             if cached:
-#                 log.debug("[/human_query] LLM SQL cache HIT")
-#                 sql_json = cached
-#             else:
-#                 sql_json = await llm.consulta_humana_a_sql(
-#                     consulta_humana=payload.human_query,
-#                     esquema_json=esquema_json,
-#                     dialecto=dialecto,
-#                     limite_por_defecto=limite_por_defecto,
-#                     modelo=None,
-#                 )
-#                 _cache_guardar(cache_key, sql_json)
-
-#             log.debug("[/human_query] LLM raw JSON=%s", (sql_json[:700] if sql_json else None))
-#             if not sql_json:
-#                 raise HTTPException(status_code=500, detail="Falló la generación de la consulta SQL")
-
-#             result_dict = json.loads(sql_json)
-#             sql_query = result_dict.get("sql_query")
-#             if not sql_query:
-#                 raise HTTPException(status_code=500, detail="El LLM no devolvió 'sql_query'")
-
-#             if intencion_comparar and col_izq and col_der:
-#                 if (_parece_distinct_solo_id(sql_query)
-#                     or (not _sql_tiene_columna_en_select(sql_query, col_izq))
-#                     or (not _sql_tiene_columna_en_select(sql_query, col_der))):
-#                     forced_query = _aumentar_consulta_para_select_requerido(
-#                         payload.human_query,
-#                         col_clave=col_clave,
-#                         columnas_metricas=[col_izq, col_der],
-#                     )
-#                     log.debug("[/human_query] retry forced_query=%s", forced_query)
-#                     sql_json2 = await llm.consulta_humana_a_sql(
-#                         consulta_humana=forced_query,
-#                         esquema_json=esquema_json,
-#                         dialecto=dialecto,
-#                         limite_por_defecto=limite_por_defecto,
-#                         modelo=None,
-#                     )
-#                     if sql_json2:
-#                         try:
-#                             parsed2 = json.loads(sql_json2)
-#                             sql2 = (parsed2.get("sql_query") or "").strip()
-#                             if sql2:
-#                                 sql_query = sql2
-#                                 result_dict = parsed2
-#                         except Exception:
-#                             pass
-
-#         # =======================
-#         # 4) Pipeline CORREGIDO
-#         # =======================
-
-#         # 4.1 limpieza base
-#         sql_query = database.limpiar_sql(sql_query)
-#         sql_query = database.sanear_explain(sql_query)
-#         sql_query = database.calificar_tablas(sql_query, allowed_fqn)
-
-#         # 4.2 Preventivo: antes de expandir_macros, arregla NUMERIC_CLEAN sobre no-texto
-#         sql_query = _reescribir_numeric_clean_no_texto(
-#             sql_query, esquema_json=esquema_json, dialecto=dialecto, tablas_solicitadas=payload.tables
-#         )
-
-#         # 4.3 Expandir macros (puede introducir TRIM/regex)
-#         sql_query = database.expandir_macros(sql_query)
-
-#         # 4.4 Reescribir TRIM(bigint) => TRIM(CAST(bigint AS TEXT/NVARCHAR))
-#         sql_query = _sql_cast_trim_no_texto(
-#             sql_query, esquema_json=esquema_json, dialecto=dialecto, tablas_solicitadas=payload.tables
-#         )
-
-#         # 5) Validación de seguridad
-#         if not database.es_select_seguro(sql_query):
-#             raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
-
-#         if not database.restringir_a_tablas_permitidas(sql_query, allowed_fqn):
-#             if intencion_comparar and col_izq and col_der:
-#                 # Fallback determinístico si se sale del schema
-#                 sql_query = f"""
-# SELECT
-#   {f'"{col_clave}" AS "{col_clave}",' if col_clave else ''}
-#   CAST("{col_izq}" AS numeric) AS "{col_izq}",
-#   CAST("{col_der}" AS numeric) AS "{col_der}",
-#   (CAST("{col_izq}" AS numeric) - CAST("{col_der}" AS numeric)) AS "Diferencia"
-# FROM {tabla_fqn}
-# WHERE "{col_izq}" IS NOT NULL AND "{col_der}" IS NOT NULL
-#   AND CAST("{col_izq}" AS numeric) {op} CAST("{col_der}" AS numeric)
-# ORDER BY "Diferencia" DESC
-# LIMIT {int(limite_por_defecto)}
-# """.strip()
-
-#                 sql_query = database.limpiar_sql(sql_query)
-#                 sql_query = database.sanear_explain(sql_query)
-#                 sql_query = database.calificar_tablas(sql_query, allowed_fqn)
-#                 if not database.restringir_a_tablas_permitidas(sql_query, allowed_fqn):
-#                     raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
-#             else:
-#                 raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
-
-#         # Dry-run
-#         if not payload.execute:
-#             return {"sql_query": sql_query, "original_query": result_dict.get("original_query")}
-
-#         # 6) Ejecutar
-#         filas_raw = await database.consultar(
-#             sql_query,
-#             permitidos_fqn=allowed_fqn,
-#             limite_por_defecto=limite_por_defecto,
-#             limite_maximo=limite_maximo,
-#         )
-
-#         # 6.2 Limpiar filas tipo TOTAL
-#         filas_raw = _quitar_filas_tipo_total(filas_raw)
-
-#         # 7) Normalizar
-#         columnas_implicitas_env = [s.strip() for s in (env("IMPLIED_MILLIS_COLUMNS", default="") or "").split(",") if s.strip()]
-#         columnas_implicitas = payload.implied_millis_cols if payload.implied_millis_cols is not None else columnas_implicitas_env
-
-#         formatear_env = env("RETURN_FORMATTED_NUMBERS", default=True, cast=bool)
-#         formatear = payload.format_numbers if payload.format_numbers is not None else formatear_env
-
-#         decimales_env = env("DECIMAL_PLACES", default=3, cast=int)
-#         decimales = payload.decimals if payload.decimals is not None else decimales_env
-
-#         filas = normalizar_filas(
-#             filas_raw,
-#             columnas_miles_implicitos=columnas_implicitas,
-#             decimales=decimales,
-#             formatear_cadenas=formatear
-#         )
-
-#         # 8) Resumen opcional
-#         if not payload.summarize:
-#             return {"rows": filas, "row_count": len(filas), "sql_query": sql_query}
-
-#         try:
-#             respuesta = await llm.construir_respuesta(filas, payload.human_query, modelo=None)
-#             if not (respuesta or "").strip():
-#                 local_answer = _respuesta_resumen_local(filas, payload.human_query)
-#                 return {
-#                     "answer": local_answer,
-#                     "answer_source": "local_fallback",
-#                     "rows": filas[:50],
-#                     "row_count": len(filas),
-#                     "sql_query": sql_query,
-#                     "warning": "Resumen generado localmente por falta de respuesta del LLM."
-#                 }
-#             return {
-#                 "answer": respuesta,
-#                 "answer_source": "llm",
-#                 "rows": filas[:50],
-#                 "row_count": len(filas),
-#                 "sql_query": sql_query
-#             }
-#         except Exception as ex:
-#             log.exception("Fallo al generar 'answer'.")
-#             local_answer = _respuesta_resumen_local(filas, payload.human_query)
-#             return {
-#                 "answer": local_answer,
-#                 "answer_source": "local_fallback",
-#                 "rows": filas[:50],
-#                 "row_count": len(filas),
-#                 "sql_query": sql_query,
-#                 "warning": f"LLM falló, se usó resumen local: {str(ex)[:160]}"
-#             }
-
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         log.exception("Error en /human_query")
-#         raise HTTPException(status_code=500, detail=str(e))
-
 # src/main.py
 # -*- coding: utf-8 -*-
 """
@@ -950,6 +29,11 @@ Seguridad:
 Notas MSSQL:
 - DB_DIALECT=mssql → se usa TOP en lugar de LIMIT desde database.py.
 - No hay fallback determinístico tipo Postgres (evita errores de sintaxis).
+
+Mejoras (genéricas) añadidas:
+- Reintento opcional si la consulta devuelve 0 filas O si la salida está dominada por NULL
+  en columnas típicas de agrupación (caso LEFT JOIN + GROUP BY sobre dimensión nullable).
+  El reintento pide al LLM reescribir el SQL con reglas "null-safe" sin exigir al usuario saber SQL.
 """
 
 import json
@@ -994,6 +78,14 @@ DECIMAL_PLACES = env("DECIMAL_PLACES", default=3, cast=int)
 # Cache (para schema)
 SCHEMA_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
 SCHEMA_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
+
+# Reintento genérico si el resultado sale vacío (0 filas)
+SQL_EMPTY_RESULT_RETRY = env("SQL_EMPTY_RESULT_RETRY", default=True, cast=bool)
+SQL_EMPTY_RESULT_RETRY_MAX = env("SQL_EMPTY_RESULT_RETRY_MAX", default=1, cast=int)
+
+# Reintento genérico si el resultado está “dominado por NULL” en dimensiones típicas (GROUP BY con LEFT JOIN)
+SQL_NULL_GROUP_RETRY = env("SQL_NULL_GROUP_RETRY", default=True, cast=bool)
+SQL_NULL_GROUP_RETRY_MAX = env("SQL_NULL_GROUP_RETRY_MAX", default=1, cast=int)
 
 # =========================
 #  Helpers
@@ -1052,6 +144,110 @@ def _parse_list_param(v: Optional[Union[List[str], str]]) -> Optional[List[str]]
         return None
     return [x.strip() for x in s.split(",") if x.strip()] or None
 
+
+def _usuario_pide_estricto(human_query: str) -> bool:
+    """
+    Si el usuario exige explícitamente un resultado estricto (solo coincidencias / excluir null / etc.),
+    evitamos reescrituras "null-safe" que cambien la semántica.
+    """
+    q = (human_query or "").lower()
+    pistas = [
+        "solo coincidencias",
+        "solo matching",
+        "excluir null",
+        "sin null",
+        "no null",
+        "solo donde exista",
+        "solo donde haya",
+        "únicamente los que tengan",
+        "solo los que tengan",
+        "estricto",
+        "exactamente",
+        "obligatorio",
+    ]
+    return any(p in q for p in pistas)
+
+
+def _sql_sugiere_riesgo_de_cero_filas(sql: str) -> bool:
+    """
+    Heurística simple para decidir si vale la pena reintentar:
+    - Tiene JOINs (posibles pérdidas por INNER JOIN)
+    - y además agregaciones (GROUP BY/HAVING) o filtros IS NOT NULL que podrían vaciar el set.
+    """
+    s = (sql or "").lower()
+    if " join " in s and (" group by " in s or " having " in s):
+        return True
+    if " join " in s and " is not null" in s:
+        return True
+    return False
+
+
+def _sql_tiene_group_by(sql: str) -> bool:
+    return " group by " in (sql or "").lower()
+
+
+def _resultado_parece_grupo_nulo(rows: List[Dict[str, Any]], sql: str) -> bool:
+    """
+    Detecta el patrón típico:
+    - Consulta con GROUP BY (o agregación)
+    - Resultado de 1 (o pocos) registros donde columnas de etiqueta/dimensión salen NULL
+    Esto suele ser LEFT JOIN + GROUP BY dimensión nullable, sin COALESCE ni filtro strict.
+    """
+    if not rows:
+        return False
+    if not _sql_tiene_group_by(sql):
+        return False
+
+    # Casos típicos: 1 fila, o muy pocas filas (ej. solo un grupo NULL)
+    if len(rows) > 3:
+        return False
+
+    # Si hay alguna clave "string-like" que es None en todas las filas, sugiere grupo NULL.
+    # (No nos amarramos a nombres específicos)
+    keys = list(rows[0].keys())
+    if not keys:
+        return False
+
+    sospechosas = 0
+    for k in keys:
+        # ignorar métricas numéricas obvias (avg_, sum_, count, total, n)
+        lk = k.lower()
+        if any(tok in lk for tok in ["avg", "sum", "count", "total", "prom", "media", "n", "min", "max"]):
+            continue
+
+        all_null = all((r.get(k) is None) for r in rows)
+        if all_null:
+            sospechosas += 1
+
+    return sospechosas >= 1
+
+
+def _construir_prompt_retry_nullsafe(
+    human_query: str,
+    dialecto: str,
+    limite_por_defecto: int,
+    sql_anterior: str
+) -> str:
+    """
+    Prompt genérico para pedir al LLM una reescritura:
+    - Evitar perder filas por joins opcionales.
+    - Evitar grupo NULL al agrupar por campos del lado derecho de LEFT JOIN.
+    - Mantener intención original.
+    """
+    return (
+        f"{human_query.strip()}\n\n"
+        f"IMPORTANTE (reintento): el SQL anterior fue problemático (0 filas o agrupación NULL). "
+        f"Reescribe el SQL para {dialecto.upper()} manteniendo la intención, pero aplicando reglas null-safe.\n"
+        f"- Si una relación puede ser opcional (join key nullable o match incompleto), prefiere LEFT JOIN en vez de INNER JOIN.\n"
+        f"- Si hay agregación (GROUP BY/HAVING) y la dimensión viene del lado derecho de un LEFT JOIN:\n"
+        f"  * Si el usuario NO pidió estricto, evita agrupar en NULL: crea una etiqueta no nula con COALESCE "
+        f"    (dimensión derecha primero y luego alguna etiqueta descriptiva disponible en tablas base/puente) "
+        f"    y agrupa por la MISMA expresión.\n"
+        f"  * Si el usuario pidió estricto, filtra con WHERE dimension_derecha IS NOT NULL.\n"
+        f"- Asegura límite de filas apropiado (SQL Server: TOP({limite_por_defecto})).\n"
+        f"Devuelve SOLO JSON con sql_query.\n\n"
+        f"SQL anterior (referencia, NO lo repitas igual):\n{sql_anterior}"
+    )
 
 # =========================
 #  Cache de /schema
@@ -1226,6 +422,11 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     - schema_refresh=true fuerza refrescar esquema antes de generar SQL.
     - execute=false devuelve solo el SQL (dry-run).
+
+    Mejoras:
+    - Si execute=true y devuelve 0 filas, puede reintentar 1 vez (configurable) con reescritura null-safe.
+    - Si execute=true y devuelve 1-3 filas con dimensión(es) NULL (típico GROUP BY con LEFT JOIN),
+      puede reintentar 1 vez (configurable) con reglas null-safe.
     """
     human = _normalizar_str(payload.human_query)
     if not human:
@@ -1251,39 +452,47 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     dialecto = payload.dialect or ("mssql" if es_mssql() else "postgresql")
 
-    # 1) LLM → JSON string
-    sql_json = await llm.consulta_humana_a_sql(
-        consulta_humana=human,
-        esquema_json=esquema_json,
-        dialecto=dialecto,
-        limite_por_defecto=limite_por_defecto,
-        modelo=None,
-    )
+    async def _generar_sql(consulta_humana: str) -> str:
+        """Llama al LLM y extrae sql_query."""
+        sql_json = await llm.consulta_humana_a_sql(
+            consulta_humana=consulta_humana,
+            esquema_json=esquema_json,
+            dialecto=dialecto,
+            limite_por_defecto=limite_por_defecto,
+            modelo=None,
+        )
+        try:
+            obj = json.loads(sql_json)
+        except Exception:
+            obj = None
+        if not isinstance(obj, dict) or "sql_query" not in obj:
+            raise HTTPException(status_code=500, detail="El LLM no devolvió JSON válido con 'sql_query'.")
+        sql = str(obj.get("sql_query") or "").strip()
+        if not sql:
+            raise HTTPException(status_code=500, detail="El LLM devolvió 'sql_query' vacío.")
+        return sql
 
-    try:
-        obj = json.loads(sql_json)
-    except Exception:
-        obj = None
+    def _blindar_sql(sql: str) -> str:
+        """
+        Aplica guardrails (limpieza + seguridad + allow-list + heurística nullable joins).
+        Nota: preferir_left_join_por_nullable NO fuerza COALESCE; solo evita perder filas por INNER JOIN.
+        El caso GROUP BY con NULL se corrige en el prompt de reintento y/o en el proveedor.
+        """
+        sql2 = database.limpiar_sql(sql)
+        sql2 = database.sanear_explain(sql2)
+        sql2 = database.calificar_tablas(sql2, allowed_fqn)
+        sql2 = database.preferir_left_join_por_nullable(sql2, esquema_json)
 
-    if not isinstance(obj, dict) or "sql_query" not in obj:
-        raise HTTPException(status_code=500, detail="El LLM no devolvió JSON válido con 'sql_query'.")
+        if not database.es_select_seguro(sql2):
+            raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
 
-    sql_query = str(obj.get("sql_query") or "").strip()
-    if not sql_query:
-        raise HTTPException(status_code=500, detail="El LLM devolvió 'sql_query' vacío.")
+        if not database.restringir_a_tablas_permitidas(sql2, allowed_fqn):
+            raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
 
-    # 2) Guardrails (limpieza + seguridad)
-    sql_query = database.limpiar_sql(sql_query)
-    sql_query = database.sanear_explain(sql_query)
-    sql_query = database.calificar_tablas(sql_query, allowed_fqn)
-    sql_query = database.preferir_left_join_por_nullable(sql_query, esquema_json)
+        return sql2
 
-    if not database.es_select_seguro(sql_query):
-        raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
-
-    if not database.restringir_a_tablas_permitidas(sql_query, allowed_fqn):
-        # MSSQL: no fallback Postgres
-        raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
+    # 1) Generar SQL inicial
+    sql_query = _blindar_sql(await _generar_sql(human))
 
     # Dry run
     if not payload.execute:
@@ -1295,7 +504,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             "executed": False,
         }
 
-    # 3) Ejecutar en threadpool
+    # 2) Ejecutar en threadpool
     try:
         rows = await run_in_threadpool(
             database.consultar,
@@ -1305,6 +514,105 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             limite_maximo,
         )
         rows = _a_jsonable(rows)
+
+        # 3A) Reintento genérico si 0 filas (y parece riesgo por JOIN/GBY)
+        if (
+            SQL_EMPTY_RESULT_RETRY
+            and len(rows) == 0
+            and SQL_EMPTY_RESULT_RETRY_MAX > 0
+            and (not _usuario_pide_estricto(human))
+            and _sql_sugiere_riesgo_de_cero_filas(sql_query)
+        ):
+            for _ in range(int(SQL_EMPTY_RESULT_RETRY_MAX)):
+                try:
+                    human_retry = _construir_prompt_retry_nullsafe(
+                        human_query=human,
+                        dialecto=dialecto,
+                        limite_por_defecto=limite_por_defecto,
+                        sql_anterior=sql_query,
+                    )
+                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
+
+                    rows2 = await run_in_threadpool(
+                        database.consultar,
+                        sql_retry,
+                        allowed_fqn,
+                        limite_por_defecto,
+                        limite_maximo,
+                    )
+                    rows2 = _a_jsonable(rows2)
+
+                    if rows2:
+                        return {
+                            "ok": True,
+                            "human_query": human,
+                            "dialect": dialecto,
+                            "sql": sql_retry,
+                            "executed": True,
+                            "rows": rows2,
+                            "row_count": len(rows2),
+                            "warning": (
+                                "La consulta original devolvió 0 filas; "
+                                "se reescribió automáticamente con reglas null-safe (joins/agrupación) para recuperar resultados."
+                            ),
+                        }
+
+                    sql_query = sql_retry
+                    rows = rows2
+
+                except Exception:
+                    log.exception("Reintento null-safe (0 filas) falló.")
+                    break
+
+        # 3B) Reintento si el resultado parece “grupo NULL” (caso típico LEFT JOIN + GROUP BY)
+        if (
+            SQL_NULL_GROUP_RETRY
+            and SQL_NULL_GROUP_RETRY_MAX > 0
+            and (not _usuario_pide_estricto(human))
+            and _resultado_parece_grupo_nulo(rows, sql_query)
+        ):
+            for _ in range(int(SQL_NULL_GROUP_RETRY_MAX)):
+                try:
+                    human_retry = _construir_prompt_retry_nullsafe(
+                        human_query=human,
+                        dialecto=dialecto,
+                        limite_por_defecto=limite_por_defecto,
+                        sql_anterior=sql_query,
+                    )
+                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
+
+                    rows2 = await run_in_threadpool(
+                        database.consultar,
+                        sql_retry,
+                        allowed_fqn,
+                        limite_por_defecto,
+                        limite_maximo,
+                    )
+                    rows2 = _a_jsonable(rows2)
+
+                    # preferimos una salida con etiquetas no nulas (o al menos que no sea solo NULL)
+                    if rows2 and (not _resultado_parece_grupo_nulo(rows2, sql_retry)):
+                        return {
+                            "ok": True,
+                            "human_query": human,
+                            "dialect": dialecto,
+                            "sql": sql_retry,
+                            "executed": True,
+                            "rows": rows2,
+                            "row_count": len(rows2),
+                            "warning": (
+                                "La consulta original generó grupos NULL (JOIN opcional + agregación). "
+                                "Se reescribió automáticamente para agrupar con etiqueta null-safe."
+                            ),
+                        }
+
+                    sql_query = sql_retry
+                    rows = rows2
+
+                except Exception:
+                    log.exception("Reintento null-safe (grupo NULL) falló.")
+                    break
+
         return {
             "ok": True,
             "human_query": human,
@@ -1314,6 +622,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             "rows": rows,
             "row_count": len(rows),
         }
+
     except Exception as e:
         log.exception("Error ejecutando SQL en /human_query")
         raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e)}")
