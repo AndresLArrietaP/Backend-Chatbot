@@ -40,6 +40,7 @@ import json
 import logging
 import time
 import unicodedata
+import re
 from decimal import Decimal
 from hashlib import sha1
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -86,6 +87,12 @@ SQL_EMPTY_RESULT_RETRY_MAX = env("SQL_EMPTY_RESULT_RETRY_MAX", default=1, cast=i
 # Reintento genérico si el resultado está “dominado por NULL” en dimensiones típicas (GROUP BY con LEFT JOIN)
 SQL_NULL_GROUP_RETRY = env("SQL_NULL_GROUP_RETRY", default=True, cast=bool)
 SQL_NULL_GROUP_RETRY_MAX = env("SQL_NULL_GROUP_RETRY_MAX", default=1, cast=int)
+
+SQL_NULL_PROJECTION_RETRY = env("SQL_NULL_PROJECTION_RETRY", default=True, cast=bool)
+SQL_NULL_PROJECTION_RETRY_MAX = env("SQL_NULL_PROJECTION_RETRY_MAX", default=1, cast=int)
+
+SQL_LATEST_WINDOW_RETRY = env("SQL_LATEST_WINDOW_RETRY", default=True, cast=bool)
+SQL_LATEST_WINDOW_RETRY_MAX = env("SQL_LATEST_WINDOW_RETRY_MAX", default=1, cast=int)
 
 # =========================
 #  Helpers
@@ -221,6 +228,133 @@ def _resultado_parece_grupo_nulo(rows: List[Dict[str, Any]], sql: str) -> bool:
 
     return sospechosas >= 1
 
+def _sql_parece_ultimo_por_entidad(sql: str) -> bool:
+    s = (sql or "").lower()
+    return (
+        "row_number(" in s
+        or " over (" in s
+        or "over(partition by" in s
+        or " partition by " in s
+    )
+
+
+def _resultado_parece_proyeccion_nula(rows: List[Dict[str, Any]], sql: str) -> bool:
+    """
+    Detecta el patrón:
+    - consulta con LEFT JOIN
+    - consulta tipo latest/window (ROW_NUMBER/OVER/PARTITION)
+    - filas devueltas con columnas descriptivas NULL en una proporción alta
+    """
+    if not rows:
+        return False
+
+    s = (sql or "").lower()
+    if " left join " not in f" {s} ":
+        return False
+    if not _sql_parece_ultimo_por_entidad(sql):
+        return False
+
+    muestra = rows[: min(len(rows), 12)]
+    if not muestra:
+        return False
+
+    sospechosas = 0
+
+    for k in muestra[0].keys():
+        lk = k.lower()
+
+        # ignorar métricas/fechas/auxiliares
+        if any(tok in lk for tok in [
+            "fecha", "date", "hora", "time", "rn", "row_number",
+            "ppm", "tbn", "tan", "vis", "v100", "metric", "value",
+            "horometro", "smr", "count", "sum", "avg", "total", "min", "max"
+        ]):
+            continue
+
+        nulls = sum(1 for r in muestra if r.get(k) is None)
+        if nulls >= max(1, int(len(muestra) * 0.5)):
+            sospechosas += 1
+
+    return sospechosas >= 1
+
+def _sql_parece_latest_window(sql: str) -> bool:
+    s = (sql or "").lower()
+    return (
+        "row_number(" in s
+        or " over (" in s
+        or " partition by " in s
+    )
+
+
+def _sql_tiene_filtros_is_not_null_sospechosos(sql: str) -> bool:
+    s = (sql or "")
+    return bool(re.search(
+        r"\[(?!.*(?:Id|ID|Code|CODE|Fecha|Date|Time))[^\]]+\]\s+IS\s+NOT\s+NULL",
+        s,
+        flags=re.IGNORECASE
+    ))
+
+
+def _resultado_parece_latest_sobre_restringido(rows: List[Dict[str, Any]], sql: str, limit: int) -> bool:
+    """
+    Detecta latest/window con muy pocas filas para el límite pedido y filtros sospechosos.
+    """
+    if not _sql_parece_latest_window(sql):
+        return False
+
+    if not _sql_tiene_filtros_is_not_null_sospechosos(sql):
+        return False
+
+    umbral = max(3, min(10, int(limit * 0.1)))
+    return len(rows) <= umbral
+
+
+def _construir_prompt_retry_latest_window(
+    human_query: str,
+    dialecto: str,
+    limite_por_defecto: int,
+    sql_anterior: str
+) -> str:
+    return (
+        f"{human_query.strip()}\n\n"
+        f"IMPORTANTE (reintento): el SQL anterior de tipo latest/window quedó sobre-restringido. "
+        f"Reescribe el SQL para {dialecto.upper()} manteniendo la intención.\n"
+        f"- Conserva la lógica con CTE + ROW_NUMBER/PARTITION BY si aplica.\n"
+        f"- No pongas TOP/LIMIT dentro del CTE o subquery que calcula ROW_NUMBER(); "
+        f"si hace falta limitar, aplícalo solo en el SELECT final después de WHERE rn = 1.\n"
+        f"- No filtres por defecto métricas de salida con IS NOT NULL antes del ROW_NUMBER, "
+        f"salvo que el usuario haya pedido excluir nulos explícitamente.\n"
+        f"- Para columnas descriptivas provenientes de LEFT JOIN opcionales, usa COALESCE con columnas reales de fallback.\n"
+        f"- No uses literales como 'N/A', 'Unknown' o equivalentes.\n"
+        f"- Mantén el límite de filas apropiado para SQL Server: TOP({limite_por_defecto}).\n"
+        f"Devuelve SOLO JSON con sql_query.\n\n"
+        f"SQL anterior (referencia, NO lo repitas igual):\n{sql_anterior}"
+    )
+
+
+def _construir_prompt_retry_proyeccion_nullsafe(
+    human_query: str,
+    dialecto: str,
+    limite_por_defecto: int,
+    sql_anterior: str,
+) -> str:
+    """
+    Prompt de reintento para queries de último/ventana con proyección nula.
+    """
+    return (
+        f"{human_query.strip()}\n\n"
+        f"IMPORTANTE (reintento): el SQL anterior devolvió filas con NULL en columnas descriptivas solicitadas. "
+        f"Reescribe el SQL para {dialecto.upper()} manteniendo la intención original.\n"
+        f"- Si usas LEFT JOIN a tablas opcionales y el usuario pidió columnas descriptivas del SELECT, "
+        f"usa COALESCE(campo_derecho, fallback1, fallback2) para evitar NULL en la proyección.\n"
+        f"- Si la consulta busca el último o más reciente registro por entidad usando CTE / ROW_NUMBER / OVER(PARTITION BY), "
+        f"mantén esa lógica.\n"
+        f"- NO excluyas por defecto filas por métricas pedidas (por ejemplo Fe_ppm) antes de calcular ROW_NUMBER(); "
+        f"solo agrega IS NOT NULL sobre esa métrica si el usuario lo pidió explícitamente.\n"
+        f"- Conserva el límite de filas apropiado para SQL Server: TOP({limite_por_defecto}).\n"
+        f"Devuelve SOLO JSON con sql_query.\n\n"
+        f"SQL anterior (referencia, NO lo repitas igual):\n{sql_anterior}"
+    )
 
 def _construir_prompt_retry_nullsafe(
     human_query: str,
@@ -483,6 +617,16 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         sql2 = database.calificar_tablas(sql2, allowed_fqn)
         sql2 = database.preferir_left_join_por_nullable(sql2, esquema_json)
 
+        # FIX determinístico:
+        # si hay LEFT JOIN + GROUP BY sobre dimensión nullable/opcional,
+        # reescribe a COALESCE(...) o filtro estricto según la intención del usuario.
+        if (dialecto or "").lower() in ("mssql", "sqlserver"):
+            sql2 = database.hacer_groupby_nullsafe_mssql(
+                sql2,
+                esquema_json=esquema_json,
+                consulta_humana=human,
+            )
+
         if not database.es_select_seguro(sql2):
             raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
 
@@ -611,6 +755,100 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
                 except Exception:
                     log.exception("Reintento null-safe (grupo NULL) falló.")
+                    break
+        # 3C) Reintento si la proyección viene con NULL en columnas descriptivas
+        # (caso típico CTE/ROW_NUMBER + LEFT JOIN + campos pedidos del lado derecho)
+        if (
+            SQL_NULL_PROJECTION_RETRY
+            and SQL_NULL_PROJECTION_RETRY_MAX > 0
+            and (not _usuario_pide_estricto(human))
+            and _resultado_parece_proyeccion_nula(rows, sql_query)
+        ):
+            for _ in range(int(SQL_NULL_PROJECTION_RETRY_MAX)):
+                try:
+                    human_retry = _construir_prompt_retry_proyeccion_nullsafe(
+                        human_query=human,
+                        dialecto=dialecto,
+                        limite_por_defecto=limite_por_defecto,
+                        sql_anterior=sql_query,
+                    )
+                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
+
+                    rows2 = await run_in_threadpool(
+                        database.consultar,
+                        sql_retry,
+                        allowed_fqn,
+                        limite_por_defecto,
+                        limite_maximo,
+                    )
+                    rows2 = _a_jsonable(rows2)
+
+                    if rows2 and (not _resultado_parece_proyeccion_nula(rows2, sql_retry)):
+                        return {
+                            "ok": True,
+                            "human_query": human,
+                            "dialect": dialecto,
+                            "sql": sql_retry,
+                            "executed": True,
+                            "rows": rows2,
+                            "row_count": len(rows2),
+                            "warning": (
+                                "La consulta original devolvió columnas descriptivas nulas "
+                                "en un patrón típico de LEFT JOIN opcional + último registro por entidad. "
+                                "Se reescribió automáticamente con proyección null-safe."
+                            ),
+                        }
+
+                    sql_query = sql_retry
+                    rows = rows2
+
+                except Exception:
+                    log.exception("Reintento null-safe (proyección nula) falló.")
+                    break
+        
+        # 3D) Reintento si latest/window quedó demasiado restringido
+        if (
+            SQL_LATEST_WINDOW_RETRY
+            and SQL_LATEST_WINDOW_RETRY_MAX > 0
+            and (not _usuario_pide_estricto(human))
+            and _resultado_parece_latest_sobre_restringido(rows, sql_query, limite_por_defecto)
+        ):
+            for _ in range(int(SQL_LATEST_WINDOW_RETRY_MAX)):
+                try:
+                    human_retry = _construir_prompt_retry_latest_window(
+                        human_query=human,
+                        dialecto=dialecto,
+                        limite_por_defecto=limite_por_defecto,
+                        sql_anterior=sql_query,
+                    )
+                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
+
+                    rows2 = await run_in_threadpool(
+                        database.consultar,
+                        sql_retry,
+                        allowed_fqn,
+                        limite_por_defecto,
+                        limite_maximo,
+                    )
+                    rows2 = _a_jsonable(rows2)
+
+                    if rows2 and len(rows2) > len(rows):
+                        return {
+                            "ok": True,
+                            "human_query": human,
+                            "dialect": dialecto,
+                            "sql": sql_retry,
+                            "executed": True,
+                            "rows": rows2,
+                            "row_count": len(rows2),
+                            "warning": (
+                                "La consulta original de tipo latest/window quedó demasiado restringida. "
+                                "Se reescribió automáticamente evitando filtros innecesarios sobre métricas."
+                            ),
+                        }
+
+                except Exception:
+                    log.exception("Reintento latest/window falló.")
                     break
 
         return {

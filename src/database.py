@@ -1000,11 +1000,15 @@ def es_select_seguro(sql: str) -> bool:
 # =============================================================================
 
 def _forzar_top_mssql(sql: str, n: int) -> str:
-    """Inserta/recorta TOP(n) en SQL Server."""
+    """Inserta/recorta TOP(n) en SQL Server sin romper CTEs/ventanas."""
     s = (sql or "").strip()
 
-    # Si ya existe TOP, recortar si excede
-    m_top = re.search(r"^\s*select\s+(distinct\s+)?top\s*\(?\s*(\d+)\s*\)?\s+", s, re.IGNORECASE)
+    # Si ya existe TOP al inicio del SELECT principal simple, recortar si excede
+    m_top = re.search(
+        r"^\s*select\s+(distinct\s+)?top\s*\(?\s*(\d+)\s*\)?\s+",
+        s,
+        re.IGNORECASE,
+    )
     if m_top:
         actual = int(m_top.group(2))
         if actual > n:
@@ -1016,21 +1020,32 @@ def _forzar_top_mssql(sql: str, n: int) -> str:
             )
         return s
 
-    # Caso WITH ... insertar TOP en el primer SELECT
+    # MUY IMPORTANTE:
+    # Si la query empieza con WITH (CTE), NO insertar TOP en el primer SELECT interno.
+    # Eso rompe ROW_NUMBER / PARTITION BY / ventanas y cambia la semántica.
     if re.match(r"^\s*with\b", s, re.IGNORECASE):
-
-        def _ins(match: re.Match) -> str:
-            return f"{match.group(0)}TOP ({n}) "
-
-        s2, cnt = re.subn(r"\bselect\s+distinct\s+", _ins, s, count=1, flags=re.IGNORECASE)
-        if cnt == 0:
-            s2, _ = re.subn(r"\bselect\s+", _ins, s, count=1, flags=re.IGNORECASE)
-        return s2
+        log.debug(
+            "[database._forzar_top_mssql] Query con WITH detectada; "
+            "no se inserta TOP automáticamente para no romper CTE/ventanas."
+        )
+        return s
 
     # SELECT normal
-    s2, cnt = re.subn(r"^\s*select\s+distinct\s+", f"SELECT DISTINCT TOP ({n}) ", s, count=1, flags=re.IGNORECASE)
+    s2, cnt = re.subn(
+        r"^\s*select\s+distinct\s+",
+        f"SELECT DISTINCT TOP ({n}) ",
+        s,
+        count=1,
+        flags=re.IGNORECASE,
+    )
     if cnt == 0:
-        s2, _ = re.subn(r"^\s*select\s+", f"SELECT TOP ({n}) ", s, count=1, flags=re.IGNORECASE)
+        s2, _ = re.subn(
+            r"^\s*select\s+",
+            f"SELECT TOP ({n}) ",
+            s,
+            count=1,
+            flags=re.IGNORECASE,
+        )
     return s2
 
 
@@ -1357,6 +1372,425 @@ def preferir_left_join_por_nullable(sql: str, esquema_json: Dict[str, Any]) -> s
 
     return _RE_JOIN_ON2.sub(repl, sql)
 
+def _split_sql_top_level(s: str) -> List[str]:
+    """
+    Divide una lista SQL por comas de nivel superior.
+    Ejemplo:
+      a, COALESCE(b,c), SUM(d)  ->  ["a", "COALESCE(b,c)", "SUM(d)"]
+    """
+    if not s:
+        return []
+
+    partes: List[str] = []
+    actual: List[str] = []
+    profundidad = 0
+
+    for ch in s:
+        if ch == "(":
+            profundidad += 1
+            actual.append(ch)
+        elif ch == ")":
+            profundidad = max(0, profundidad - 1)
+            actual.append(ch)
+        elif ch == "," and profundidad == 0:
+            item = "".join(actual).strip()
+            if item:
+                partes.append(item)
+            actual = []
+        else:
+            actual.append(ch)
+
+    item = "".join(actual).strip()
+    if item:
+        partes.append(item)
+
+    return partes
+
+
+_RE_RELACION_ALIAS_ORDEN = re.compile(
+    rf"""
+    \b(?P<kind>from|left\s+join|inner\s+join|join)\s+
+    (?P<table>{_IDENT}(?:\s*\.\s*{_IDENT})?)     
+    (?:\s+as\s+(?P<alias>{_ALIAS})|\s+(?P<alias2>{_ALIAS}))?
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _extraer_relaciones_query(sql: str, esquema_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extrae relaciones en orden:
+      FROM tabla alias
+      JOIN tabla alias
+    """
+    conocidas = {
+        (t.get("table") or "").strip().lower()
+        for t in (esquema_json.get("tables") or [])
+        if t.get("table")
+    }
+
+    relaciones: List[Dict[str, Any]] = []
+
+    for idx, m in enumerate(_RE_RELACION_ALIAS_ORDEN.finditer(sql or "")):
+        raw_table = (m.group("table") or "").replace("[", "").replace("]", "").replace('"', "")
+        table_name = raw_table.split(".")[-1].strip().lower()
+
+        alias_raw = (m.group("alias") or m.group("alias2") or "").strip()
+        alias_name = _strip_ident(alias_raw).lower() if alias_raw else table_name
+
+        if table_name in conocidas and alias_name:
+            relaciones.append(
+                {
+                    "order": idx,
+                    "kind": (m.group("kind") or "").lower(),
+                    "alias": alias_name,
+                    "table": table_name,
+                }
+            )
+
+    return relaciones
+
+
+def _columnas_texto_tabla(esquema_json: Dict[str, Any], table_name: str) -> List[str]:
+    out: List[str] = []
+    tname = (table_name or "").strip().lower()
+
+    for tb in (esquema_json.get("tables") or []):
+        if (tb.get("table") or "").strip().lower() != tname:
+            continue
+        for col in (tb.get("columns") or []):
+            cname = (col.get("name") or "").strip()
+            ctype = (col.get("type") or "").lower()
+            if cname and any(x in ctype for x in ["char", "text", "varchar", "nvarchar", "string", "clob"]):
+                out.append(cname)
+        break
+
+    return out
+
+
+def _puntuar_columna_texto_descriptiva(nombre_columna: str) -> int:
+    """
+    Heurística genérica para preferir columnas descriptivas como fallback.
+    """
+    n = (nombre_columna or "").strip().lower()
+    score = 0
+
+    # muy buenas
+    if any(x in n for x in ["name", "nombre"]):
+        score += 100
+    if any(x in n for x in ["description", "descripcion", "desc"]):
+        score += 80
+
+    # buenas
+    if any(x in n for x in ["compart", "component", "equipment", "system", "sistema", "model", "modelo", "type", "tipo", "position", "project", "customer", "client", "cliente", "category", "categoria"]):
+        score += 60
+
+    # útiles, pero menos
+    if any(x in n for x in ["code", "codigo"]):
+        score += 40
+
+    # malas para agrupar
+    if any(x in n for x in ["observ", "recommend", "detail", "path", "mail", "email", "phone", "telefono"]):
+        score -= 20
+
+    # normalmente no deben usarse como etiqueta
+    if any(x in n for x in ["id", "date", "fecha", "time", "hora", "count", "total", "avg", "sum", "metric", "value", "flag"]):
+        score -= 60
+
+    if n.endswith("id"):
+        score -= 100
+
+    return score
+
+
+def _parse_alias_col_expr(expr: str) -> Optional[Tuple[str, str, str]]:
+    """
+    Parsea expresiones exactas tipo:
+      c.ComponentName
+      [c].[ComponentName]
+      c.[ComponentName]
+      [c].ComponentName
+
+    Retorna:
+      (alias_lower, col_lower, col_original)
+    """
+    m = re.match(
+        rf"^\s*(?P<a>{_ALIAS})\s*\.\s*(?P<c>{_IDENT})\s*$",
+        expr or "",
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+
+    alias_raw = _strip_ident(m.group("a")).lower()
+    col_raw = _strip_ident(m.group("c"))
+    return alias_raw, col_raw.lower(), col_raw
+
+
+def _patron_alias_col(alias_norm: str, col_raw: str) -> str:
+    """
+    Regex para matchear:
+      c.Col
+      c.[Col]
+      [c].Col
+      [c].[Col]
+    """
+    a = re.escape(alias_norm)
+    c = re.escape(col_raw)
+    return (
+        rf"(?:\[\s*{a}\s*\]|\b{a}\b)\s*\.\s*"
+        rf"(?:\[\s*{c}\s*\]|\b{c}\b)"
+    )
+
+
+def _usuario_pide_estricto_consulta(consulta_humana: str) -> bool:
+    q = (consulta_humana or "").lower()
+    pistas = [
+        "solo coincidencias",
+        "solo matching",
+        "excluir null",
+        "sin null",
+        "no null",
+        "solo donde exista",
+        "solo donde haya",
+        "únicamente los que tengan",
+        "solo los que tengan",
+        "estricto",
+        "exactamente",
+        "obligatorio",
+    ]
+    return any(p in q for p in pistas)
+
+
+def _elegir_fallbacks_genericos(
+    sql: str,
+    esquema_json: Dict[str, Any],
+    relaciones: List[Dict[str, Any]],
+    alias_objetivo: str,
+    col_objetivo_lower: str,
+) -> List[str]:
+    """
+    Elige hasta 2 columnas de texto descriptivas de tablas YA presentes en el query.
+    No inventa tablas. Sí puede usar columnas del schema aunque no estén en SELECT.
+    """
+    target_rel = next((r for r in relaciones if r["alias"] == alias_objetivo), None)
+    target_order = target_rel["order"] if target_rel else 10**9
+
+    # Preferimos tablas anteriores al alias objetivo: fact table y puente
+    candidatas_rel = [r for r in relaciones if r["alias"] != alias_objetivo and r["order"] < target_order]
+    if not candidatas_rel:
+        candidatas_rel = [r for r in relaciones if r["alias"] != alias_objetivo]
+
+    candidatos: List[Tuple[int, int, str]] = []
+
+    for rel in candidatas_rel:
+        alias = rel["alias"]
+        table = rel["table"]
+        kind = rel["kind"]
+
+        bonus_kind = 0
+        if kind == "from":
+            bonus_kind = 50
+        elif "inner" in kind or kind == "join":
+            bonus_kind = 40
+        elif "left" in kind:
+            bonus_kind = 20
+
+        for col in _columnas_texto_tabla(esquema_json, table):
+            if col.lower() == col_objetivo_lower:
+                continue
+
+            score = _puntuar_columna_texto_descriptiva(col) + bonus_kind
+            if score <= 0:
+                continue
+
+            expr = f"[{alias}].[{col}]"
+            candidatos.append((score, rel["order"], expr))
+
+    candidatos.sort(key=lambda x: (-x[0], x[1], x[2].lower()))
+
+    out: List[str] = []
+    seen = set()
+    for _, _, expr in candidatos:
+        k = expr.lower()
+        if k not in seen:
+            out.append(expr)
+            seen.add(k)
+        if len(out) >= 2:
+            break
+
+    return out
+
+
+def hacer_groupby_nullsafe_mssql(
+    sql: str,
+    esquema_json: Dict[str, Any],
+    consulta_humana: str = "",
+) -> str:
+    """
+    Reescritura determinística para MSSQL:
+
+    Caso objetivo:
+    - LEFT JOIN a una dimensión nullable/opcional
+    - GROUP BY sobre campo del lado derecho
+    - Resultado termina en grupo NULL o puede perder semántica
+
+    Regla:
+    - Si el usuario pidió estricto -> WHERE dim IS NOT NULL
+    - Si no -> COALESCE(dim, fallback1, fallback2)
+             + WHERE COALESCE(...) <> ''
+             + GROUP BY la misma expresión
+    """
+    s = (sql or "").strip()
+    if not s or not es_mssql():
+        return s
+
+    if " group by " not in f" {s.lower()} ":
+        return s
+
+    if " left join " not in f" {s.lower()} ":
+        return s
+
+    relaciones = _extraer_relaciones_query(s, esquema_json)
+    if not relaciones:
+        return s
+
+    left_aliases = {r["alias"] for r in relaciones if "left" in r["kind"]}
+    if not left_aliases:
+        return s
+
+    mg = re.search(
+        r"\bgroup\s+by\s+(?P<g>.+?)(?=\border\s+by\b|\bhaving\b|$)",
+        s,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not mg:
+        return s
+
+    group_chunk = mg.group("g").strip()
+    exprs = _split_sql_top_level(group_chunk)
+
+    target_idx = None
+    target_alias = None
+    target_col_lower = None
+    target_col_raw = None
+
+    for idx, expr in enumerate(exprs):
+        parsed = _parse_alias_col_expr(expr)
+        if not parsed:
+            continue
+        a_low, c_low, c_raw = parsed
+        if a_low in left_aliases:
+            target_idx = idx
+            target_alias = a_low
+            target_col_lower = c_low
+            target_col_raw = c_raw
+            break
+
+    if target_idx is None or not target_alias or not target_col_lower or not target_col_raw:
+        return s
+
+    dim_expr = f"[{target_alias}].[{target_col_raw}]"
+
+    if _usuario_pide_estricto_consulta(consulta_humana):
+        filtro_estricto = f"{dim_expr} IS NOT NULL"
+
+        if re.search(r"\bwhere\b", s, flags=re.IGNORECASE):
+            s = re.sub(
+                r"\bwhere\b",
+                f"WHERE {filtro_estricto} AND",
+                s,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        else:
+            s = re.sub(
+                r"\bgroup\s+by\b",
+                f"WHERE {filtro_estricto} GROUP BY",
+                s,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        return s
+
+    fallbacks = _elegir_fallbacks_genericos(
+        sql=s,
+        esquema_json=esquema_json,
+        relaciones=relaciones,
+        alias_objetivo=target_alias,
+        col_objetivo_lower=target_col_lower,
+    )
+
+    if not fallbacks:
+        # fallback mínimo: filtrar null/blank para no devolver el grupo nulo
+        filtro_min = f"COALESCE(LTRIM(RTRIM(CAST({dim_expr} AS NVARCHAR(4000)))), '') <> ''"
+        if re.search(r"\bwhere\b", s, flags=re.IGNORECASE):
+            s = re.sub(
+                r"\bwhere\b",
+                f"WHERE {filtro_min} AND",
+                s,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        else:
+            s = re.sub(
+                r"\bgroup\s+by\b",
+                f"WHERE {filtro_min} GROUP BY",
+                s,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        return s
+
+    expr_coalesce = f"COALESCE({dim_expr}, {', '.join(fallbacks)})"
+
+    # 1) Reescribir GROUP BY
+    exprs[target_idx] = expr_coalesce
+    new_group_chunk = ", ".join(exprs)
+    s = s[:mg.start("g")] + new_group_chunk + s[mg.end("g"):]
+
+    # 2) Reescribir SELECT para que la dimensión proyectada coincida con el GROUP BY
+    ms = re.search(
+        r"^\s*select\s+(?P<body>.+?)\bfrom\b",
+        s,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if ms:
+        body = ms.group("body")
+        pat_dim = _patron_alias_col(target_alias, target_col_raw)
+
+        body_new = re.sub(
+            pat_dim + r"(?:\s+as\s+(?:\[[^\]]+\]|\w+))?",
+            f"{expr_coalesce} AS [{target_col_raw}]",
+            body,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+        if body_new != body:
+            s = s[:ms.start("body")] + body_new + s[ms.end("body"):]
+
+    # 3) Evitar grupo vacío / null total
+    filtro = f"COALESCE(LTRIM(RTRIM(CAST({expr_coalesce} AS NVARCHAR(4000)))), '') <> ''"
+    if re.search(r"\bwhere\b", s, flags=re.IGNORECASE):
+        s = re.sub(
+            r"\bwhere\b",
+            f"WHERE {filtro} AND",
+            s,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    else:
+        s = re.sub(
+            r"\bgroup\s+by\b",
+            f"WHERE {filtro} GROUP BY",
+            s,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+    log.debug("[database.hacer_groupby_nullsafe_mssql] SQL reescrita con COALESCE.")
+    return s
 
 # =============================================================================
 # Ejecución

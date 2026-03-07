@@ -39,6 +39,58 @@ _RE_PISTA_COMPARACION = re.compile(
     re.IGNORECASE,
 )
 
+_RE_PISTA_ULTIMO_VENTANA = re.compile(
+    r"\b(ultimo|último|mas\s+reciente|más\s+reciente|row_number|rank|dense_rank|over\s*\(|partition\s+by|cte|ventana)\b",
+    re.IGNORECASE,
+)
+
+_RE_PISTA_EXCLUSION_NULOS = re.compile(
+    r"\b(sin\s+nulos|sin\s+null|no\s+nulo|no\s+null|excluir\s+nulos|excluir\s+null|solo\s+con\s+valor|solo\s+con\s+datos|solo\s+disponibles)\b",
+    re.IGNORECASE,
+)
+
+_RE_PISTA_METRICA_EXPLICITA = re.compile(
+    r"\b(fe_ppm|cu_ppm|cr_ppm|pb_ppm|sn_ppm|al_ppm|si_ppm|na_ppm|k_ppm|li_ppm|sb_ppm|tbn|tan|v100|viscosidad40|horometro)\b",
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_ultimo_ventana(texto: str) -> bool:
+    """Detecta intención de último registro / CTE / funciones ventana."""
+    return bool(_RE_PISTA_ULTIMO_VENTANA.search(texto or ""))
+
+
+def _usuario_pide_excluir_nulos(texto: str) -> bool:
+    """Detecta si el usuario quiere excluir nulos explícitamente."""
+    return bool(_RE_PISTA_EXCLUSION_NULOS.search(texto or ""))
+
+
+def _reforzar_consulta_ultimo_ventana(q: str) -> str:
+    """
+    Refuerzo genérico para consultas de último/más reciente por entidad.
+    """
+    extra_nulos = ""
+    if not _usuario_pide_excluir_nulos(q):
+        extra_nulos = (
+            " IMPORTANTE: si buscas el último o más reciente registro por entidad con CTE/ROW_NUMBER, "
+            "NO agregues por defecto filtros IS NOT NULL sobre métricas pedidas en la salida "
+            "(por ejemplo ppm, horas, valores numéricos), porque eso puede eliminar entidades completas "
+            "antes de calcular ROW_NUMBER. Solo excluye nulos si el usuario lo pidió explícitamente."
+        )
+
+    return (
+        q.strip()
+        + " | IMPORTANTE: si la consulta busca el último o más reciente registro por entidad, "
+          "mantén la lógica con CTE/ROW_NUMBER/PARTITION BY y usa LEFT JOIN para relaciones opcionales. "
+          "Si usas un CTE o subquery para rankear, NO pongas TOP/LIMIT dentro de ese CTE o subquery. "
+          "Si necesitas limitar filas, aplícalo únicamente en el SELECT final después de WHERE rn = 1. "
+          "Puedes filtrar la clave de partición a IS NOT NULL cuando esa clave sea la entidad de negocio pedida "
+          "(por ejemplo EquipmentComponentId), pero no filtres métricas pedidas salvo petición explícita. "
+          "Si el usuario pidió columnas descriptivas provenientes de tablas opcionales, no las proyectes crudas si pueden quedar NULL: "
+          "usa COALESCE con columnas reales de fallback relacionadas. "
+          "No uses literales artificiales como 'N/A', 'Unknown' o similares dentro del SQL."
+        + extra_nulos
+    )
 
 def _es_intencion_comparativa(texto: str) -> bool:
     """Heurística básica para detectar intención comparativa."""
@@ -67,6 +119,7 @@ def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
         return obj if isinstance(obj, dict) else None
     except Exception:
         return None
+
 
 
 # ------------------------- API pública ---------------------------------------
@@ -110,7 +163,13 @@ async def consulta_humana_a_sql(
     if not q:
         raise ValueError("consulta_humana vacía")
 
-    q_reforzada = _reforzar_consulta_comparativa(q) if _es_intencion_comparativa(q) else q
+    q_reforzada = q
+
+    if _es_intencion_comparativa(q_reforzada):
+        q_reforzada = _reforzar_consulta_comparativa(q_reforzada)
+
+    if _es_intencion_ultimo_ventana(q_reforzada):
+        q_reforzada = _reforzar_consulta_ultimo_ventana(q_reforzada)
 
     # Compatibilidad: proveedor puede exponer métodos en español o en inglés
     if hasattr(_proveedor, "consulta_humana_a_sql"):
