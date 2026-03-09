@@ -6,16 +6,10 @@ Módulo: llm
 Capa orquestadora sobre el proveedor LLM (Gemini/OpenAI).
 
 Responsabilidades:
-- Convertir una consulta en lenguaje natural a SQL (NL→SQL).
-- Pedir al proveedor que genere una respuesta textual (build_answer).
-
-API principal (la que usas en tu backend):
-✅ consulta_humana_a_sql(...)
-
-Notas:
-- Este módulo trabaja con un proveedor creado por `src.providers.factory`.
-- Mantiene wrappers/alias por compatibilidad con código anterior.
-- Evita sesgar el dialecto mencionando explícitamente LIMIT/TOP en refuerzos.
+- Aplicar heurísticas livianas antes de enviar la consulta al proveedor.
+- Reforzar consultas de continuidad conversacional.
+- Reforzar consultas del dominio análisis de aceite.
+- Mantener compatibilidad con proveedores Gemini/OpenAI.
 """
 
 from __future__ import annotations
@@ -29,12 +23,11 @@ from .providers.factory import obtener_proveedor as _obtener_proveedor
 
 log = logging.getLogger(__name__)
 
-# Proveedor (singleton simple)
 _proveedor = _obtener_proveedor()
 
-
-
-# ------------------------- Heurísticas de intención ---------------------------
+# -----------------------------------------------------------------------------
+# Heurísticas de intención
+# -----------------------------------------------------------------------------
 
 _RE_PISTA_COMPARACION = re.compile(
     r"\b(supera|mayor\s+que|menor\s+que|más\s+que|menos\s+que|compar|vs\.?|versus|diferenc|pendien|despach)\b",
@@ -51,26 +44,106 @@ _RE_PISTA_EXCLUSION_NULOS = re.compile(
     re.IGNORECASE,
 )
 
-_RE_PISTA_METRICA_EXPLICITA = re.compile(
-    r"\b(fe_ppm|cu_ppm|cr_ppm|pb_ppm|sn_ppm|al_ppm|si_ppm|na_ppm|k_ppm|li_ppm|sb_ppm|tbn|tan|v100|viscosidad40|horometro)\b",
+_RE_PISTA_CONTINUIDAD = re.compile(
+    r"\b("
+    r"ahora|luego|después|despues|de\s+esos\s+resultados|de\s+ese\s+resultado|"
+    r"de\s+esas\s+filas|de\s+estos\s+registros|de\s+los\s+mismos|de\s+las\s+mismas|"
+    r"quédate|quedate|quédate\s+solo|quedate\s+solo|mantén|manten|manteniendo|"
+    r"sin\s+volver\s+a\s+listar|sin\s+repetir|sin\s+relistar|"
+    r"eso|esa|ese|esos|esas|aquello|aquellos|aquellas|"
+    r"los\s+más\s+críticos|los\s+mas\s+criticos|los\s+críticos|los\s+criticos"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_PISTA_SINTESIS_INTERPRETACION = re.compile(
+    r"\b(explica|explícame|explicame|interpreta|interpretación|interpretacion|"
+    r"resume|resumen|concluye|conclusión|conclusion|diagnostica|diagnóstico|diagnostico|"
+    r"tendencia|estable|incremento|decreciente|descendente|comportamiento)\b",
+    re.IGNORECASE,
+)
+
+_RE_PISTA_CRITICIDAD = re.compile(
+    r"\b(crítico|critico|críticos|criticos|severo|severa|severos|severas|"
+    r"alarma|riesgo|urgente|peor|peores|más\s+alto|mas\s+alto)\b",
+    re.IGNORECASE,
+)
+
+# ------------------------- Heurísticas compartimiento aceite ---------------------------
+
+_RE_PISTA_COMPARTIMIENTO_ACEITE = re.compile(
+    r"\b(motor|transmision|transmisión|hidraulico|hidráulico|diferencial|mando\s+final|reductor|convertidor)\b",
+    re.IGNORECASE,
+)
+
+_RE_PISTA_ANALISIS_ACEITE = re.compile(
+    r"\b(aceite|ppm|tbn|tan|viscos|muestra|muestreo|horas\s+de\s+aceite|horometro|horómetro|"
+    r"fe_ppm|cu_ppm|si_ppm|hierro|cobre|silicio|cromo|plomo|aluminio|indice\s+pq|índice\s+pq)\b",
     re.IGNORECASE,
 )
 
 
+# -----------------------------------------------------------------------------
+# Utilidades heurísticas
+# -----------------------------------------------------------------------------
+
+def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
+    try:
+        obj = json.loads(s or "")
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def _es_intencion_compartimiento_aceite(texto: str) -> bool:
+    t = texto or ""
+    return bool(_RE_PISTA_COMPARTIMIENTO_ACEITE.search(t)) and bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
+
+
 def _es_intencion_ultimo_ventana(texto: str) -> bool:
-    """Detecta intención de último registro / CTE / funciones ventana."""
     return bool(_RE_PISTA_ULTIMO_VENTANA.search(texto or ""))
 
 
 def _usuario_pide_excluir_nulos(texto: str) -> bool:
-    """Detecta si el usuario quiere excluir nulos explícitamente."""
     return bool(_RE_PISTA_EXCLUSION_NULOS.search(texto or ""))
 
 
+def _es_intencion_comparativa(texto: str) -> bool:
+    return bool(_RE_PISTA_COMPARACION.search(texto or ""))
+
+
+def _es_intencion_continuidad(texto: str, contexto: str) -> bool:
+    t = texto or ""
+    c = contexto or ""
+    return bool(c.strip()) and bool(_RE_PISTA_CONTINUIDAD.search(t))
+
+
+def _es_intencion_sintesis_interpretacion(texto: str) -> bool:
+    return bool(_RE_PISTA_SINTESIS_INTERPRETACION.search(texto or ""))
+
+
+def _es_intencion_criticidad(texto: str) -> bool:
+    return bool(_RE_PISTA_CRITICIDAD.search(texto or ""))
+
+
+# -----------------------------------------------------------------------------
+# Refuerzos de prompt
+# -----------------------------------------------------------------------------
+
+def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE: si el usuario menciona motor, transmisión, hidráulico, diferencial, mando final, "
+          "reductor o convertidor dentro del contexto de análisis de aceite, interprétalo primero como un valor "
+          "del campo descriptivo Compartimiento del hecho de análisis de aceite "
+          "(por ejemplo dbo.OilAnalysis.Compartimiento u Oil.LaboratoryData.Compartimiento). "
+          "Prefiere filtrar con LIKE sobre Compartimiento. "
+          "NO uses dbo.Component.ComponentName salvo que el usuario pida explícitamente el componente maestro, "
+          "catálogo de componentes o una dimensión de componente de catálogo."
+    )
+
+
 def _reforzar_consulta_ultimo_ventana(q: str) -> str:
-    """
-    Refuerzo genérico para consultas de último/más reciente por entidad.
-    """
     extra_nulos = ""
     if not _usuario_pide_excluir_nulos(q):
         extra_nulos = (
@@ -94,50 +167,64 @@ def _reforzar_consulta_ultimo_ventana(q: str) -> str:
         + extra_nulos
     )
 
-def _es_intencion_comparativa(texto: str) -> bool:
-    """Heurística básica para detectar intención comparativa."""
-    return bool(_RE_PISTA_COMPARACION.search(texto or ""))
-
 
 def _reforzar_consulta_comparativa(q: str) -> str:
-    """
-    Refuerzo genérico:
-    Si la consulta implica comparar A vs B, pide incluir A, B y (A-B).
-    No menciona LIMIT/TOP para no sesgar el dialecto; solo pide ordenar
-    por Diferencia cuando se esté limitando filas.
-    """
     return (
         q.strip()
-        + " | IMPORTANTE: Si la consulta implica comparar 2 campos (A vs B), el SELECT DEBE incluir "
+        + " | IMPORTANTE: si la consulta implica comparar 2 campos (A vs B), el SELECT DEBE incluir "
           "las 2 métricas y una columna Diferencia = (A - B), y ordenar por Diferencia DESC cuando "
           "se esté limitando la cantidad de filas devueltas."
     )
 
 
-def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
-    """Intenta cargar JSON y devolver dict; si no, None."""
-    try:
-        obj = json.loads(s or "")
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        return None
+def _reforzar_consulta_continuidad(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE: la consulta actual depende del contexto conversacional previo. "
+          "Resuelve referencias como 'ahora', 'eso', 'de esos resultados', 'los mismos', "
+          "'quédate solo con', 'sin volver a listar', manteniendo por defecto el mismo subconjunto, "
+          "mismo proyecto, mismas entidades, mismos filtros base y mismo universo ya establecido, "
+          "salvo que el usuario indique explícitamente un cambio. "
+          "Si el usuario pide reinterpretar, resumir, explicar o priorizar, NO abras un dataset nuevo innecesariamente."
+    )
 
 
+def _reforzar_consulta_sintesis_interpretacion(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE: si el usuario pide explicar, resumir, interpretar, concluir o diagnosticar, "
+          "prioriza conservar el mismo conjunto de resultados ya establecido en el contexto. "
+          "No amplíes columnas ni cambies de tabla principal sin necesidad. "
+          "Si la intención es analítica y no transaccional, mantén el foco en interpretar el subconjunto ya construido."
+    )
 
-# ------------------------- API pública ---------------------------------------
+
+def _reforzar_consulta_criticidad(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE: si el usuario pide los casos más críticos y no define una regla exacta, "
+          "prioriza el orden descendente por las métricas de desgaste o contaminación explícitamente mencionadas "
+          "en la consulta actual o presentes en el contexto conversacional inmediato. "
+          "Evita inventar umbrales operativos que no existan en la base."
+    )
+
+
+# -----------------------------------------------------------------------------
+# API pública del módulo
+# -----------------------------------------------------------------------------
 
 def listar_modelos() -> Dict[str, Any]:
-    """Lista modelos disponibles del proveedor activo."""
     if hasattr(_proveedor, "listar_modelos"):
         return _proveedor.listar_modelos()
-    return _proveedor.list_models()
+    return _proveedor.list_models()  # type: ignore[attr-defined]
 
 
 async def ping(modelo: Optional[str] = None) -> str:
-    """Ping al proveedor (útil para health-check)."""
+    if "modelo" in _proveedor.ping.__code__.co_varnames:
+        return await _proveedor.ping(modelo=modelo)  # type: ignore[misc]
     if "model" in _proveedor.ping.__code__.co_varnames:
-        return await _proveedor.ping(model=modelo)  # type: ignore
-    return await _proveedor.ping(modelo)  # type: ignore
+        return await _proveedor.ping(model=modelo)  # type: ignore[misc]
+    return await _proveedor.ping(modelo)  # type: ignore[misc]
 
 
 async def consulta_humana_a_sql(
@@ -146,63 +233,80 @@ async def consulta_humana_a_sql(
     dialecto: str = "postgresql",
     limite_por_defecto: int = 100,
     modelo: Optional[str] = None,
-    conversation_context: Optional[str] = None
+    conversation_context: Optional[str] = None,
 ) -> str:
     """
     Convierte NL → SQL mediante el proveedor activo.
-
-    Args:
-        consulta_humana: prompt del usuario en lenguaje natural
-        esquema_json: salida de database.obtener_esquema_json(...)
-        dialecto: 'mssql'/'sqlserver' o 'postgresql', etc.
-        limite_por_defecto: número de filas a limitar (TOP/LIMIT según dialecto)
-        modelo: override opcional del modelo del proveedor
-
-    Returns:
-        JSON string con forma:
-          {"sql_query":"...", "original_query":"..."}
     """
     q = (consulta_humana or "").strip()
     if not q:
         raise ValueError("consulta_humana vacía")
 
-    #q_reforzada = q
     contexto = (conversation_context or "").strip()
-
-    if contexto:
-        q_reforzada = (
-            "CONTEXTO CONVERSACIONAL PREVIO:\n"
-            f"{contexto}\n\n"
-            "NUEVA SOLICITUD DEL USUARIO:\n"
-            f"{q}\n\n"
-            "REGLA MUY IMPORTANTE: si la nueva solicitud es una continuación "
-            "como 'eso mismo', 'ahora', 'solo...', 'pero para...', "
-            "'enséñame igual', conserva la intención analítica previa "
-            "(misma entidad, misma métrica, misma granularidad) "
-            "y modifica solo la nueva restricción o filtro."
-        )
-    else:
-        q_reforzada = q
-
     base_heuristica = f"{contexto} {q}".strip()
+    q_reforzada = q
+
+    heuristicas_aplicadas: List[str] = []
+
+    if _es_intencion_compartimiento_aceite(base_heuristica):
+        q_reforzada = _reforzar_consulta_compartimiento_aceite(q_reforzada)
+        heuristicas_aplicadas.append("compartimiento_aceite")
 
     if _es_intencion_comparativa(base_heuristica):
         q_reforzada = _reforzar_consulta_comparativa(q_reforzada)
+        heuristicas_aplicadas.append("comparativa")
 
     if _es_intencion_ultimo_ventana(base_heuristica):
         q_reforzada = _reforzar_consulta_ultimo_ventana(q_reforzada)
+        heuristicas_aplicadas.append("ultimo_ventana")
 
-    # Compatibilidad: proveedor puede exponer métodos en español o en inglés
-    if hasattr(_proveedor, "consulta_humana_a_sql"):
-        salida = await _proveedor.consulta_humana_a_sql(
-            consulta=q_reforzada,
-            esquema_json=esquema_json,
-            dialecto=dialecto,
-            limite_por_defecto=limite_por_defecto,
-            modelo=modelo,
+    if _es_intencion_continuidad(q, contexto):
+        q_reforzada = _reforzar_consulta_continuidad(q_reforzada)
+        heuristicas_aplicadas.append("continuidad")
+
+    if _es_intencion_sintesis_interpretacion(base_heuristica):
+        q_reforzada = _reforzar_consulta_sintesis_interpretacion(q_reforzada)
+        heuristicas_aplicadas.append("sintesis_interpretacion")
+
+    if _es_intencion_criticidad(base_heuristica):
+        q_reforzada = _reforzar_consulta_criticidad(q_reforzada)
+        heuristicas_aplicadas.append("criticidad")
+
+    if contexto:
+        q_reforzada = (
+            q_reforzada.strip()
+            + " | IMPORTANTE: considera el contexto conversacional ya proporcionado para resolver referencias como "
+              "'eso', 'los mismos', 'ahora compáralo', 'ese componente', 'ese equipo', "
+              "'quédate con los más críticos' o solicitudes de continuidad."
         )
+
+    if heuristicas_aplicadas:
+        log.debug(
+            "[llm.consulta_humana_a_sql] heurísticas=%s consulta=%s",
+            ",".join(heuristicas_aplicadas),
+            q[:300],
+        )
+
+    if hasattr(_proveedor, "consulta_humana_a_sql"):
+        try:
+            salida = await _proveedor.consulta_humana_a_sql(
+                consulta=q_reforzada,
+                esquema_json=esquema_json,
+                dialecto=dialecto,
+                limite_por_defecto=limite_por_defecto,
+                modelo=modelo,
+                conversation_context=contexto,
+            )
+        except TypeError:
+            salida = await _proveedor.consulta_humana_a_sql(
+                consulta=q_reforzada,
+                esquema_json=esquema_json,
+                dialecto=dialecto,
+                limite_por_defecto=limite_por_defecto,
+                modelo=modelo,
+            )
     else:
-        salida = await _proveedor.human_query_to_sql(  # type: ignore
+        salida = await _proveedor.human_query_to_sql(  # type: ignore[attr-defined]
             human_query=q_reforzada,
             schema_json=esquema_json,
             dialect=dialecto,
@@ -218,6 +322,9 @@ async def consulta_humana_a_sql(
     if not obj.get("original_query"):
         obj["original_query"] = q
 
+    if heuristicas_aplicadas and not obj.get("heuristicas_aplicadas"):
+        obj["heuristicas_aplicadas"] = heuristicas_aplicadas
+
     return json.dumps(obj, ensure_ascii=False)
 
 
@@ -226,23 +333,18 @@ async def construir_respuesta(
     consulta_humana: str,
     modelo: Optional[str] = None,
 ) -> str:
-    """
-    Genera respuesta textual (delegado al proveedor).
-
-    Args:
-        filas: resultados del SQL
-        consulta_humana: prompt original del usuario
-        modelo: modelo opcional
-
-    Returns:
-        Texto final en lenguaje natural.
-    """
     if hasattr(_proveedor, "construir_respuesta"):
-        return await _proveedor.construir_respuesta(filas=filas, consulta_humana=consulta_humana, modelo=modelo)
-    return await _proveedor.build_answer(rows=filas, human_query=consulta_humana, model=modelo)  # type: ignore
+        return await _proveedor.construir_respuesta(
+            filas=filas,
+            consulta_humana=consulta_humana,
+            modelo=modelo,
+        )
+    return await _proveedor.build_answer(  # type: ignore[attr-defined]
+        rows=filas,
+        human_query=consulta_humana,
+        model=modelo,
+    )
 
-
-# ------------------------- Wrappers de compatibilidad -------------------------
 
 async def human_query_to_sql(
     human_query: str,
@@ -250,19 +352,19 @@ async def human_query_to_sql(
     dialect: str = "postgresql",
     default_limit: int = 100,
     model: Optional[str] = None,
+    conversation_context: Optional[str] = None,
 ) -> str:
-    """Alias async legacy para mantener compatibilidad."""
     return await consulta_humana_a_sql(
         consulta_humana=human_query,
         esquema_json=schema_json,
         dialecto=dialect,
         limite_por_defecto=default_limit,
         modelo=model,
+        conversation_context=conversation_context,
     )
 
 
 def extraer_sql_de_json(sql_json: str) -> Optional[str]:
-    """Utilidad: extrae 'sql_query' de un JSON string si existe."""
     obj = _json_cauto_loads(sql_json)
     if obj and "sql_query" in obj:
         return str(obj["sql_query"])

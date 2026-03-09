@@ -4,24 +4,25 @@
 Módulo: index
 -------------
 Punto de entrada de la aplicación FastAPI (ASGI).
-
-- Selecciona el perfil de configuración.
-- Construye la app con `src.init_app`.
-
-Ejecución:
-- En desarrollo: `uvicorn index:app --reload --port 5000`
-- O `python index.py` (usa uvicorn.run interno).
 """
+
+from decouple import config as env
 
 from config import config as perfiles
 from src import init_app
 
-# Perfil activo
-configuracion = perfiles["development"]
 
-# App FastAPI (ASGI)
+perfil_activo = env("APP_PROFILE", default="development").strip().lower()
+configuracion = perfiles.get(perfil_activo, perfiles["development"])
+
 app = init_app(configuracion)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("index:app", host="127.0.0.1", port=5000, reload=True)
+
+    uvicorn.run(
+        "index:app",
+        host=env("HOST", default="127.0.0.1"),
+        port=env("PORT", default=5000, cast=int),
+        reload=env("DEBUG", default=True, cast=bool),
+    )

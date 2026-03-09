@@ -28,7 +28,8 @@ class ProveedorLLM(Protocol):
         esquema_json: Dict[str, Any],
         dialecto: str = "postgresql",
         limite_por_defecto: int = 100,
-        modelo: Optional[str] = None
+        modelo: Optional[str] = None,
+        conversation_context: Optional[str] = None,
     ) -> str:
         """
         Convierte una consulta en lenguaje natural a una consulta SQL válida.
@@ -37,8 +38,8 @@ class ProveedorLLM(Protocol):
     async def construir_respuesta(
         self,
         filas: List[Dict[str, Any]],
-        consulta: str,
-        modelo: Optional[str] = None
+        consulta_humana: str,
+        modelo: Optional[str] = None,
     ) -> str:
         """
         Construye una respuesta en lenguaje natural basada en las filas devueltas.
@@ -52,12 +53,11 @@ def obtener_proveedor() -> ProveedorLLM:
     Returns:
         ProveedorLLM: instancia del proveedor activo (Gemini u OpenAI).
     """
-    proveedor = leer_env("LLM_PROVIDER", default="gemini").lower()
+    proveedor = leer_env("LLM_PROVIDER", default="gemini").lower().strip()
 
     if proveedor == "openai":
         from .openai_client import OpenAIProvider
         return OpenAIProvider()
 
-    # Por defecto se usa Gemini
     from .gemini_client import GeminiProvider
     return GeminiProvider()
