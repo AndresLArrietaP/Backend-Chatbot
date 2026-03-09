@@ -141,7 +141,7 @@ def _intentar_float(v: Any) -> Optional[float]:
                 s = s.replace(",", "")
 
             s = re.sub(r"[^0-9\.\-]", "", s)
-            if s in ("", "-", ".", "-.") :
+            if s in ("", "-", ".", "-."):
                 return None
             return float(s)
     except Exception:
@@ -497,7 +497,7 @@ class GeminiProvider:
         Nota: si hay columnas repetidas en varias tablas, toma la primera ocurrencia (para 1 tabla, suficiente).
         """
         mp: Dict[str, str] = {}
-        for t in (eschema := (esquema_json.get("tables", []) or [])):
+        for t in (esquema_json.get("tables", []) or []):
             for c in (t.get("columns", []) or []):
                 nm = c.get("name")
                 tp = (c.get("type") or "")
@@ -591,13 +591,44 @@ class GeminiProvider:
 
     # -------------------------- Validación de JSON SQL ------------------------
 
+    def _sql_parece_incompleto(self, sql: str) -> bool:
+        s = (sql or "").strip()
+        if not s:
+            return True
+
+        if not re.match(r"^\s*(with|select|explain)\b", s, flags=re.IGNORECASE):
+            return True
+
+        if re.search(r"\b(select|from|join|left\s+join|inner\s+join|where|and|or|group\s+by|order\s+by|having|on|as)\s*$", s, flags=re.IGNORECASE):
+            return True
+
+        if s.endswith((",", "(", "=", ".")):
+            return True
+
+        if s.count("(") != s.count(")"):
+            return True
+
+        if s.count("[") != s.count("]"):
+            return True
+
+        if s.count("'") % 2 != 0:
+            return True
+
+        if re.search(r"\[\s*\]", s):
+            return True
+
+        if re.search(r"\bAS\s+\[\s*\]", s, flags=re.IGNORECASE):
+            return True
+
+        return False
+
     def _asegurar_sql_json(self, payload: str) -> str:
         """
         Acepta:
         - JSON limpio {"sql_query":"...","original_query":"..."}
         - JSON embebido en texto
-        - Casos con escapes / truncados
-        - Fallback: si solo viene SQL, lo envuelve en el JSON esperado
+        - JSON truncado donde solo alcanzó a salir "sql_query": "..."
+        - SQL cruda (WITH/SELECT/EXPLAIN)
         """
         def _probar(s: str) -> Optional[Dict[str, Any]]:
             try:
@@ -609,34 +640,95 @@ class GeminiProvider:
                 return None
             return None
 
-        t = (payload or "").strip()
+        def _quitar_fences(s: str) -> str:
+            s = s or ""
+            s = re.sub(r"^\s*```(?:json|sql)?\s*", "", s, flags=re.IGNORECASE)
+            s = re.sub(r"\s*```\s*$", "", s, flags=re.IGNORECASE)
+            return s.strip()
 
+        def _desescapar_json_string(s: str) -> str:
+            s = s.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r")
+            s = s.replace('\\"', '"').replace("\\\\", "\\")
+            return s
+
+        t = _quitar_fences((payload or "").strip())
+        if not t:
+            raise RuntimeError("Gemini devolvió payload vacío.")
+
+        # 1) JSON directo
         obj = _probar(t)
         if obj:
             return json.dumps(obj, ensure_ascii=False)
 
+        # 2) Primer bloque {...}
         m = re.search(r"\{.*\}", t, re.DOTALL)
         if m:
             obj = _probar(m.group(0))
             if obj:
                 return json.dumps(obj, ensure_ascii=False)
 
-        # "sql_query": ".... (truncado/escapes)"
-        m2 = re.search(r'"sql_query"\s*:\s*"(?P<q>.*)', t, re.DOTALL)
+        # 3) Caso truncado: extraer manualmente el valor de "sql_query"
+        m2 = re.search(r'"sql_query"\s*:\s*"', t, re.IGNORECASE)
         if m2:
-            crudo = m2.group("q")
-            crudo = crudo.replace('\\"', '"')
-            crudo = crudo.replace("\\n", "\n").replace("\\t", "\t")
-            ultima_comilla = crudo.rfind('"')
-            sql = crudo[:ultima_comilla] if ultima_comilla > 0 else crudo
-            sql = sql.strip()
-            if sql:
-                return json.dumps({"sql_query": sql, "original_query": ""}, ensure_ascii=False)
+            i = m2.end()
+            buf: List[str] = []
+            escaped = False
 
+            while i < len(t):
+                ch = t[i]
+                if escaped:
+                    buf.append(ch)
+                    escaped = False
+                elif ch == "\\":
+                    buf.append(ch)
+                    escaped = True
+                elif ch == '"':
+                    break
+                else:
+                    buf.append(ch)
+                i += 1
+
+            crudo = "".join(buf)
+            sql = _desescapar_json_string(crudo).strip()
+
+            if sql:
+                return json.dumps(
+                    {"sql_query": sql, "original_query": ""},
+                    ensure_ascii=False
+                )
+
+        # 4) Si solo vino SQL cruda
         if re.search(r"^\s*(with\b|select\b|explain\b)", t, re.IGNORECASE):
             return json.dumps({"sql_query": t, "original_query": ""}, ensure_ascii=False)
 
+        # 5) Si vino texto mezclado, rescatar desde WITH/SELECT/EXPLAIN
+        m3 = re.search(r"(?is)\b(with|select|explain)\b.*", t)
+        if m3:
+            sql = m3.group(0).strip()
+            if sql:
+                return json.dumps({"sql_query": sql, "original_query": ""}, ensure_ascii=False)
+
         raise RuntimeError(f"Gemini devolvió un formato inesperado: {t[:400]}")
+
+    def _extraer_sql_rescatable(self, texto: str) -> Optional[str]:
+        """Intenta rescatar una SQL utilizable desde una salida parcial del modelo."""
+        t = (texto or "").strip()
+        if not t:
+            return None
+
+        try:
+            obj = json.loads(self._asegurar_sql_json(t))
+            sql = (obj.get("sql_query") or "").strip()
+            return sql or None
+        except Exception:
+            pass
+
+        m = re.search(r"(?is)\b(with|select|explain)\b.*", t)
+        if m:
+            sql = m.group(0).strip()
+            return sql or None
+
+        return None
 
     # -------------------------------- NL -> SQL -------------------------------
 
@@ -646,7 +738,8 @@ class GeminiProvider:
         esquema_json: Dict[str, Any],
         dialecto: str = "postgresql",
         limite_por_defecto: int = 100,
-        modelo: Optional[str] = None
+        modelo: Optional[str] = None,
+        conversation_context: Optional[str] = None
     ) -> str:
         """
         Convierte una consulta en lenguaje natural a SQL válido y seguro (solo lectura), devolviendo JSON:
@@ -669,11 +762,9 @@ class GeminiProvider:
         ]
         fq_names = [t.get("fq_name") for t in esquema_json.get("tables", []) if t.get("fq_name")]
 
-        # Pistas de tipos (clave para evitar TRIM(bigint), etc.)
         columnas_no_texto = self._columnas_no_texto(esquema_json)
         columnas_texto = self._columnas_texto(esquema_json)
 
-        # --- justo antes de construir system_instruction, agrega este helper local ---
         def _reglas_por_dialecto(d: str) -> str:
             dd = (d or "").lower().strip()
 
@@ -889,7 +980,6 @@ FIELD & TYPE SAFETY:
     COALESCE(LTRIM(RTRIM([Col])), '') <> ''
 """.strip()
 
-            # Default: Postgres-style
             return f"""
 DIALECT: POSTGRESQL
 
@@ -900,8 +990,14 @@ DIALECT: POSTGRESQL
 - Regex operators (~, !~*) are allowed only in Postgres.
 """.strip()
 
+        contexto_extra = ""
+        if conversation_context:
+            contexto_extra = f"""
+<conversation_context>
+{conversation_context}
+</conversation_context>
+""".strip()
 
-# --- Reemplaza tu system_instruction actual por este ---
         system_instruction = fr"""
 You are a careful SQL generator for {dialecto.upper()}.
 
@@ -955,11 +1051,16 @@ Field coverage (VERY IMPORTANT):
 - If a LEFT JOIN can create NULL groups in aggregations, prefer either filtering NULLs (strict) or COALESCE fallback (non-strict),
   as defined in the DIALECT rules above.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON, minified in a single line:
 {{
   "sql_query": "...",
   "original_query": "{consulta}"
 }}
+
+VERY IMPORTANT:
+- The value of "sql_query" must be a compact single-line SQL string.
+- Do NOT pretty-print SQL.
+- Do NOT add markdown fences.
 
 <schema_json>
 {json.dumps(esquema_compacto, ensure_ascii=False)}
@@ -971,6 +1072,7 @@ Return ONLY valid JSON:
 text_columns={json.dumps(columnas_texto, ensure_ascii=False)}
 non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
 </type_hints>
+{contexto_extra}
 """.strip()
 
         primario_full = self._resolver_modelo(modelo)
@@ -986,7 +1088,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
         configuracion = {
             "response_mime_type": "application/json",
             "temperature": 0.06,
-            "max_output_tokens": int(env("SQL_MAX_OUTPUT_TOKENS", default=2600)),
+            "max_output_tokens": int(env("SQL_MAX_OUTPUT_TOKENS", default=3800)),
             "system_instruction": system_instruction,
         }
 
@@ -1027,11 +1129,9 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                     code = (getattr(res, "code", "") or "")
                     code_str = str(code).upper()
 
-                    # 404 / modelo no disponible: probar siguiente
                     if status == "NOT_FOUND" or "not found" in msg.lower() or "no longer available" in msg.lower():
                         continue
 
-                    # 429 / cuota: dormir y seguir intentando si hay tiempo
                     if status == "RESOURCE_EXHAUSTED" or code_str == "429":
                         esperar_s = _parsear_reintentar_en_segundos(msg)
                         if esperar_s > 0:
@@ -1040,7 +1140,6 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
 
                     continue
 
-                # Cancelar el resto y elegir primer ganador
                 for p in pendientes:
                     p.cancel()
 
@@ -1062,204 +1161,6 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                 tareas.append(asyncio.create_task(_lanzar(modelos[lanzadas])))
                 lanzadas += 1
 
-        #     # -------------------- Null-safe GROUP BY (genérico, MSSQL) --------------------
-
-        # def _usuario_pide_estricto( consulta: str) -> bool:
-        #     q = (consulta or "").lower()
-        #     pistas = [
-        #         "solo coincidencias", "solo matching", "sin null", "no null", "excluir null",
-        #         "solo donde exista", "solo donde haya", "únicamente los que tengan",
-        #         "estricto", "exactamente", "obligatorio"
-        #     ]
-        #     return any(p in q for p in pistas)
-
-        # def _extraer_alias_from(self, sql: str) -> Optional[str]:
-        #     """
-        #     Extrae alias principal del FROM.
-        #     Ej: FROM [dbo].[OilAnalysis] AS oa -> oa
-        #         FROM [dbo].[OilAnalysis] oa -> oa
-        #     """
-        #     m = re.search(
-        #         r"\bfrom\s+(?:\[[^\]]+\]|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|\w+))?\s+(?:as\s+)?(?P<a>\[[^\]]+\]|\w+)\b",
-        #         sql or "",
-        #         flags=re.IGNORECASE
-        #     )
-        #     if not m:
-        #         return None
-        #     return m.group("a")
-
-        # def _extraer_left_join_aliases(self, sql: str) -> List[str]:
-        #     """
-        #     Lista aliases que aparecen en LEFT JOIN ... AS alias
-        #     """
-        #     aliases = []
-        #     for m in re.finditer(
-        #         r"\bleft\s+join\s+(?:\[[^\]]+\]|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|\w+))?\s+(?:as\s+)?(?P<a>\[[^\]]+\]|\w+)\b",
-        #         sql or "",
-        #         flags=re.IGNORECASE
-        #     ):
-        #         aliases.append(m.group("a"))
-        #     return aliases
-
-        # def _es_texto_por_schema(self, esquema_json: Dict[str, Any], table_name: str, col_name: str) -> bool:
-        #     """
-        #     Determina si una columna es texto usando schema_json.
-        #     """
-        #     t = (table_name or "").strip().lower()
-        #     c = (col_name or "").strip().lower()
-        #     for tb in (esquema_json.get("tables") or []):
-        #         if (tb.get("table") or "").strip().lower() != t:
-        #             continue
-        #         for col in (tb.get("columns") or []):
-        #             if (col.get("name") or "").strip().lower() == c:
-        #                 tp = (col.get("type") or "").lower()
-        #                 return any(x in tp for x in ["char", "text", "varchar", "nvarchar", "string"])
-        #     return False
-
-        # def _alias_to_table(self, sql: str, esquema_json: Dict[str, Any]) -> Dict[str, str]:
-        #     """
-        #     Mapa alias -> nombre de tabla (sin schema) usando FROM/JOIN.
-        #     """
-        #     known = {(t.get("table") or "").strip().lower() for t in (esquema_json.get("tables") or []) if t.get("table")}
-        #     mp: Dict[str, str] = {}
-
-        #     for m in re.finditer(
-        #         r"\b(from|join)\s+(?P<t>(?:\[[^\]]+\]|\w+)(?:\s*\.\s*(?:\[[^\]]+\]|\w+))?)\s+(?:as\s+)?(?P<a>\[[^\]]+\]|\w+)\b",
-        #         sql or "",
-        #         flags=re.IGNORECASE
-        #     ):
-        #         raw_t = m.group("t") or ""
-        #         alias = m.group("a") or ""
-        #         tname = raw_t.replace("[", "").replace("]", "").split(".")[-1].strip().lower()
-        #         an = alias.replace("[", "").replace("]", "").strip().lower()
-        #         if tname in known and an:
-        #             mp[an] = tname
-        #     return mp
-
-        # def _elegir_fallbacks(self, sql: str, esquema_json: Dict[str, Any], alias_map: Dict[str, str], excluye: str) -> List[str]:
-        #     """
-        #     Busca columnas textuales ya referenciadas en el SQL para usarlas como fallback en COALESCE.
-        #     No inventa columnas: solo usa refs existentes (alias.col) dentro del SQL.
-        #     """
-        #     refs = []
-        #     for m in re.finditer(
-        #         r"(?P<a>\[[^\]]+\]|\w+)\s*\.\s*(?P<c>\[[^\]]+\]|\w+)",
-        #         sql or "",
-        #         flags=re.IGNORECASE
-        #     ):
-        #         a = (m.group("a") or "").replace("[", "").replace("]", "").strip().lower()
-        #         c = (m.group("c") or "").replace("[", "").replace("]", "").strip()
-        #         if not a or not c:
-        #             continue
-        #         if f"{a}.{c}".lower() == excluye.lower():
-        #             continue
-        #         t = alias_map.get(a)
-        #         if t and self._es_texto_por_schema(esquema_json, t, c):
-        #             # devolvemos con bracket si ya lo usa
-        #             refs.append(f"[{a}].[{c}]")
-
-        #     # Quitar duplicados manteniendo orden
-        #     seen = set()
-        #     out = []
-        #     for r in refs:
-        #         k = r.lower()
-        #         if k not in seen:
-        #             out.append(r)
-        #             seen.add(k)
-
-        #     # Máximo 2 fallbacks
-        #     return out[:2]
-
-        # def _hacer_groupby_nullsafe_mssql(self, sql: str, consulta: str, esquema_json: Dict[str, Any]) -> str:
-        #     """
-        #     Si detecta LEFT JOIN y GROUP BY sobre una dimensión del lado derecho,
-        #     aplica:
-        #     - Estricto: WHERE dim IS NOT NULL
-        #     - No estricto: COALESCE(dim, fallback1, fallback2)
-        #     """
-        #     s = (sql or "").strip()
-        #     if not s:
-        #         return s
-
-        #     if "group by" not in s.lower():
-        #         return s
-
-        #     left_aliases = self._extraer_left_join_aliases(s)
-        #     if not left_aliases:
-        #         return s
-
-        #     alias_map = self._alias_to_table(s, esquema_json)
-        #     left_aliases_norm = {a.replace("[", "").replace("]", "").strip().lower() for a in left_aliases}
-
-        #     # Captura GROUP BY <exprs>
-        #     mg = re.search(r"\bgroup\s+by\s+(?P<g>.+?)(\border\s+by\b|\bhaving\b|$)", s, flags=re.IGNORECASE | re.DOTALL)
-        #     if not mg:
-        #         return s
-        #     group_chunk = mg.group("g").strip()
-
-        #     exprs = [e.strip() for e in group_chunk.split(",") if e.strip()]
-
-        #     # Si el GROUP BY no es por alias.col, no tocamos
-        #     targets = []
-        #     for e in exprs:
-        #         m = re.match(r"(?P<a>\[[^\]]+\]|\w+)\s*\.\s*(?P<c>\[[^\]]+\]|\w+)\s*$", e, flags=re.IGNORECASE)
-        #         if not m:
-        #             continue
-        #         a = (m.group("a") or "").replace("[", "").replace("]", "").strip().lower()
-        #         c = (m.group("c") or "").replace("[", "").replace("]", "").strip()
-        #         if a in left_aliases_norm:
-        #             targets.append((a, c))
-
-        #     if not targets:
-        #         return s
-
-        #     # Solo actuamos sobre el primer target (reduce riesgo de reescrituras masivas)
-        #     a, c = targets[0]
-        #     dim = f"[{a}].[{c}]"
-
-        #     estricto = self._usuario_pide_estricto(consulta)
-        #     if estricto:
-        #         # Asegurar WHERE dim IS NOT NULL
-        #         if re.search(r"\bwhere\b", s, flags=re.IGNORECASE):
-        #             # Insertar AND
-        #             s = re.sub(r"\bwhere\b", f"WHERE {dim} IS NOT NULL AND", s, count=1, flags=re.IGNORECASE)
-        #         else:
-        #             # Insertar WHERE antes de GROUP BY
-        #             s = re.sub(r"\bgroup\s+by\b", f"WHERE {dim} IS NOT NULL GROUP BY", s, count=1, flags=re.IGNORECASE)
-        #         return s
-
-        #     # No estricto: COALESCE(dim, fallbacks...)
-        #     fallbacks = self._elegir_fallbacks(s, esquema_json, alias_map, excluye=f"{a}.{c}")
-        #     if not fallbacks:
-        #         # Si no encontramos fallback, al menos evitamos agrupar NULL filtrando
-        #         if re.search(r"\bwhere\b", s, flags=re.IGNORECASE):
-        #             s = re.sub(r"\bwhere\b", f"WHERE {dim} IS NOT NULL AND", s, count=1, flags=re.IGNORECASE)
-        #         else:
-        #             s = re.sub(r"\bgroup\s+by\b", f"WHERE {dim} IS NOT NULL GROUP BY", s, count=1, flags=re.IGNORECASE)
-        #         return s
-
-        #     expr_coalesce = f"COALESCE({dim}, {', '.join(fallbacks)})"
-
-        #     # Reemplazar en GROUP BY
-        #     s = re.sub(
-        #         r"\bgroup\s+by\s+" + re.escape(dim),
-        #         f"GROUP BY {expr_coalesce}",
-        #         s,
-        #         count=1,
-        #         flags=re.IGNORECASE
-        #     )
-
-        #     # Reemplazar en SELECT si aparece exactamente dim como columna (evita dejar SELECT dim pero GROUP BY COALESCE)
-        #     # Ej: SELECT c.ComponentName, AVG(...)
-        #     s = re.sub(
-        #         re.escape(dim),
-        #         expr_coalesce,
-        #         s,
-        #         count=1
-        #     )
-
-        #     return s
-
         def _es_consulta_latest_window(sql: str) -> bool:
             s = (sql or "").lower()
             return (
@@ -1269,9 +1170,8 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                 or " partition by " in s
             )
 
-
-        def _consulta_pide_excluir_nulos(consulta: str) -> bool:
-            q = (consulta or "").lower()
+        def _consulta_pide_excluir_nulos(consulta_local: str) -> bool:
+            q = (consulta_local or "").lower()
             pistas = [
                 "sin nulos", "sin null", "no nulo", "no null",
                 "excluir nulos", "excluir null",
@@ -1279,8 +1179,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             ]
             return any(p in q for p in pistas)
 
-
-        def _quitar_filtros_is_not_null_metricos_en_latest(sql: str, consulta: str) -> str:
+        def _quitar_filtros_is_not_null_metricos_en_latest(sql: str, consulta_local: str) -> str:
             """
             En queries latest/window, evita que el LLM meta filtros IS NOT NULL
             sobre métricas de salida por defecto.
@@ -1292,7 +1191,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             if not _es_consulta_latest_window(s):
                 return s
 
-            if _consulta_pide_excluir_nulos(consulta):
+            if _consulta_pide_excluir_nulos(consulta_local):
                 return s
 
             patrones_sospechosos = [
@@ -1306,7 +1205,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             s = re.sub(r"\s+", " ", s).strip()
             s = re.sub(r"\bWHERE\s+AND\b", "WHERE ", s, flags=re.IGNORECASE)
             return s
-        
+
         def _quitar_placeholders_sinteticos_en_groupby_coalesce(sql: str) -> str:
             """
             En agregaciones con GROUP BY + COALESCE, elimina placeholders sintéticos
@@ -1346,10 +1245,6 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             Si el SQL usa WITH ... SELECT externo sobre un solo CTE y el SELECT externo
             referencia alias internos ya fuera de scope (E.Col, C.Col, etc.),
             elimina esos calificadores y deja solo las columnas proyectadas por el CTE.
-
-            Ejemplo:
-            SELECT E.[EquipmentCode], C.[ComponentName] FROM Ranked
-            -> SELECT [EquipmentCode], [ComponentName] FROM Ranked
             """
             s = (sql or "").strip()
             if not s:
@@ -1366,8 +1261,6 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             head = s[:cut]
             tail = s[cut:].strip()
 
-            # Solo aplicarlo si el SELECT externo consume una sola fuente simple
-            # (el CTE) y no tiene JOINs externos.
             if " join " in f" {tail.lower()} ":
                 return s
 
@@ -1402,58 +1295,70 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
 
             sql2 = self._orden_automatico(sql2, consulta)
 
-            # Guard rails de tipos
             sql2 = self._proteger_trim_no_texto(sql2, esquema_json=esquema_json, dialecto=dialecto)
             self._proteger_numeric_clean_no_texto(sql2, esquema_json=esquema_json)
 
             if (dialecto or "").lower() in ("mssql", "sqlserver"):
-                # Evita grupos NULL en agregaciones
                 sql2 = database.hacer_groupby_nullsafe_mssql(
                     sql=sql2,
                     esquema_json=esquema_json,
                     consulta_humana=consulta,
                 )
 
-                # Evita placeholders sintéticos que distorsionan agrupaciones reales
                 sql2 = _quitar_placeholders_sinteticos_en_groupby_coalesce(sql2)
 
-                # Evita sobre-filtrar métricas en latest/window por defecto
                 sql2 = _quitar_filtros_is_not_null_metricos_en_latest(
                     sql2,
-                    consulta=consulta,
+                    consulta_local=consulta,
                 )
+
                 sql2 = _corregir_alias_fugados_en_outer_cte(sql2)
 
             return sql2
-        
-        
+
+        obj_ganador: Optional[Dict[str, Any]] = None
+
         if ganador:
             try:
-                obj = json.loads(self._asegurar_sql_json(ganador))
-            except Exception:
-                # Reparar JSON con un pase adicional
+                obj_ganador = json.loads(self._asegurar_sql_json(ganador))
+            except Exception as e1:
                 prompt_reparacion = (
                     "Devuelve EXCLUSIVAMENTE un JSON válido con el formato:\n"
                     '{ "sql_query": "...", "original_query": "..." }\n'
-                    "Sin markdown, sin texto extra.\n\n"
-                    f"Texto a corregir:\n{ganador[:9000]}"
+                    "Sin markdown, sin texto extra.\n"
+                    "La SQL debe ir en una sola línea, compacta, sin pretty print.\n\n"
+                    f"Texto a corregir:\n{ganador[:12000]}"
                 )
-                contenidos_reparar = [{"role": "user", "parts": [{"text": prompt_reparacion}]}]
-                resp_reparar = await asyncio.to_thread(
-                    self.cliente.models.generate_content,
-                    model=modelos[0],
-                    contents=contenidos_reparar,
-                    config={
-                        "response_mime_type": "application/json",
-                        "temperature": 0.0,
-                        "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=900)),
-                    },
-                )
-                obj = json.loads(self._asegurar_sql_json((resp_reparar.text or "").strip()))
 
-            sql = _posprocesar_sql(obj.get("sql_query") or "")
-            obj["sql_query"] = sql
-            return json.dumps(obj, ensure_ascii=False)
+                try:
+                    contenidos_reparar = [{"role": "user", "parts": [{"text": prompt_reparacion}]}]
+                    resp_reparar = await asyncio.to_thread(
+                        self.cliente.models.generate_content,
+                        model=modelos[0],
+                        contents=contenidos_reparar,
+                        config={
+                            "response_mime_type": "application/json",
+                            "temperature": 0.0,
+                            "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=1400)),
+                        },
+                    )
+                    obj_ganador = json.loads(self._asegurar_sql_json((resp_reparar.text or "").strip()))
+                except Exception:
+                    sql_rescatada = self._extraer_sql_rescatable(ganador)
+                    if sql_rescatada:
+                        obj_ganador = {
+                            "sql_query": sql_rescatada,
+                            "original_query": consulta,
+                        }
+                    else:
+                        errores.append(f"winner_repair: no se pudo reparar salida Gemini ({e1})")
+
+        if obj_ganador:
+            sql = _posprocesar_sql(obj_ganador.get("sql_query") or "")
+            if not self._sql_parece_incompleto(sql):
+                obj_ganador["sql_query"] = sql
+                return json.dumps(obj_ganador, ensure_ascii=False)
+            errores.append("winner_sql_incompleta: SQL truncada/incompleta después del posproceso.")
 
         # Fallback secuencial si todo falló
         for mdl in modelos:
@@ -1463,11 +1368,51 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                     timeout=timeout_por_modelo * 1.4
                 )
                 txt = (res.text or "").strip()
-                if txt:
+                if not txt:
+                    continue
+
+                obj = None
+                try:
                     obj = json.loads(self._asegurar_sql_json(txt))
-                    obj["sql_query"] = _posprocesar_sql(obj.get("sql_query") or "")
+                except Exception:
+                    prompt_fix = (
+                        "Devuelve EXCLUSIVAMENTE un JSON válido con el formato:\n"
+                        '{ "sql_query": "...", "original_query": "..." }\n'
+                        "Sin markdown, sin texto extra.\n"
+                        "La SQL debe ir en una sola línea, compacta, sin pretty print.\n\n"
+                        f"Texto a corregir:\n{txt[:12000]}"
+                    )
+                    try:
+                        resp_fix = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                self.cliente.models.generate_content,
+                                model=mdl,
+                                contents=[{"role": "user", "parts": [{"text": prompt_fix}]}],
+                                config={
+                                    "response_mime_type": "application/json",
+                                    "temperature": 0.0,
+                                    "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=1400)),
+                                },
+                            ),
+                            timeout=min(timeout_por_modelo, 20.0),
+                        )
+                        obj = json.loads(self._asegurar_sql_json((resp_fix.text or "").strip()))
+                    except Exception:
+                        sql_rescatada = self._extraer_sql_rescatable(txt)
+                        if sql_rescatada:
+                            obj = {
+                                "sql_query": sql_rescatada,
+                                "original_query": consulta,
+                            }
+
+                if obj:
+                    sql_ok = _posprocesar_sql(obj.get("sql_query") or "")
+                    if self._sql_parece_incompleto(sql_ok):
+                        raise RuntimeError("SQL truncada/incompleta después del posproceso.")
+                    obj["sql_query"] = sql_ok
                     log.info("[gemini.consulta_humana_a_sql] ganador(secuencial)=%s", mdl)
                     return json.dumps(obj, ensure_ascii=False)
+
             except Exception as e:
                 errores.append(f"{mdl}: {_mensaje_excepcion(e)}")
 
@@ -1730,7 +1675,6 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                                 log.info("[gemini.construir_respuesta] ganador(repair)=%s lat=%.2fs", mdl, time.time() - inicio)
                                 return renderizado2
 
-                # Intento de fix rápido del JSON
                 prompt_fix = (
                     "Corrige el siguiente texto a un JSON VÁLIDO que cumpla exactamente el schema. "
                     "NO des explicaciones. NO agregues contexto que no esté en `rows`/`profile`. "
@@ -1799,4 +1743,3 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             return {"status": "ok", "models": items}
         except Exception as e:
             return {"status": "error", "detail": str(e)}
-

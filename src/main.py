@@ -382,7 +382,72 @@ def _construir_prompt_retry_nullsafe(
         f"Devuelve SOLO JSON con sql_query.\n\n"
         f"SQL anterior (referencia, NO lo repitas igual):\n{sql_anterior}"
     )
+    
+    
+def _construir_prompt_retry_blindado(
+    human_query: str,
+    dialecto: str,
+    sql_anterior: str,
+    detalle_error: str,
+    allowed_fqn: List[str],
+) -> str:
+    return (
+        f"{human_query.strip()}\n\n"
+        f"IMPORTANTE (reparación automática): el SQL anterior fue rechazado por la capa de validación.\n"
+        f"Reescribe el SQL para {dialecto.upper()} cumpliendo estrictamente estas reglas:\n"
+        f"- Usa EXCLUSIVAMENTE tablas de la allow-list.\n"
+        f"- No uses ninguna otra tabla fuera de esa lista.\n"
+        f"- No inventes tablas intermedias, vistas, aliases de tabla vacíos ni sinónimos.\n"
+        f"- La consulta debe quedar COMPLETA y ejecutable.\n"
+        f"- No dejes SELECT incompleto.\n"
+        f"- No dejes comillas, brackets o paréntesis sin cerrar.\n"
+        f"- Mantén la intención analítica original.\n"
+        f"- Devuelve SOLO JSON con sql_query.\n\n"
+        f"<allowed_fqn>\n"
+        f"{json.dumps(sorted(allowed_fqn), ensure_ascii=False)}\n"
+        f"</allowed_fqn>\n\n"
+        f"Detalle del rechazo:\n{detalle_error}\n\n"
+        f"SQL anterior (referencia, NO lo repitas igual):\n{sql_anterior}"
+    )
 
+def _es_error_sql_reintentable(detalle: str) -> bool:
+    t = (detalle or "").lower()
+    pistas = [
+        "incorrect syntax near",
+        "unclosed quotation mark",
+        "object or column name is missing or empty",
+        "could not be bound",
+        "invalid column name",
+        "statement(s) could not be prepared",
+        "syntax error",
+    ]
+    return any(p in t for p in pistas)
+
+
+def _construir_prompt_retry_sql_error(
+    human_query: str,
+    dialecto: str,
+    sql_anterior: str,
+    detalle_error: str,
+    allowed_fqn: List[str],
+) -> str:
+    return (
+        f"{human_query.strip()}\n\n"
+        f"IMPORTANTE (reparación automática): el SQL anterior falló al ejecutar en {dialecto.upper()}.\n"
+        f"Reescribe el SQL completo y ejecutable.\n"
+        f"- Usa SOLO tablas de esta allow-list.\n"
+        f"- No uses ninguna otra tabla, vista, alias de tabla inventado ni tabla fuera del esquema permitido.\n"
+        f"- No dejes SQL truncada o parcial.\n"
+        f"- No dejes aliases vacíos.\n"
+        f"- No dejes comillas, brackets o paréntesis sin cerrar.\n"
+        f"- Mantén la intención original del usuario.\n"
+        f"- Devuelve SOLO JSON con sql_query.\n\n"
+        f"<allowed_fqn>\n"
+        f"{json.dumps(sorted(allowed_fqn), ensure_ascii=False)}\n"
+        f"</allowed_fqn>\n\n"
+        f"Detalle del error SQL Server:\n{detalle_error}\n\n"
+        f"SQL anterior (referencia, NO la repitas igual):\n{sql_anterior}"
+    )
 # =========================
 #  Cache de /schema
 # =========================
@@ -445,6 +510,7 @@ class HumanQueryRequest(BaseModel):
     limit: Optional[int] = None
     dialect: Optional[str] = None
     schema_refresh: bool = False  # como en tu versión antigua (opcional)
+    conversation_context: Optional[str] = None
 
 
 class SQLQueryRequest(BaseModel):
@@ -563,6 +629,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
       puede reintentar 1 vez (configurable) con reglas null-safe.
     """
     human = _normalizar_str(payload.human_query)
+    contexto_conversacional = _normalizar_str(payload.conversation_context or "")
     if not human:
         raise HTTPException(status_code=400, detail="human_query vacío.")
 
@@ -594,6 +661,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             dialecto=dialecto,
             limite_por_defecto=limite_por_defecto,
             modelo=None,
+            conversation_context=contexto_conversacional,
         )
         try:
             obj = json.loads(sql_json)
@@ -605,6 +673,41 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         if not sql:
             raise HTTPException(status_code=500, detail="El LLM devolvió 'sql_query' vacío.")
         return sql
+
+    async def _generar_y_blindar(consulta_humana: str) -> str:
+        prompt_actual = consulta_humana
+        ultimo_sql = ""
+        ultimo_detalle = ""
+
+        for intento in range(3):
+            ultimo_sql = await _generar_sql(prompt_actual)
+
+            try:
+                return _blindar_sql(ultimo_sql)
+            except HTTPException as e:
+                if e.status_code != 400:
+                    raise
+
+                ultimo_detalle = str(e.detail)
+                log.warning(
+                    "SQL rechazada en blindado intento=%s detalle=%s sql=%s",
+                    intento + 1,
+                    ultimo_detalle,
+                    ultimo_sql[:1500],
+                )
+
+                prompt_actual = _construir_prompt_retry_blindado(
+                    human_query=human,
+                    dialecto=dialecto,
+                    sql_anterior=ultimo_sql,
+                    detalle_error=ultimo_detalle,
+                    allowed_fqn=allowed_fqn,
+                )
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"SQL rechazada tras reintento automático: {ultimo_detalle}"
+        )
 
     def _blindar_sql(sql: str) -> str:
         """
@@ -636,7 +739,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         return sql2
 
     # 1) Generar SQL inicial
-    sql_query = _blindar_sql(await _generar_sql(human))
+    sql_query = await _generar_y_blindar(human)
 
     # Dry run
     if not payload.execute:
@@ -648,6 +751,8 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             "executed": False,
         }
 
+    warning_sql_retry: Optional[str] = None
+
     # 2) Ejecutar en threadpool
     try:
         rows = await run_in_threadpool(
@@ -657,213 +762,251 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             limite_por_defecto,
             limite_maximo,
         )
-        rows = _a_jsonable(rows)
-
-        # 3A) Reintento genérico si 0 filas (y parece riesgo por JOIN/GBY)
-        if (
-            SQL_EMPTY_RESULT_RETRY
-            and len(rows) == 0
-            and SQL_EMPTY_RESULT_RETRY_MAX > 0
-            and (not _usuario_pide_estricto(human))
-            and _sql_sugiere_riesgo_de_cero_filas(sql_query)
-        ):
-            for _ in range(int(SQL_EMPTY_RESULT_RETRY_MAX)):
-                try:
-                    human_retry = _construir_prompt_retry_nullsafe(
-                        human_query=human,
-                        dialecto=dialecto,
-                        limite_por_defecto=limite_por_defecto,
-                        sql_anterior=sql_query,
-                    )
-                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
-
-                    rows2 = await run_in_threadpool(
-                        database.consultar,
-                        sql_retry,
-                        allowed_fqn,
-                        limite_por_defecto,
-                        limite_maximo,
-                    )
-                    rows2 = _a_jsonable(rows2)
-
-                    if rows2:
-                        return {
-                            "ok": True,
-                            "human_query": human,
-                            "dialect": dialecto,
-                            "sql": sql_retry,
-                            "executed": True,
-                            "rows": rows2,
-                            "row_count": len(rows2),
-                            "warning": (
-                                "La consulta original devolvió 0 filas; "
-                                "se reescribió automáticamente con reglas null-safe (joins/agrupación) para recuperar resultados."
-                            ),
-                        }
-
-                    sql_query = sql_retry
-                    rows = rows2
-
-                except Exception:
-                    log.exception("Reintento null-safe (0 filas) falló.")
-                    break
-
-        # 3B) Reintento si el resultado parece “grupo NULL” (caso típico LEFT JOIN + GROUP BY)
-        if (
-            SQL_NULL_GROUP_RETRY
-            and SQL_NULL_GROUP_RETRY_MAX > 0
-            and (not _usuario_pide_estricto(human))
-            and _resultado_parece_grupo_nulo(rows, sql_query)
-        ):
-            for _ in range(int(SQL_NULL_GROUP_RETRY_MAX)):
-                try:
-                    human_retry = _construir_prompt_retry_nullsafe(
-                        human_query=human,
-                        dialecto=dialecto,
-                        limite_por_defecto=limite_por_defecto,
-                        sql_anterior=sql_query,
-                    )
-                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
-
-                    rows2 = await run_in_threadpool(
-                        database.consultar,
-                        sql_retry,
-                        allowed_fqn,
-                        limite_por_defecto,
-                        limite_maximo,
-                    )
-                    rows2 = _a_jsonable(rows2)
-
-                    # preferimos una salida con etiquetas no nulas (o al menos que no sea solo NULL)
-                    if rows2 and (not _resultado_parece_grupo_nulo(rows2, sql_retry)):
-                        return {
-                            "ok": True,
-                            "human_query": human,
-                            "dialect": dialecto,
-                            "sql": sql_retry,
-                            "executed": True,
-                            "rows": rows2,
-                            "row_count": len(rows2),
-                            "warning": (
-                                "La consulta original generó grupos NULL (JOIN opcional + agregación). "
-                                "Se reescribió automáticamente para agrupar con etiqueta null-safe."
-                            ),
-                        }
-
-                    sql_query = sql_retry
-                    rows = rows2
-
-                except Exception:
-                    log.exception("Reintento null-safe (grupo NULL) falló.")
-                    break
-        # 3C) Reintento si la proyección viene con NULL en columnas descriptivas
-        # (caso típico CTE/ROW_NUMBER + LEFT JOIN + campos pedidos del lado derecho)
-        if (
-            SQL_NULL_PROJECTION_RETRY
-            and SQL_NULL_PROJECTION_RETRY_MAX > 0
-            and (not _usuario_pide_estricto(human))
-            and _resultado_parece_proyeccion_nula(rows, sql_query)
-        ):
-            for _ in range(int(SQL_NULL_PROJECTION_RETRY_MAX)):
-                try:
-                    human_retry = _construir_prompt_retry_proyeccion_nullsafe(
-                        human_query=human,
-                        dialecto=dialecto,
-                        limite_por_defecto=limite_por_defecto,
-                        sql_anterior=sql_query,
-                    )
-                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
-
-                    rows2 = await run_in_threadpool(
-                        database.consultar,
-                        sql_retry,
-                        allowed_fqn,
-                        limite_por_defecto,
-                        limite_maximo,
-                    )
-                    rows2 = _a_jsonable(rows2)
-
-                    if rows2 and (not _resultado_parece_proyeccion_nula(rows2, sql_retry)):
-                        return {
-                            "ok": True,
-                            "human_query": human,
-                            "dialect": dialecto,
-                            "sql": sql_retry,
-                            "executed": True,
-                            "rows": rows2,
-                            "row_count": len(rows2),
-                            "warning": (
-                                "La consulta original devolvió columnas descriptivas nulas "
-                                "en un patrón típico de LEFT JOIN opcional + último registro por entidad. "
-                                "Se reescribió automáticamente con proyección null-safe."
-                            ),
-                        }
-
-                    sql_query = sql_retry
-                    rows = rows2
-
-                except Exception:
-                    log.exception("Reintento null-safe (proyección nula) falló.")
-                    break
-        
-        # 3D) Reintento si latest/window quedó demasiado restringido
-        if (
-            SQL_LATEST_WINDOW_RETRY
-            and SQL_LATEST_WINDOW_RETRY_MAX > 0
-            and (not _usuario_pide_estricto(human))
-            and _resultado_parece_latest_sobre_restringido(rows, sql_query, limite_por_defecto)
-        ):
-            for _ in range(int(SQL_LATEST_WINDOW_RETRY_MAX)):
-                try:
-                    human_retry = _construir_prompt_retry_latest_window(
-                        human_query=human,
-                        dialecto=dialecto,
-                        limite_por_defecto=limite_por_defecto,
-                        sql_anterior=sql_query,
-                    )
-                    sql_retry = _blindar_sql(await _generar_sql(human_retry))
-
-                    rows2 = await run_in_threadpool(
-                        database.consultar,
-                        sql_retry,
-                        allowed_fqn,
-                        limite_por_defecto,
-                        limite_maximo,
-                    )
-                    rows2 = _a_jsonable(rows2)
-
-                    if rows2 and len(rows2) > len(rows):
-                        return {
-                            "ok": True,
-                            "human_query": human,
-                            "dialect": dialecto,
-                            "sql": sql_retry,
-                            "executed": True,
-                            "rows": rows2,
-                            "row_count": len(rows2),
-                            "warning": (
-                                "La consulta original de tipo latest/window quedó demasiado restringida. "
-                                "Se reescribió automáticamente evitando filtros innecesarios sobre métricas."
-                            ),
-                        }
-
-                except Exception:
-                    log.exception("Reintento latest/window falló.")
-                    break
-
-        return {
-            "ok": True,
-            "human_query": human,
-            "dialect": dialecto,
-            "sql": sql_query,
-            "executed": True,
-            "rows": rows,
-            "row_count": len(rows),
-        }
-
     except Exception as e:
-        log.exception("Error ejecutando SQL en /human_query")
-        raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e)}")
+        detalle_sql = str(e)
+
+        if _es_error_sql_reintentable(detalle_sql):
+            try:
+                human_retry = _construir_prompt_retry_sql_error(
+                    human_query=human,
+                    dialecto=dialecto,
+                    sql_anterior=sql_query,
+                    detalle_error=detalle_sql,
+                    allowed_fqn=allowed_fqn,
+                )
+
+                sql_query = await _generar_y_blindar(human_retry)
+
+                rows = await run_in_threadpool(
+                    database.consultar,
+                    sql_query,
+                    allowed_fqn,
+                    limite_por_defecto,
+                    limite_maximo,
+                )
+
+                warning_sql_retry = (
+                    "La SQL inicial falló por sintaxis o ensamblado incompleto; "
+                    "se reparó automáticamente y se ejecutó una versión corregida."
+                )
+
+            except HTTPException:
+                raise
+            except Exception as e2:
+                log.exception("Reintento automático por error SQL ejecutable falló.")
+                raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e2)}")
+        else:
+            log.exception("Error ejecutando SQL en /human_query")
+            raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {detalle_sql}")
+
+    rows = _a_jsonable(rows)
+
+    # 3A) Reintento genérico si 0 filas (y parece riesgo por JOIN/GBY)
+    if (
+        SQL_EMPTY_RESULT_RETRY
+        and len(rows) == 0
+        and SQL_EMPTY_RESULT_RETRY_MAX > 0
+        and (not _usuario_pide_estricto(human))
+        and _sql_sugiere_riesgo_de_cero_filas(sql_query)
+    ):
+        for _ in range(int(SQL_EMPTY_RESULT_RETRY_MAX)):
+            try:
+                human_retry = _construir_prompt_retry_nullsafe(
+                    human_query=human,
+                    dialecto=dialecto,
+                    limite_por_defecto=limite_por_defecto,
+                    sql_anterior=sql_query,
+                )
+                sql_retry = await _generar_y_blindar(human_retry)
+
+                rows2 = await run_in_threadpool(
+                    database.consultar,
+                    sql_retry,
+                    allowed_fqn,
+                    limite_por_defecto,
+                    limite_maximo,
+                )
+                rows2 = _a_jsonable(rows2)
+
+                if rows2:
+                    return {
+                        "ok": True,
+                        "human_query": human,
+                        "dialect": dialecto,
+                        "sql": sql_retry,
+                        "executed": True,
+                        "rows": rows2,
+                        "row_count": len(rows2),
+                        "warning": (
+                            "La consulta original devolvió 0 filas; "
+                            "se reescribió automáticamente con reglas null-safe (joins/agrupación) para recuperar resultados."
+                        ),
+                    }
+
+                sql_query = sql_retry
+                rows = rows2
+
+            except Exception:
+                log.exception("Reintento null-safe (0 filas) falló.")
+                break
+
+    # 3B) Reintento si el resultado parece “grupo NULL” (caso típico LEFT JOIN + GROUP BY)
+    if (
+        SQL_NULL_GROUP_RETRY
+        and SQL_NULL_GROUP_RETRY_MAX > 0
+        and (not _usuario_pide_estricto(human))
+        and _resultado_parece_grupo_nulo(rows, sql_query)
+    ):
+        for _ in range(int(SQL_NULL_GROUP_RETRY_MAX)):
+            try:
+                human_retry = _construir_prompt_retry_nullsafe(
+                    human_query=human,
+                    dialecto=dialecto,
+                    limite_por_defecto=limite_por_defecto,
+                    sql_anterior=sql_query,
+                )
+                sql_retry = await _generar_y_blindar(human_retry)
+
+                rows2 = await run_in_threadpool(
+                    database.consultar,
+                    sql_retry,
+                    allowed_fqn,
+                    limite_por_defecto,
+                    limite_maximo,
+                )
+                rows2 = _a_jsonable(rows2)
+
+                if rows2 and (not _resultado_parece_grupo_nulo(rows2, sql_retry)):
+                    return {
+                        "ok": True,
+                        "human_query": human,
+                        "dialect": dialecto,
+                        "sql": sql_retry,
+                        "executed": True,
+                        "rows": rows2,
+                        "row_count": len(rows2),
+                        "warning": (
+                            "La consulta original generó grupos NULL (JOIN opcional + agregación). "
+                            "Se reescribió automáticamente para agrupar con etiqueta null-safe."
+                        ),
+                    }
+
+                sql_query = sql_retry
+                rows = rows2
+
+            except Exception:
+                log.exception("Reintento null-safe (grupo NULL) falló.")
+                break
+
+    # 3C) Reintento si la proyección viene con NULL en columnas descriptivas
+    # (caso típico CTE/ROW_NUMBER + LEFT JOIN + campos pedidos del lado derecho)
+    if (
+        SQL_NULL_PROJECTION_RETRY
+        and SQL_NULL_PROJECTION_RETRY_MAX > 0
+        and (not _usuario_pide_estricto(human))
+        and _resultado_parece_proyeccion_nula(rows, sql_query)
+    ):
+        for _ in range(int(SQL_NULL_PROJECTION_RETRY_MAX)):
+            try:
+                human_retry = _construir_prompt_retry_proyeccion_nullsafe(
+                    human_query=human,
+                    dialecto=dialecto,
+                    limite_por_defecto=limite_por_defecto,
+                    sql_anterior=sql_query,
+                )
+                sql_retry = await _generar_y_blindar(human_retry)
+
+                rows2 = await run_in_threadpool(
+                    database.consultar,
+                    sql_retry,
+                    allowed_fqn,
+                    limite_por_defecto,
+                    limite_maximo,
+                )
+                rows2 = _a_jsonable(rows2)
+
+                if rows2 and (not _resultado_parece_proyeccion_nula(rows2, sql_retry)):
+                    return {
+                        "ok": True,
+                        "human_query": human,
+                        "dialect": dialecto,
+                        "sql": sql_retry,
+                        "executed": True,
+                        "rows": rows2,
+                        "row_count": len(rows2),
+                        "warning": (
+                            "La consulta original devolvió columnas descriptivas nulas "
+                            "en un patrón típico de LEFT JOIN opcional + último registro por entidad. "
+                            "Se reescribió automáticamente con proyección null-safe."
+                        ),
+                    }
+
+                sql_query = sql_retry
+                rows = rows2
+
+            except Exception:
+                log.exception("Reintento null-safe (proyección nula) falló.")
+                break
+
+    # 3D) Reintento si latest/window quedó demasiado restringido
+    if (
+        SQL_LATEST_WINDOW_RETRY
+        and SQL_LATEST_WINDOW_RETRY_MAX > 0
+        and (not _usuario_pide_estricto(human))
+        and _resultado_parece_latest_sobre_restringido(rows, sql_query, limite_por_defecto)
+    ):
+        for _ in range(int(SQL_LATEST_WINDOW_RETRY_MAX)):
+            try:
+                human_retry = _construir_prompt_retry_latest_window(
+                    human_query=human,
+                    dialecto=dialecto,
+                    limite_por_defecto=limite_por_defecto,
+                    sql_anterior=sql_query,
+                )
+                sql_retry = await _generar_y_blindar(human_retry)
+
+                rows2 = await run_in_threadpool(
+                    database.consultar,
+                    sql_retry,
+                    allowed_fqn,
+                    limite_por_defecto,
+                    limite_maximo,
+                )
+                rows2 = _a_jsonable(rows2)
+
+                if rows2 and len(rows2) > len(rows):
+                    return {
+                        "ok": True,
+                        "human_query": human,
+                        "dialect": dialecto,
+                        "sql": sql_retry,
+                        "executed": True,
+                        "rows": rows2,
+                        "row_count": len(rows2),
+                        "warning": (
+                            "La consulta original de tipo latest/window quedó demasiado restringida. "
+                            "Se reescribió automáticamente evitando filtros innecesarios sobre métricas."
+                        ),
+                    }
+
+            except Exception:
+                log.exception("Reintento latest/window falló.")
+                break
+
+    respuesta = {
+        "ok": True,
+        "human_query": human,
+        "dialect": dialecto,
+        "sql": sql_query,
+        "executed": True,
+        "rows": rows,
+        "row_count": len(rows),
+    }
+
+    if warning_sql_retry:
+        respuesta["warning"] = warning_sql_retry
+
+    return respuesta
 
 
 # =============================================================================

@@ -32,6 +32,8 @@ log = logging.getLogger(__name__)
 # Proveedor (singleton simple)
 _proveedor = _obtener_proveedor()
 
+
+
 # ------------------------- Heurísticas de intención ---------------------------
 
 _RE_PISTA_COMPARACION = re.compile(
@@ -144,6 +146,7 @@ async def consulta_humana_a_sql(
     dialecto: str = "postgresql",
     limite_por_defecto: int = 100,
     modelo: Optional[str] = None,
+    conversation_context: Optional[str] = None
 ) -> str:
     """
     Convierte NL → SQL mediante el proveedor activo.
@@ -163,12 +166,30 @@ async def consulta_humana_a_sql(
     if not q:
         raise ValueError("consulta_humana vacía")
 
-    q_reforzada = q
+    #q_reforzada = q
+    contexto = (conversation_context or "").strip()
 
-    if _es_intencion_comparativa(q_reforzada):
+    if contexto:
+        q_reforzada = (
+            "CONTEXTO CONVERSACIONAL PREVIO:\n"
+            f"{contexto}\n\n"
+            "NUEVA SOLICITUD DEL USUARIO:\n"
+            f"{q}\n\n"
+            "REGLA MUY IMPORTANTE: si la nueva solicitud es una continuación "
+            "como 'eso mismo', 'ahora', 'solo...', 'pero para...', "
+            "'enséñame igual', conserva la intención analítica previa "
+            "(misma entidad, misma métrica, misma granularidad) "
+            "y modifica solo la nueva restricción o filtro."
+        )
+    else:
+        q_reforzada = q
+
+    base_heuristica = f"{contexto} {q}".strip()
+
+    if _es_intencion_comparativa(base_heuristica):
         q_reforzada = _reforzar_consulta_comparativa(q_reforzada)
 
-    if _es_intencion_ultimo_ventana(q_reforzada):
+    if _es_intencion_ultimo_ventana(base_heuristica):
         q_reforzada = _reforzar_consulta_ultimo_ventana(q_reforzada)
 
     # Compatibilidad: proveedor puede exponer métodos en español o en inglés
