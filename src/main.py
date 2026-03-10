@@ -10,6 +10,8 @@ Incluye:
 - Endpoints NL→SQL y SQL directo.
 - Generación opcional de respuesta analítica en lenguaje natural.
 - Contexto conversacional en memoria para continuidad entre turnos.
+- Reuso determinístico del último resultado en memoria cuando la consulta
+  solo pide interpretar, resumir o refinar el subconjunto ya obtenido.
 """
 
 from __future__ import annotations
@@ -74,6 +76,7 @@ INCLUIR_SUGERENCIAS_GRAFICO = env("INCLUIR_SUGERENCIAS_GRAFICO", default=True, c
 CONTEXTO_CHAT_TTL_MINUTOS = env("CONTEXTO_CHAT_TTL_MINUTOS", default=45, cast=int)
 CONTEXTO_CHAT_MAX_TURNOS = env("CONTEXTO_CHAT_MAX_TURNOS", default=8, cast=int)
 CONTEXTO_CHAT_MAX_CARACTERES = env("CONTEXTO_CHAT_MAX_CARACTERES", default=5000, cast=int)
+CONTEXTO_CHAT_MAX_FILAS_RESULTADO = env("CONTEXTO_CHAT_MAX_FILAS_RESULTADO", default=200, cast=int)
 CONTEXTO_CHAT_PERSISTIR_ARCHIVO = env("CONTEXTO_CHAT_PERSISTIR_ARCHIVO", default=True, cast=bool)
 CONTEXTO_CHAT_ARCHIVO = env("CONTEXTO_CHAT_ARCHIVO", default=".cache/contexto_chat.json")
 
@@ -83,6 +86,7 @@ _GESTOR_CONTEXTO = GestorContextoConversacional(
     ttl_minutos=CONTEXTO_CHAT_TTL_MINUTOS,
     max_turnos=CONTEXTO_CHAT_MAX_TURNOS,
     max_caracteres=CONTEXTO_CHAT_MAX_CARACTERES,
+    max_filas_resultado=CONTEXTO_CHAT_MAX_FILAS_RESULTADO,
     persistir_archivo=CONTEXTO_CHAT_PERSISTIR_ARCHIVO,
     ruta_archivo=CONTEXTO_CHAT_ARCHIVO,
 )
@@ -107,6 +111,30 @@ _TABLAS_PRIORITARIAS_DOMINIO = {
     "mine.miningproject",
     "mine.equipmentfleet",
 }
+
+_RE_INTERPRETACION_MEMORIA = re.compile(
+    r"\b("
+    r"sin\s+volver\s+a\s+listar|sin\s+repetir|explica|explicame|explícame|"
+    r"interpreta|interpretacion|interpretación|resume|resumen|concluye|conclusion|conclusión|"
+    r"patron|patrón|apunta|desgaste|contaminacion|contaminación|"
+    r"diagnostica|diagnóstico|diagnostico"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_REFINAR_MEMORIA = re.compile(
+    r"\b("
+    r"quedate|quédate|solo\s+con|mas\s+criticos|más\s+críticos|"
+    r"mas\s+altos|más\s+altos|top\s+\d+|ordena|ordenalos|ordénalos|"
+    r"prioriza|priorizalos|priorízalos"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_PIDE_LISTAR = re.compile(
+    r"\b(muestrame|muéstrame|lista|tabla|filas|registros|devuelveme|devuélveme|trae|dame)\b",
+    re.IGNORECASE,
+)
 
 
 class SchemaRequest(BaseModel):
@@ -144,6 +172,10 @@ def _normalizar_str(s: str) -> str:
     s = unicodedata.normalize("NFKD", s)
     s = "".join([c for c in s if not unicodedata.combining(c)])
     return s.strip()
+
+
+def _normalizar_token(s: str) -> str:
+    return _normalizar_str(s).lower()
 
 
 def _a_jsonable(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -200,10 +232,6 @@ def _usuario_pide_estricto(human_query: str) -> bool:
 
 
 def _sql_sugiere_riesgo_de_cero_filas(sql: str) -> bool:
-    """
-    Heurística para decidir si conviene reintentar cuando una consulta devuelve 0 filas.
-    Detecta joins + filtros descriptivos que suelen sobrerrestringir.
-    """
     s = (sql or "").lower()
 
     if " join " in s and (" group by " in s or " having " in s):
@@ -476,10 +504,6 @@ def _tokenizar_consulta(texto: str) -> List[str]:
 
 
 def _seleccionar_esquema_para_llm(esquema_json: Dict[str, Any], human_query: str) -> Dict[str, Any]:
-    """
-    Reduce ruido para el LLM priorizando tablas del dominio aceite/equipo.
-    No cambia la allow-list final de ejecución: solo la visión del LLM.
-    """
     tablas = esquema_json.get("tables", []) or []
     if not ESQUEMA_RELEVANTE_ACTIVO or len(tablas) <= ESQUEMA_RELEVANTE_MAX_TABLAS:
         return esquema_json
@@ -561,6 +585,293 @@ def _combinar_contextos(contexto_externo: str, contexto_memoria: str) -> str:
         partes.append("CONTEXTO ENVIADO POR EL FRONTEND:\n" + contexto_externo.strip())
     return "\n\n".join(partes).strip()
 
+_RE_INTENCION_INTERPRETAR_RESULTADO_PREVIO = re.compile(
+    r"\b("
+    r"sin\s+volver\s+a\s+listar|sin\s+repetir|"
+    r"explica|explícame|explicame|interpreta|interpretación|interpretacion|"
+    r"resume|resumen|concluye|conclusión|conclusion|"
+    r"qué\s+significa|que\s+significa|"
+    r"patron|patrón|apunta|sugiere|"
+    r"desgaste|contaminacion|contaminación"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_INTENCION_PEDIR_DATOS_NUEVOS = re.compile(
+    r"\b("
+    r"muestrame|muéstrame|lista|trae|traeme|tráeme|"
+    r"consulta|busca|obt[eé]n|filtra|agrupa|"
+    r"ahora\s+para|ahora\s+de|otro\s+proyecto|otra\s+tabla"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def _debe_responder_desde_resultado_previo(
+    human_query: str,
+    ultimo_resultado: Dict[str, Any],
+) -> bool:
+    if not ultimo_resultado:
+        return False
+
+    rows_previas = list(ultimo_resultado.get("rows") or [])
+    if not rows_previas:
+        return False
+
+    q = (human_query or "").strip()
+    if not q:
+        return False
+
+    if _RE_INTENCION_PEDIR_DATOS_NUEVOS.search(q):
+        return False
+
+    return bool(_RE_INTENCION_INTERPRETAR_RESULTADO_PREVIO.search(q))
+
+
+def _valor_es_numerico(v: Any) -> bool:
+    return isinstance(v, (int, float, Decimal)) and not isinstance(v, bool)
+
+
+def _columnas_numericas(rows: List[Dict[str, Any]]) -> List[str]:
+    if not rows:
+        return []
+    columnas = list(rows[0].keys())
+    out: List[str] = []
+    for c in columnas:
+        valores = [r.get(c) for r in rows if r.get(c) is not None]
+        if valores and all(_valor_es_numerico(v) for v in valores[:20]):
+            out.append(c)
+    return out
+
+
+def _inferir_columna_metrica(query: str, columnas: List[str]) -> Optional[str]:
+    q = _normalizar_token(query)
+    mapa_columnas = {_normalizar_token(c): c for c in columnas}
+
+    sinonimos = {
+        "Fe_ppm": ["fe_ppm", "fe", "hierro"],
+        "Cu_ppm": ["cu_ppm", "cu", "cobre"],
+        "Si_ppm": ["si_ppm", "si", "silicio"],
+        "HorasDeAceite": ["horasdeaceite", "horas de aceite", "horas", "aceite"],
+        "PQIndex": ["pqindex", "pq", "indice pq", "índice pq"],
+    }
+
+    for col_real, alias_list in sinonimos.items():
+        if col_real in columnas and any(alias in q for alias in alias_list):
+            return col_real
+
+    for normalizada, real in mapa_columnas.items():
+        if normalizada in q:
+            return real
+
+    if any(tok in q for tok in ["contaminacion", "contaminación"]) and "Si_ppm" in columnas:
+        return "Si_ppm"
+
+    if any(tok in q for tok in ["desgaste", "critico", "crítico", "criticos", "críticos"]):
+        for pref in ["Fe_ppm", "PQIndex", "Cu_ppm", "Si_ppm"]:
+            if pref in columnas:
+                return pref
+
+    return columnas[0] if columnas else None
+
+
+def _determinar_sentido_orden(query: str) -> str:
+    q = _normalizar_token(query)
+    if any(x in q for x in ["menor", "menores", "asc", "ascendente", "bajo", "bajos"]):
+        return "asc"
+    return "desc"
+
+
+def _determinar_top_n(query: str, total: int) -> int:
+    if total <= 0:
+        return 0
+
+    m = re.search(r"\btop\s*(\d+)\b", query, flags=re.IGNORECASE)
+    if not m:
+        m = re.search(r"\bprimeros?\s+(\d+)\b", query, flags=re.IGNORECASE)
+    if not m:
+        m = re.search(r"\b(\d+)\s+m[aá]s\s+cr[ií]ticos\b", query, flags=re.IGNORECASE)
+
+    if m:
+        try:
+            n = int(m.group(1))
+            return max(1, min(total, n))
+        except Exception:
+            pass
+
+    q = _normalizar_token(query)
+    if "criticos" in q or "críticos" in q or "solo con" in q or "quedate" in q or "quédate" in q:
+        if total <= 10:
+            return min(total, 5)
+        if total <= 30:
+            return min(total, 10)
+        return min(total, 20)
+
+    return total
+
+
+def _filtrar_y_ordenar_resultado_previo(
+    rows: List[Dict[str, Any]],
+    consulta_humana: str,
+) -> Optional[Dict[str, Any]]:
+    if not rows:
+        return None
+
+    columnas_num = _columnas_numericas(rows)
+    if not columnas_num:
+        return None
+
+    columna_metric = _inferir_columna_metrica(consulta_humana, columnas_num)
+    if not columna_metric:
+        return None
+
+    sentido = _determinar_sentido_orden(consulta_humana)
+    top_n = _determinar_top_n(consulta_humana, len(rows))
+
+    rows_validas = [r for r in rows if r.get(columna_metric) is not None]
+    if not rows_validas:
+        return None
+
+    rows_ordenadas = sorted(
+        rows_validas,
+        key=lambda r: float(r.get(columna_metric) or 0),
+        reverse=(sentido == "desc"),
+    )
+
+    rows_finales = rows_ordenadas[:top_n]
+    return {
+        "rows": rows_finales,
+        "columna_metric": columna_metric,
+        "sentido": sentido,
+        "top_n": top_n,
+    }
+
+
+def _puede_refinar_desde_memoria(
+    consulta_humana: str,
+    ultimo_resultado: Dict[str, Any],
+) -> bool:
+    rows = ultimo_resultado.get("rows_resultado") or []
+    if not rows:
+        return False
+
+    q = consulta_humana or ""
+    if not _RE_REFINAR_MEMORIA.search(q):
+        return False
+
+    if "sin volver a listar" in _normalizar_token(q):
+        return False
+
+    return True
+
+
+def _puede_responder_desde_memoria(
+    consulta_humana: str,
+    ultimo_resultado: Dict[str, Any],
+) -> bool:
+    rows = ultimo_resultado.get("rows_resultado") or []
+    if not rows:
+        return False
+
+    q = consulta_humana or ""
+    if not _RE_INTERPRETACION_MEMORIA.search(q):
+        return False
+
+    if _RE_PIDE_LISTAR.search(q):
+        return False
+
+    return True
+
+
+def _armar_respuesta_desde_resultado_previo(
+    *,
+    human: str,
+    session_id: str,
+    rows: List[Dict[str, Any]],
+    incluir_respuesta_texto: bool,
+    estado_contexto_antes: Optional[Dict[str, Any]],
+    usa_contexto_memoria: bool,
+    usa_contexto_externo: bool,
+    contexto_memoria: str,
+    contexto_conversacional: str,
+    modo_debug: bool,
+    origen_respuesta: str,
+    consulta_origen_resultado_previo: Optional[str] = None,
+    columnas_resultado_previo: Optional[List[str]] = None,
+    metrica_refinada: Optional[str] = None,
+) -> Dict[str, Any]:
+    analisis_resultado = generar_analisis_resultado(rows, consulta_humana=human) if INCLUIR_ANALISIS_RESULTADO else {}
+
+    if isinstance(analisis_resultado, dict):
+        analisis_resultado.pop("consulta_humana", None)
+
+    if (not INCLUIR_SUGERENCIAS_GRAFICO) and isinstance(analisis_resultado, dict):
+        analisis_resultado.pop("graficos_sugeridos", None)
+
+    if rows and incluir_respuesta_texto:
+        try:
+            respuesta_textual = llm.run_sync_construir_respuesta(rows, human)
+            if not (respuesta_textual or "").strip():
+                respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
+        except Exception:
+            log.exception("No se pudo construir respuesta textual desde resultado previo. Se usa fallback determinístico.")
+            respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
+    elif rows:
+        respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
+    else:
+        respuesta_textual = "No hay un resultado previo suficiente en memoria para responder con evidencia."
+
+    if session_id:
+        _GESTOR_CONTEXTO.registrar_turno(
+            session_id=session_id,
+            consulta_usuario=human,
+            sql_generado="",
+            respuesta_textual=respuesta_textual,
+            row_count=len(rows),
+            filas_resultado=rows,
+            analisis_resultado=analisis_resultado,
+        )
+
+    estado_contexto_despues = _GESTOR_CONTEXTO.obtener_estado(session_id) if session_id else None
+
+    respuesta: Dict[str, Any] = {
+        "ok": True,
+        "human_query": human,
+        "dialect": "mssql" if es_mssql() else "postgresql",
+        "sql": None,
+        "executed": False,
+        "origen_respuesta": origen_respuesta,
+        "row_count": len(rows),
+        "answer_text": respuesta_textual,
+        "contexto_aplicado": True,
+        "contexto_sesion": estado_contexto_despues,
+    }
+
+    if origen_respuesta.endswith("_filtrado"):
+        respuesta["rows"] = rows
+
+    if INCLUIR_ANALISIS_RESULTADO:
+        respuesta["analisis"] = analisis_resultado
+
+    if modo_debug:
+        respuesta["debug"] = {
+            "modo": origen_respuesta,
+            "contexto": {
+                "session_id": session_id,
+                "turnos_antes": (estado_contexto_antes or {}).get("turnos", 0) if isinstance(estado_contexto_antes, dict) else 0,
+                "turnos_despues": (estado_contexto_despues or {}).get("turnos", 0) if isinstance(estado_contexto_despues, dict) else 0,
+                "usa_contexto_memoria": usa_contexto_memoria,
+                "usa_contexto_externo": usa_contexto_externo,
+                "preview_memoria": contexto_memoria[:800],
+                "preview_contexto_total": contexto_conversacional[:1200],
+                "consulta_origen_resultado_previo": consulta_origen_resultado_previo,
+                "row_count_resultado_previo": len(rows),
+                "columnas_resultado_previo": columnas_resultado_previo or (list(rows[0].keys()) if rows else []),
+                "metrica_refinada": metrica_refinada,
+            }
+        }
+
+    return respuesta
+
 
 async def guardia_api_key(
     request: Request,
@@ -607,7 +918,18 @@ def llm_modelos() -> Dict[str, Any]:
 def ver_contexto(session_id: str) -> Dict[str, Any]:
     contexto = _GESTOR_CONTEXTO.obtener_contexto(session_id)
     estado = _GESTOR_CONTEXTO.obtener_estado(session_id)
-    return {"ok": True, "estado": estado, "contexto": contexto}
+    ultimo_resultado = _GESTOR_CONTEXTO.obtener_ultimo_resultado(session_id)
+    return {
+        "ok": True,
+        "estado": estado,
+        "contexto": contexto,
+        "ultimo_resultado": {
+            "disponible": bool(ultimo_resultado.get("rows_resultado")),
+            "row_count": int(ultimo_resultado.get("row_count") or 0),
+            "columnas": ultimo_resultado.get("columnas_resultado") or [],
+            "consulta_origen": ultimo_resultado.get("consulta_usuario") or "",
+        },
+    }
 
 
 @router.get("/schema", dependencies=[Depends(guardia_api_key)])
@@ -664,12 +986,127 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     estado_contexto_antes = _GESTOR_CONTEXTO.obtener_estado(session_id) if session_id else None
     contexto_memoria = _GESTOR_CONTEXTO.obtener_contexto(session_id) if session_id else ""
+    ultimo_resultado = _GESTOR_CONTEXTO.obtener_ultimo_resultado(session_id) if session_id else {}
     contexto_externo = _normalizar_str(payload.conversation_context or "")
     contexto_conversacional = _combinar_contextos(contexto_externo, contexto_memoria)
+    ultimo_resultado = _GESTOR_CONTEXTO.obtener_ultimo_resultado(session_id) if session_id else {}
 
     usa_contexto_memoria = bool(contexto_memoria.strip())
     usa_contexto_externo = bool(contexto_externo.strip())
     contexto_aplicado = usa_contexto_memoria or usa_contexto_externo
+
+    incluir_respuesta_texto = GENERAR_RESPUESTA_TEXTO if payload.incluir_respuesta_texto is None else bool(payload.incluir_respuesta_texto)
+
+    if _puede_refinar_desde_memoria(human, ultimo_resultado):
+        refinado = _filtrar_y_ordenar_resultado_previo(
+            rows=ultimo_resultado.get("rows_resultado") or [],
+            consulta_humana=human,
+        )
+        if refinado and refinado.get("rows"):
+            return _armar_respuesta_desde_resultado_previo(
+                human=human,
+                session_id=session_id,
+                rows=refinado["rows"],
+                incluir_respuesta_texto=incluir_respuesta_texto,
+                estado_contexto_antes=estado_contexto_antes,
+                usa_contexto_memoria=usa_contexto_memoria,
+                usa_contexto_externo=usa_contexto_externo,
+                contexto_memoria=contexto_memoria,
+                contexto_conversacional=contexto_conversacional,
+                modo_debug=modo_debug,
+                origen_respuesta="resultado_previo_en_memoria_filtrado",
+                consulta_origen_resultado_previo=ultimo_resultado.get("consulta_usuario"),
+                columnas_resultado_previo=ultimo_resultado.get("columnas_resultado") or [],
+                metrica_refinada=refinado.get("columna_metric"),
+            )
+
+    if _puede_responder_desde_memoria(human, ultimo_resultado):
+        rows_previas = ultimo_resultado.get("rows_resultado") or []
+        if rows_previas:
+            return _armar_respuesta_desde_resultado_previo(
+                human=human,
+                session_id=session_id,
+                rows=rows_previas,
+                incluir_respuesta_texto=incluir_respuesta_texto,
+                estado_contexto_antes=estado_contexto_antes,
+                usa_contexto_memoria=usa_contexto_memoria,
+                usa_contexto_externo=usa_contexto_externo,
+                contexto_memoria=contexto_memoria,
+                contexto_conversacional=contexto_conversacional,
+                modo_debug=modo_debug,
+                origen_respuesta="resultado_previo_en_memoria",
+                consulta_origen_resultado_previo=ultimo_resultado.get("consulta_usuario"),
+                columnas_resultado_previo=ultimo_resultado.get("columnas_resultado") or [],
+            )
+
+        if _debe_responder_desde_resultado_previo(human, ultimo_resultado):
+            rows_previas = list(ultimo_resultado.get("rows") or [])
+            analisis_previo = dict(ultimo_resultado.get("analisis") or {})
+
+            incluir_respuesta_texto = (
+                GENERAR_RESPUESTA_TEXTO
+                if payload.incluir_respuesta_texto is None
+                else bool(payload.incluir_respuesta_texto)
+            )
+
+            if rows_previas and incluir_respuesta_texto:
+                try:
+                    respuesta_textual = await llm.construir_respuesta(rows_previas, human)
+                    if not respuesta_textual.strip():
+                        respuesta_textual = renderizar_resumen_analitico(analisis_previo)
+                except Exception:
+                    log.exception("No se pudo construir la respuesta textual desde resultado previo. Se usa fallback determinístico.")
+                    respuesta_textual = renderizar_resumen_analitico(analisis_previo)
+            else:
+                respuesta_textual = renderizar_resumen_analitico(analisis_previo)
+
+            if session_id:
+                _GESTOR_CONTEXTO.registrar_turno(
+                    session_id=session_id,
+                    consulta_usuario=human,
+                    sql_generado="",
+                    respuesta_textual=respuesta_textual,
+                    row_count=len(rows_previas),
+                    filas_resultado=rows_previas,
+                    analisis_resultado=analisis_previo,
+                    origen_respuesta="resultado_previo_en_memoria",
+                )
+
+            estado_contexto_despues = _GESTOR_CONTEXTO.obtener_estado(session_id) if session_id else None
+
+            respuesta_memoria: Dict[str, Any] = {
+                "ok": True,
+                "human_query": human,
+                "dialect": payload.dialect or ("mssql" if es_mssql() else "postgresql"),
+                "sql": None,
+                "executed": False,
+                "origen_respuesta": "resultado_previo_en_memoria",
+                "row_count": len(rows_previas),
+                "answer_text": respuesta_textual,
+                "contexto_aplicado": True,
+                "contexto_sesion": estado_contexto_despues,
+            }
+
+            if INCLUIR_ANALISIS_RESULTADO and analisis_previo:
+                respuesta_memoria["analisis"] = analisis_previo
+
+            if modo_debug:
+                respuesta_memoria["debug"] = {
+                    "modo": "resultado_previo_en_memoria",
+                    "contexto": {
+                        "session_id": session_id,
+                        "turnos_antes": (estado_contexto_antes or {}).get("turnos", 0) if isinstance(estado_contexto_antes, dict) else 0,
+                        "turnos_despues": (estado_contexto_despues or {}).get("turnos", 0) if isinstance(estado_contexto_despues, dict) else 0,
+                        "usa_contexto_memoria": bool(contexto_memoria.strip()),
+                        "usa_contexto_externo": False,
+                        "preview_memoria": contexto_memoria[:800],
+                        "consulta_origen_resultado_previo": ultimo_resultado.get("consulta_usuario"),
+                        "row_count_resultado_previo": len(rows_previas),
+                        "columnas_resultado_previo": list(rows_previas[0].keys()) if rows_previas else [],
+                    }
+                }
+
+            return respuesta_memoria
 
     if payload.schema_refresh:
         database.invalidar_cache_esquema()
@@ -791,6 +1228,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
         if modo_debug:
             respuesta_dry["debug"] = {
+                "modo": "nl_to_sql_dry_run",
                 "tablas_prompt_llm": tablas_prompt_llm,
                 "contexto": {
                     "session_id": session_id,
@@ -798,6 +1236,8 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                     "usa_contexto_externo": usa_contexto_externo,
                     "preview_memoria": contexto_memoria[:800],
                     "preview_contexto_total": contexto_conversacional[:1200],
+                    "ultimo_resultado_disponible": bool((ultimo_resultado.get("rows_resultado") or [])),
+                    "ultimo_resultado_row_count": int(ultimo_resultado.get("row_count") or 0),
                 }
             }
 
@@ -966,8 +1406,6 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     if (not INCLUIR_SUGERENCIAS_GRAFICO) and isinstance(analisis_resultado, dict):
         analisis_resultado.pop("graficos_sugeridos", None)
 
-    incluir_respuesta_texto = GENERAR_RESPUESTA_TEXTO if payload.incluir_respuesta_texto is None else bool(payload.incluir_respuesta_texto)
-
     if rows and incluir_respuesta_texto:
         try:
             respuesta_textual = await llm.construir_respuesta(rows, human)
@@ -988,6 +1426,9 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             sql_generado=sql_query,
             respuesta_textual=respuesta_textual,
             row_count=len(rows),
+            filas_resultado=rows,
+            analisis_resultado=analisis_resultado if isinstance(analisis_resultado, dict) else {},
+            origen_respuesta="nl_to_sql_normal",
         )
 
     estado_contexto_despues = _GESTOR_CONTEXTO.obtener_estado(session_id) if session_id else None
@@ -1013,6 +1454,7 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     if modo_debug:
         respuesta["debug"] = {
+            "modo": "nl_to_sql_normal",
             "tablas_prompt_llm": tablas_prompt_llm,
             "contexto": {
                 "session_id": session_id,
@@ -1022,6 +1464,8 @@ async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 "usa_contexto_externo": usa_contexto_externo,
                 "preview_memoria": contexto_memoria[:800],
                 "preview_contexto_total": contexto_conversacional[:1200],
+                "ultimo_resultado_disponible": bool((ultimo_resultado.get("rows_resultado") or [])),
+                "ultimo_resultado_row_count": int(ultimo_resultado.get("row_count") or 0),
             }
         }
 

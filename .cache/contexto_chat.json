@@ -1,58 +1,365 @@
 {
   "conversaciones": {
-    "continuidad-motor-fix-01": {
-      "session_id": "continuidad-motor-fix-01",
-      "turnos": [
-        {
-          "consulta_usuario": "Para Antapaccay en compartimientos de motor, muestrame 8 registros recientes con equipo, fecha de muestreo, horas de aceite, Fe_ppm, Cu_ppm y Si_ppm.",
-          "sql_generado": "SELECT TOP (8) ME.[Code] AS [Equipo], L.[FechaMuestreo] AS [Fecha de Muestreo], L.[HorasDeAceite] AS [Horas de Aceite], L.[Fe_ppm] AS [Fe_ppm], L.[Cu_ppm] AS [Cu_ppm], L.[Si_ppm] AS [Si_ppm] FROM [Oil].[LaboratoryData] AS L LEFT JOIN [Mine].[MiningEquipment] AS ME ON L.[MiningEquipmentId] = ME.[Id] LEFT JOIN [Mine].[MiningProject] AS MP ON ME.[MiningProjectId] = MP.[Id] WHERE COALESCE(LTRIM(RTRIM(MP.[Name])), '') LIKE '%Antapaccay%' AND COALESCE(LTRIM(RTRIM(L.[Compartimiento])), '') LIKE '%motor%' ORDER BY L.[FechaMuestreo] DESC",
-          "respuesta_textual": "El análisis de 8 muestras de aceite de motor para 5 equipos de Antapaccay revela una alta variabilidad en los indicadores de desgaste y contaminación. Se observan valores máximos de Hierro (96.21 ppm) y Silicio (64.53 ppm) en muestras con un elevado número de horas de aceite (2026 horas), mientras que la mediana se mantiene en niveles bajos (9.17 ppm para Fe, 5.47 ppm para Si). En este conjunto de datos, se identifica una tendencia descendente en los niveles de Fe, Si y Horas de Aceite, mientras que el Cobre (Cu) se mantiene estable y en concentraciones bajas.\n- Los valores de desgaste y contaminación por Silicio están fuertemente concentrados en unas pocas muestras. El valor máximo de Fe (96.21 ppm) y Si (64.53 ppm) corresponde a muestras con 2026 horas de aceite, muy por encima de la mediana de 639.5 horas.\n- Se observa una clara tendencia descendente en los contaminantes clave dentro de este lote de muestras. El Hierro disminuye de un máximo de 96.21 ppm al inicio del periodo a 3.43 ppm al final, y el Silicio de 64.53 ppm a 6.03 ppm.\n- Las Horas de Aceite también muestran una tendencia descendente, pasando de 2026 a 309 horas, lo que sugiere una posible correlación entre la antigüedad del aceite y los niveles de desgaste en estas muestras específicas.\n- A diferencia del Hierro y el Silicio, los niveles de Cobre (Cu_ppm) son bajos y no presentan una tendencia definida, con valores que oscilan entre 0.02 y 1.17 ppm y una mediana de 0.46 ppm.\n- El equipo '3117' es el más representado en la muestra, constituyendo el 37.5% de los registros analizados (3 de 8 muestras).\nNota: Las conclusiones se basan en un conjunto de datos muy limitado de solo 8 registros, lo que impide generalizar las tendencias observadas.\nNota: El análisis temporal se restringe a un periodo muy corto (muestras del 5 y 6 de marzo de 2026), por lo que las 'tendencias' reflejan la secuencia de estas pocas muestras y no un comportamiento a largo plazo.\nNota: No se dispone de contexto operacional de los equipos, lo que limita la capacidad de atribuir causas a los niveles de desgaste observados.",
-          "row_count": 8,
-          "marca_tiempo": "2026-03-09T19:04:40.050480"
-        },
-        {
-          "consulta_usuario": "Ahora quedate con los mas criticos y ordenalos por mayor Fe_ppm.",
-          "sql_generado": "SELECT TOP (8) ME.[Code] AS [Equipo], L.[FechaMuestreo] AS [Fecha de Muestreo], L.[HorasDeAceite] AS [Horas de Aceite], L.[Fe_ppm] AS [Fe_ppm], L.[Cu_ppm] AS [Cu_ppm], L.[Si_ppm] AS [Si_ppm] FROM [Oil].[LaboratoryData] AS L LEFT JOIN [Mine].[MiningEquipment] AS ME ON L.[MiningEquipmentId] = ME.[Id] LEFT JOIN [Mine].[MiningProject] AS MP ON ME.[MiningProjectId] = MP.[Id] WHERE COALESCE(LTRIM(RTRIM(MP.[Name])), '') LIKE '%Antapaccay%' AND COALESCE(LTRIM(RTRIM(L.[Compartimiento])), '') LIKE '%motor%' ORDER BY L.[Fe_ppm] DESC",
-          "respuesta_textual": "El análisis se centra en los equipos con mayores niveles de concentración de hierro (Fe_ppm), destacando al equipo CA3177 como el más crítico con un valor máximo de 2347.0 ppm, significativamente por encima del percentil 90 (1386.0 ppm). El equipo 3115 le sigue en criticidad, con mediciones que se sitúan precisamente en este umbral del 10% superior. Los datos sugieren patrones de desgaste distintos entre equipos, ya que los altos niveles de hierro no se correlacionan directamente con los de cobre.\n- El equipo CA3177 presenta la condición más crítica con 2347.0 ppm de Hierro (Fe), el valor máximo registrado en el conjunto de datos. Este nivel es aproximadamente 1.7 veces superior al valor del percentil 90 (1386.0 ppm).\n- El equipo 3115 muestra el segundo nivel más alto de concentración de Fe, con dos muestras registrando 1386.0 ppm. Este valor coincide exactamente con el percentil 90, indicando que se encuentra en el 10% de las mediciones más altas.\n- Se observa una falta de correlación directa entre los contaminantes: el equipo con el Fe más alto (CA3177) tiene un nivel de Cobre (Cu) bajo (9.0 ppm), mientras que el equipo con el Cu más alto (CA3161 con 778.93 ppm) presenta un nivel de Fe moderado (718.0 ppm).\n- A pesar de que el equipo 3111 es el más frecuente en la muestra (37.5% de los registros), sus niveles de Fe se encuentran en el rango medio-bajo de este análisis, con valores de 1188.0 ppm (mediana) y 608.69 ppm (mínimo).\nNota: El análisis se basa en un conjunto de datos muy limitado de 8 muestras para 5 equipos distintos, lo que impide generalizar los hallazgos o establecer patrones de comportamiento robustos.\nNota: Aunque el análisis general indica una tendencia 'estable' para Fe_ppm, no hay suficientes puntos de datos por equipo individual para confirmar o descartar una tendencia de desgaste específica para los casos más críticos.\nNota: La ausencia de umbrales operativos o límites de alarma para las concentraciones de metales impide calificar de forma concluyente si estos niveles son aceptables o requieren una intervención inmediata.",
-          "row_count": 8,
-          "marca_tiempo": "2026-03-09T19:06:31.676330"
-        },
-        {
-          "consulta_usuario": "Y ahora explicame si el patron parece mas de desgaste o contaminacion, sin volver a listar toda la tabla.",
-          "sql_generado": "SELECT TOP (8) ME.[Code] AS [Equipo], L.[FechaMuestreo] AS [Fecha de Muestreo], L.[HorasDeAceite] AS [Horas de Aceite], L.[Fe_ppm] AS [Hierro (ppm)], L.[Cu_ppm] AS [Cobre (ppm)], L.[Pb_ppm] AS [Plomo (ppm)], L.[Cr_ppm] AS [Cromo (ppm)], L.[Al_ppm] AS [Aluminio (ppm)], L.[Indice_PQ] AS [Indice PQ], L.[Si_ppm] AS [Silicio (ppm)], L.[Agua] AS [Agua (%)], L.[GLYCOL] AS [Glicol (%)], L.[Hollin] AS [Hollin (%)], L.[Condicion] AS [Condicion] FROM [Oil].[LaboratoryData] AS L LEFT JOIN [Mine].[MiningEquipment] AS ME ON L.[MiningEquipmentId] = ME.[Id] LEFT JOIN [Mine].[MiningProject] AS MP ON ME.[MiningProjectId] = MP.[Id] WHERE COALESCE(LTRIM(RTRIM(MP.[Name])), '') LIKE '%Antapaccay%' AND COALESCE(LTRIM(RTRIM(L.[Compartimiento])), '') LIKE '%motor%' ORDER BY L.[Fe_ppm] DESC",
-          "respuesta_textual": "El patrón observado en los datos apunta predominantemente a un desgaste severo de componentes internos, más que a un problema de contaminación como causa principal. Esta conclusión se basa en los niveles excepcionalmente altos y consistentes de metales de desgaste, especialmente Hierro y Cobre. Aunque se detecta Silicio, indicativo de contaminación por partículas, su señal no es tan dominante como la del desgaste metálico.\n- Se registran niveles de Hierro (Fe) muy elevados en todas las muestras, con una mediana de 953 ppm y un máximo de 2347 ppm. Esto, junto a un `Indice PQ` consistentemente alto (mediana 2568.8), confirma la presencia significativa de partículas ferrosas por desgaste.\n- El Cobre (Cu) presenta una clara tendencia ascendente en el período analizado, lo que sugiere un proceso de desgaste progresivo y acelerado en componentes como bujes o enfriadores.\n- Los indicadores de contaminación por Silicio (Si) muestran niveles relevantes (mediana 21.5 ppm, máximo 78.69 ppm), sugiriendo que la entrada de polvo o tierra puede ser un factor que contribuye y acelera el desgaste observado.\n- La evidencia de otros contaminantes como Agua, Glicol o Hollín es prácticamente inexistente en los datos proporcionados, ya que la mayoría de sus valores son nulos, lo que debilita la hipótesis de contaminación por fluidos como el problema principal.\nNota: El análisis no puede determinar la causa raíz del desgaste, únicamente su manifestación en el aceite. La contaminación por Silicio es un factor contribuyente plausible, pero no se puede descartar un fallo mecánico intrínseco.\nNota: La evaluación completa del estado de contaminación está limitada por la ausencia de datos para Agua, Glicol y Hollín en la mayoría de las muestras.",
-          "row_count": 8,
-          "marca_tiempo": "2026-03-09T19:08:19.931681"
-        }
-      ],
-      "actualizada_en": "2026-03-09T19:08:19.932990"
-    },
     "continuidad-llm-01": {
       "session_id": "continuidad-llm-01",
       "turnos": [
         {
           "consulta_usuario": "Para Antapaccay en compartimientos de motor, muestrame 8 registros recientes con equipo, fecha de muestreo, horas de aceite, Fe_ppm, Cu_ppm y Si_ppm.",
-          "sql_generado": "SELECT TOP (8) COALESCE([E].[EquipmentNumber], [E].[EquipmentCode]) AS [Equipo], [OA].[FechaMuestreo], [OA].[HorasDeAceite], [OA].[Fe_ppm], [OA].[Cu_ppm], [OA].[Si_ppm] FROM [dbo].[OilAnalysis] AS [OA] LEFT JOIN [dbo].[EquipmentComponent] AS [EC] ON [OA].[EquipmentComponentId] = [EC].[EquipmentComponentId] LEFT JOIN [dbo].[Equipment] AS [E] ON [EC].[EquipmentId] = [E].[EquipmentId] LEFT JOIN [dbo].[Project] AS [P] ON [E].[ProjectId] = [P].[ProjectId] WHERE [P].[ProjectName] = 'Antapaccay' AND [OA].[Compartimiento] LIKE '%motor%' ORDER BY [OA].[FechaMuestreo] DESC",
-          "respuesta_textual": "El análisis de los 8 registros recientes de compartimientos de motor de Antapaccay revela una tendencia general descendente en las concentraciones de Fe_ppm, Cu_ppm y Si_ppm, así como en las HorasDeAceite, dentro de un periodo de muestreo muy acotado. Se identificaron valores atípicos altos en Fe_ppm y Si_ppm, y tanto altos como bajos en HorasDeAceite, lo que sugiere la presencia de mediciones que se desvían significativamente del comportamiento central de la muestra. El equipo '3164' es el más representado en esta muestra, concentrando el 25% de los registros.\n- Las concentraciones de Hierro (Fe_ppm) muestran una amplia dispersión, con valores que van desde 1.56 ppm hasta 56.36 ppm. La mediana se sitúa en 2.47 ppm, y el percentil 90 en 3.66 ppm, indicando que la mayoría de los valores son bajos, pero existe un valor atípico alto que eleva el máximo y la media.\n- El Cobre (Cu_ppm) presenta un rango de 0.26 ppm a 1.9 ppm, con una mediana de 0.42 ppm y un p90 de 1.14 ppm. No se detectaron valores atípicos en esta métrica.\n- El Silicio (Si_ppm) exhibe una distribución similar a Fe_ppm, con un mínimo de 1.96 ppm y un máximo de 170.17 ppm. La mediana es de 2.87 ppm y el p90 de 3.13 ppm, lo que también sugiere la presencia de un valor atípico alto que distorsiona la media.\n- Las HorasDeAceite varían desde 100.0 hasta 869.0 horas, con una mediana de 141.0 horas y un p90 de 327.0 horas. Se identificaron dos valores atípicos altos y uno bajo, lo que indica una heterogeneidad en los intervalos de muestreo o en el uso de los equipos.\n- Se observa una tendencia descendente en todas las métricas analizadas (Cu_ppm, Fe_ppm, HorasDeAceite y Si_ppm) a lo largo de los registros. Por ejemplo, Fe_ppm pasó de un valor inicial de 56.36 ppm a un valor final de 1.56 ppm, lo que representa una disminución relativa del 97.2%. De manera similar, Si_ppm disminuyó de 170.17 ppm a 2.87 ppm, una reducción del 98.3%.\n- El equipo '3164' es la categoría más frecuente en la muestra, representando el 25% de los registros, lo que podría indicar una mayor actividad de muestreo o una mayor disponibilidad de datos para este equipo en particular.\nNota: El análisis se basa en una muestra muy limitada de 8 registros, lo que restringe la capacidad de generalizar las conclusiones a la población total de compartimientos de motor de Antapaccay.\nNota: El período de muestreo abarca únicamente dos días (19 y 20 de octubre de 2025), lo cual es insuficiente para establecer tendencias temporales robustas o patrones estacionales.\nNota: La identificación de valores atípicos en Fe_ppm, Si_ppm y HorasDeAceite sugiere la necesidad de una revisión de estos puntos de datos para determinar si corresponden a eventos reales, errores de medición o condiciones operativas específicas.",
+          "sql_generado": "WITH RankedOilAnalysis AS (SELECT OA.[FechaMuestreo], OA.[HorasDeAceite], OA.[Fe_ppm], OA.[Cu_ppm], OA.[Si_ppm], E.[EquipmentNumber], ROW_NUMBER() OVER (PARTITION BY E.[EquipmentId] ORDER BY OA.[FechaMuestreo] DESC) AS rn FROM [dbo].[OilAnalysis] AS OA LEFT JOIN [dbo].[EquipmentComponent] AS EC ON OA.[EquipmentComponentId] = EC.[EquipmentComponentId] LEFT JOIN [dbo].[Equipment] AS E ON EC.[EquipmentId] = E.[EquipmentId] LEFT JOIN [dbo].[Project] AS P ON E.[ProjectId] = P.[ProjectId] WHERE P.[ProjectName] = 'Antapaccay' AND OA.[Compartimiento] LIKE '%motor%') SELECT TOP (8) [EquipmentNumber] AS [Equipo], [FechaMuestreo] AS [Fecha de Muestreo], [HorasDeAceite] AS [Horas de Aceite], [Fe_ppm], [Cu_ppm], [Si_ppm] FROM RankedOilAnalysis AS R WHERE rn = 1 ORDER BY [FechaMuestreo] DESC",
+          "respuesta_textual": "El análisis de 8 muestras de motor revela una condición general estable, pero con dos equipos que presentan valores atípicos y críticos. Mientras la mayoría de los motores operan con bajos niveles de desgaste y contaminación, con una mediana de Hierro (Fe) de 3.3 ppm y Silicio (Si) de 2.9 ppm, los valores máximos alcanzan 76.8 ppm de Fe y 88.1 ppm de Si. Estos casos extremos, concentrados en los equipos 3167 y 3178, distorsionan significativamente los promedios y requieren atención inmediata.\n- Dos equipos, 3178 y 3167, son responsables de los valores atípicos, registrando los niveles más altos de contaminación por Silicio (88.1 ppm) y desgaste por Hierro (76.8 ppm), respectivamente.\n- El 75% de la muestra (6 de 8 equipos) opera con niveles de desgaste y contaminación muy bajos, con valores de Fe y Si por debajo de 7.3 ppm y 5.0 ppm respectivamente.\n- El equipo 3178, con el mayor número de horas de aceite (879 h), coincide con el nivel más alto de contaminación por Si, sugiriendo una posible correlación a investigar.\n- Los niveles de Cobre (Cu) son consistentemente bajos en toda la flota analizada, con un valor máximo de solo 2.46 ppm y una mediana de 0.9 ppm, lo que indica una condición saludable para los componentes de bronce o latón.\n- La gran diferencia entre la mediana (Fe: 3.3 ppm, Si: 2.9 ppm) y la media (Fe: 18.9 ppm, Si: 18.7 ppm) confirma que los valores altos son eventos aislados y no un problema generalizado en la flota.\nNota: El análisis se basa en una muestra muy reducida de 8 registros, por lo que las conclusiones no deben generalizarse a toda la flota sin un análisis más amplio.\nNota: Los datos provienen de un período de tiempo muy corto (dos días consecutivos), por lo que las tendencias identificadas no son representativas del comportamiento a largo plazo de los equipos.",
           "row_count": 8,
-          "marca_tiempo": "2026-03-09T19:18:10.054270"
+          "filas_resultado": [
+            {
+              "Equipo": "3170",
+              "Fecha de Muestreo": "2025-10-20T00:00:00",
+              "Horas de Aceite": 154.0,
+              "Fe_ppm": 1.82,
+              "Cu_ppm": 1.14,
+              "Si_ppm": 2.88
+            },
+            {
+              "Equipo": "3165",
+              "Fecha de Muestreo": "2025-10-20T00:00:00",
+              "Horas de Aceite": 327.0,
+              "Fe_ppm": 2.31,
+              "Cu_ppm": 1.11,
+              "Si_ppm": 1.96
+            },
+            {
+              "Equipo": "3162",
+              "Fecha de Muestreo": "2025-10-20T00:00:00",
+              "Horas de Aceite": 100.0,
+              "Fe_ppm": 3.66,
+              "Cu_ppm": 0.26,
+              "Si_ppm": 2.46
+            },
+            {
+              "Equipo": "3179",
+              "Fecha de Muestreo": "2025-10-20T00:00:00",
+              "Horas de Aceite": 118.0,
+              "Fe_ppm": 2.97,
+              "Cu_ppm": 0.42,
+              "Si_ppm": 2.52
+            },
+            {
+              "Equipo": "3164",
+              "Fecha de Muestreo": "2025-10-20T00:00:00",
+              "Horas de Aceite": 141.0,
+              "Fe_ppm": 1.56,
+              "Cu_ppm": 0.33,
+              "Si_ppm": 2.87
+            },
+            {
+              "Equipo": "3167",
+              "Fecha de Muestreo": "2025-10-19T00:00:00",
+              "Horas de Aceite": 141.0,
+              "Fe_ppm": 76.84,
+              "Cu_ppm": 0.72,
+              "Si_ppm": 43.82
+            },
+            {
+              "Equipo": "3178",
+              "Fecha de Muestreo": "2025-10-19T00:00:00",
+              "Horas de Aceite": 879.0,
+              "Fe_ppm": 54.47,
+              "Cu_ppm": 1.14,
+              "Si_ppm": 88.1
+            },
+            {
+              "Equipo": "6112",
+              "Fecha de Muestreo": "2025-10-19T00:00:00",
+              "Horas de Aceite": 251.0,
+              "Fe_ppm": 7.21,
+              "Cu_ppm": 2.46,
+              "Si_ppm": 4.96
+            }
+          ],
+          "analisis_resultado": {
+            "row_count": 8,
+            "columnas": [
+              "Equipo",
+              "Fecha de Muestreo",
+              "Horas de Aceite",
+              "Fe_ppm",
+              "Cu_ppm",
+              "Si_ppm"
+            ],
+            "columna_tiempo": "Fecha de Muestreo",
+            "columna_categoria": "Equipo",
+            "metricas": {
+              "Cu_ppm": {
+                "n": 8,
+                "min": 0.26,
+                "max": 2.46,
+                "mean": 0.9475,
+                "median": 1.11,
+                "p90": 1.14,
+                "q1": 0.42,
+                "q3": 1.14,
+                "ceros": 0,
+                "outliers_altos": 1,
+                "outliers_bajos": 0
+              },
+              "Fe_ppm": {
+                "n": 8,
+                "min": 1.56,
+                "max": 76.84,
+                "mean": 18.855,
+                "median": 3.66,
+                "p90": 54.47,
+                "q1": 2.31,
+                "q3": 7.21,
+                "ceros": 0,
+                "outliers_altos": 2,
+                "outliers_bajos": 0
+              },
+              "Horas de Aceite": {
+                "n": 8,
+                "min": 100.0,
+                "max": 879.0,
+                "mean": 263.875,
+                "median": 154.0,
+                "p90": 327.0,
+                "q1": 141.0,
+                "q3": 251.0,
+                "ceros": 0,
+                "outliers_altos": 1,
+                "outliers_bajos": 0
+              },
+              "Si_ppm": {
+                "n": 8,
+                "min": 1.96,
+                "max": 88.1,
+                "mean": 18.69625,
+                "median": 2.88,
+                "p90": 43.82,
+                "q1": 2.52,
+                "q3": 4.96,
+                "ceros": 0,
+                "outliers_altos": 2,
+                "outliers_bajos": 0
+              }
+            },
+            "categorias": {
+              "Equipo": {
+                "distinct": 8,
+                "top": [
+                  {
+                    "valor": "3170",
+                    "count": 1,
+                    "share": 0.125
+                  },
+                  {
+                    "valor": "3165",
+                    "count": 1,
+                    "share": 0.125
+                  },
+                  {
+                    "valor": "3162",
+                    "count": 1,
+                    "share": 0.125
+                  },
+                  {
+                    "valor": "3179",
+                    "count": 1,
+                    "share": 0.125
+                  },
+                  {
+                    "valor": "3164",
+                    "count": 1,
+                    "share": 0.125
+                  }
+                ]
+              }
+            },
+            "tendencias": {
+              "Cu_ppm": {
+                "direccion": "descendente",
+                "descripcion": "Tendencia descendente en la serie analizada.",
+                "valor_inicial": 0.72,
+                "valor_final": 0.33,
+                "cambio_absoluto": -0.38999999999999996,
+                "cambio_relativo": -0.5416666666666666,
+                "puntos": 8
+              },
+              "Fe_ppm": {
+                "direccion": "descendente",
+                "descripcion": "Tendencia descendente en la serie analizada.",
+                "valor_inicial": 76.84,
+                "valor_final": 1.56,
+                "cambio_absoluto": -75.28,
+                "cambio_relativo": -0.9796980739198334,
+                "puntos": 8
+              },
+              "Horas de Aceite": {
+                "direccion": "estable",
+                "descripcion": "Tendencia estable o con variación leve en el período analizado.",
+                "valor_inicial": 141.0,
+                "valor_final": 141.0,
+                "cambio_absoluto": 0.0,
+                "cambio_relativo": 0.0,
+                "puntos": 8
+              },
+              "Si_ppm": {
+                "direccion": "mixta",
+                "descripcion": "La serie muestra variaciones mixtas sin dirección única dominante.",
+                "valor_inicial": 43.82,
+                "valor_final": 2.87,
+                "cambio_absoluto": -40.95,
+                "cambio_relativo": -0.9345047923322685,
+                "puntos": 8
+              }
+            },
+            "resumen_ejecutivo": "Se analizaron 8 filas y 6 columnas útiles en el resultado. En Cu_ppm, el mínimo es 0.26, el máximo 2.46, la mediana 1.11 y el p90 1.14. Cu_ppm presenta outliers por IQR (altos=1, bajos=0). En Fe_ppm, el mínimo es 1.56, el máximo 76.84, la mediana 3.66 y el p90 54.47. Fe_ppm presenta outliers por IQR (altos=2, bajos=0). La mayor concentración categórica aparece en Equipo: 3170 representa 12.5% de la muestra categórica observada. Para Cu_ppm, la tendencia detectada es descendente: Tendencia descendente en la serie analizada.",
+            "graficos_sugeridos": [
+              {
+                "tipo": "linea",
+                "titulo": "Tendencia de Cu_ppm por Fecha de Muestreo",
+                "eje_x": "Fecha de Muestreo",
+                "eje_y": "Cu_ppm",
+                "motivo": "Existe columna temporal y una métrica numérica apta para analizar evolución."
+              },
+              {
+                "tipo": "barras",
+                "titulo": "Comparación de Cu_ppm por Equipo",
+                "eje_x": "Equipo",
+                "eje_y": "Cu_ppm",
+                "motivo": "Existe una dimensión categórica útil y una métrica numérica comparable."
+              },
+              {
+                "tipo": "dispersión",
+                "titulo": "Relación entre Cu_ppm y Fe_ppm",
+                "eje_x": "Cu_ppm",
+                "eje_y": "Fe_ppm",
+                "motivo": "Hay al menos dos métricas numéricas que podrían correlacionarse."
+              }
+            ]
+          },
+          "origen_respuesta": "nl_to_sql_normal",
+          "marca_tiempo": "2026-03-10T01:43:19.678069"
         },
         {
           "consulta_usuario": "Ahora quedate solo con los mas criticos y ordenalos por mayor Fe_ppm.",
-          "sql_generado": "SELECT TOP (8) COALESCE([E].[EquipmentNumber], [E].[EquipmentCode]) AS [Equipo], [OA].[FechaMuestreo], [OA].[HorasDeAceite], [OA].[Fe_ppm], [OA].[Cu_ppm], [OA].[Si_ppm] FROM [dbo].[OilAnalysis] AS [OA] LEFT JOIN [dbo].[EquipmentComponent] AS [EC] ON [OA].[EquipmentComponentId] = [EC].[EquipmentComponentId] LEFT JOIN [dbo].[Equipment] AS [E] ON [EC].[EquipmentId] = [E].[EquipmentId] LEFT JOIN [dbo].[Project] AS [P] ON [E].[ProjectId] = [P].[ProjectId] WHERE [P].[ProjectName] = 'Antapaccay' AND [OA].[Compartimiento] LIKE '%motor%' ORDER BY [OA].[Fe_ppm] DESC",
-          "respuesta_textual": "El análisis se centró en los registros con las concentraciones más elevadas de hierro (Fe_ppm), identificando los tres casos más críticos. El valor máximo de Fe_ppm, un outlier de 2347.0 ppm, se registró en el Equipo 3177. Los siguientes valores más altos fueron 1386.0 ppm en el Equipo 3115 y 1188.0 ppm en el Equipo 3111. Estos tres equipos representan los puntos de mayor concentración de hierro en la muestra analizada, superando el p90 de la métrica.\n- El valor máximo de Fe_ppm (2347.0 ppm) es un valor atípico, superando significativamente el p90 (1386.0 ppm) y la mediana (689.0 ppm) del conjunto de datos. Este valor se registra en el Equipo 3177.\n- Los tres registros con los niveles más altos de Fe_ppm son 2347.0 ppm (Equipo 3177), 1386.0 ppm (Equipo 3115) y 1188.0 ppm (Equipo 3111), los cuales se encuentran por encima o en el p90 de la distribución de Fe_ppm.\n- El Equipo 3177, que presenta el nivel más alto de Fe_ppm (2347.0 ppm), también registra el valor máximo de Si_ppm (76.0 ppm) y un nivel elevado de HorasDeAceite (2169.0 horas).\n- Los Equipos 3115 y 3111, con el segundo y tercer Fe_ppm más altos (1386.0 ppm y 1188.0 ppm respectivamente), muestran niveles de Cu_ppm considerablemente elevados (140.05 ppm y 112.62 ppm), que están en el rango del máximo y p90 de Cu_ppm. Sus HorasDeAceite son significativamente menores (762.0 y 755.0 horas) en comparación con el Equipo 3177.\nNota: El análisis se basa en una muestra muy limitada de 8 registros, lo que restringe la capacidad de generalizar patrones o establecer causalidades definitivas.\nNota: La definición de 'crítico' se ha basado en los valores más altos de Fe_ppm en esta muestra específica, y no en umbrales predefinidos de criticidad operativa.\nNota: La ausencia de una tendencia temporal clara para Fe_ppm en el análisis general (dirección 'mixta') impide inferir si estos picos son parte de una evolución o eventos aislados.",
-          "row_count": 8,
-          "marca_tiempo": "2026-03-09T19:20:28.458676"
+          "sql_generado": "WITH RankedOilAnalysis AS (SELECT OA.[FechaMuestreo], OA.[HorasDeAceite], OA.[Fe_ppm], OA.[Cu_ppm], OA.[Si_ppm], E.[EquipmentNumber], ROW_NUMBER() OVER (PARTITION BY E.[EquipmentId] ORDER BY OA.[FechaMuestreo] DESC) AS rn FROM [dbo].[OilAnalysis] AS OA LEFT JOIN [dbo].[EquipmentComponent] AS EC ON OA.[EquipmentComponentId] = EC.[EquipmentComponentId] LEFT JOIN [dbo].[Equipment] AS E ON EC.[EquipmentId] = E.[EquipmentId] LEFT JOIN [dbo].[Project] AS P ON E.[ProjectId] = P.[ProjectId] WHERE P.[ProjectName] = 'Antapaccay' AND OA.[Compartimiento] LIKE '%motor%') SELECT TOP (2) [EquipmentNumber] AS [Equipo], [FechaMuestreo] AS [Fecha de Muestreo], [HorasDeAceite] AS [Horas de Aceite], [Fe_ppm], [Cu_ppm], [Si_ppm] FROM RankedOilAnalysis WHERE rn = 1 ORDER BY [Fe_ppm] DESC",
+          "respuesta_textual": "El análisis de dos equipos críticos revela niveles severos de desgaste y contaminación. El equipo 3168 presenta la condición más alarmante con la mayor concentración de hierro (214.8 ppm) y silicio (117.7 ppm). Ambos activos requieren atención prioritaria para investigar la causa raíz del desgaste y la entrada de contaminantes.\n- El equipo 3168 es el más crítico, registrando el valor máximo de desgaste por hierro (214.8 ppm) y contaminación por silicio (117.7 ppm).\n- El equipo 3175 también muestra un nivel de desgaste por hierro muy elevado (207.31 ppm), lo cual es particularmente preocupante dadas sus bajas horas de aceite (427 horas).\n- La alta presencia de silicio en ambas muestras, especialmente en el equipo 3168, sugiere una fuente de contaminación externa que probablemente está acelerando el desgaste de los componentes ferrosos.\n- Los niveles de cobre son bajos y similares en ambos equipos (3.41 y 3.64 ppm), indicando que el desgaste severo está concentrado en componentes de hierro.\nNota: La conclusión se basa en una única muestra por equipo, lo que impide establecer tendencias o la tasa de progresión del deterioro.\nNota: No se dispone de límites de alarma o condenatorios para contextualizar la severidad absoluta de los valores medidos.",
+          "row_count": 2,
+          "filas_resultado": [
+            {
+              "Equipo": "3168",
+              "Fecha de Muestreo": "2025-10-18T00:00:00",
+              "Horas de Aceite": 2789.0,
+              "Fe_ppm": 214.8,
+              "Cu_ppm": 3.41,
+              "Si_ppm": 117.7
+            },
+            {
+              "Equipo": "3175",
+              "Fecha de Muestreo": "2025-10-16T00:00:00",
+              "Horas de Aceite": 427.0,
+              "Fe_ppm": 207.31,
+              "Cu_ppm": 3.64,
+              "Si_ppm": 69.92
+            }
+          ],
+          "analisis_resultado": {
+            "row_count": 2,
+            "columnas": [
+              "Equipo",
+              "Fecha de Muestreo",
+              "Horas de Aceite",
+              "Fe_ppm",
+              "Cu_ppm",
+              "Si_ppm"
+            ],
+            "columna_tiempo": null,
+            "columna_categoria": "Equipo",
+            "metricas": {},
+            "categorias": {
+              "Equipo": {
+                "distinct": 2,
+                "top": [
+                  {
+                    "valor": "3168",
+                    "count": 1,
+                    "share": 0.5
+                  },
+                  {
+                    "valor": "3175",
+                    "count": 1,
+                    "share": 0.5
+                  }
+                ]
+              }
+            },
+            "tendencias": {},
+            "resumen_ejecutivo": "Se analizaron 2 filas y 6 columnas útiles en el resultado. La mayor concentración categórica aparece en Equipo: 3168 representa 50.0% de la muestra categórica observada. No se detectó una serie temporal suficientemente consistente para evaluar tendencia en este resultado.",
+            "graficos_sugeridos": []
+          },
+          "origen_respuesta": "nl_to_sql_normal",
+          "marca_tiempo": "2026-03-10T01:45:53.516485"
         },
         {
           "consulta_usuario": "Sin volver a listar toda la tabla, explicame si el patron apunta mas a desgaste o a contaminacion.",
-          "sql_generado": "WITH RankedOilAnalysis AS (SELECT [OA].[Fe_ppm], [OA].[Cu_ppm], [OA].[Si_ppm], ROW_NUMBER() OVER (ORDER BY [OA].[Fe_ppm] DESC) AS rn FROM [dbo].[OilAnalysis] AS [OA] LEFT JOIN [dbo].[EquipmentComponent] AS [EC] ON [OA].[EquipmentComponentId] = [EC].[EquipmentComponentId] LEFT JOIN [dbo].[Equipment] AS [E] ON [EC].[EquipmentId] = [E].[EquipmentId] LEFT JOIN [dbo].[Project] AS [P] ON [E].[ProjectId] = [P].[ProjectId] WHERE [P].[ProjectName] = 'Antapaccay' AND [OA].[Compartimiento] LIKE '%motor%') SELECT TOP (1) SUM([Fe_ppm]) AS [Total_Fe_ppm_Wear], SUM([Cu_ppm]) AS [Total_Cu_ppm_Wear], SUM([Fe_ppm] + [Cu_ppm]) AS [Total_Wear_ppm], SUM([Si_ppm]) AS [Total_Si_ppm_Contamination] FROM RankedOilAnalysis AS R WHERE rn <= 8",
-          "respuesta_textual": "El análisis de la muestra única indica que el patrón se inclina de manera predominante hacia el desgaste. El nivel total de partículas de desgaste (8158.14 ppm) es significativamente superior al nivel de contaminación por silicio (290.63 ppm), lo que sugiere que el problema principal no es la entrada de contaminantes externos.\n- El indicador de desgaste total (8158.14 ppm) es aproximadamente 28 veces mayor que el indicador de contaminación por silicio (290.63 ppm), lo que confirma que el fenómeno dominante es el desgaste de componentes internos.\n- Dentro de los metales de desgaste, el Hierro (Fe) es el principal contribuyente con 7729.89 ppm, representando cerca del 95% del desgaste total medido.\nNota: Esta conclusión se basa en un único punto de datos, lo que impide establecer una tendencia o determinar si se trata de un evento agudo o una condición crónica.\nNota: No se dispone de información contextual para correlacionar estos valores con límites operativos o historiales de mantenimiento.",
-          "row_count": 1,
-          "marca_tiempo": "2026-03-09T19:21:54.492711"
+          "sql_generado": "WITH RankedOilAnalysis AS (SELECT OA.[FechaMuestreo], OA.[HorasDeAceite], OA.[Fe_ppm], OA.[Cu_ppm], OA.[Si_ppm], E.[EquipmentNumber], ROW_NUMBER() OVER (PARTITION BY E.[EquipmentId] ORDER BY OA.[FechaMuestreo] DESC) AS rn FROM [dbo].[OilAnalysis] AS OA LEFT JOIN [dbo].[EquipmentComponent] AS EC ON OA.[EquipmentComponentId] = EC.[EquipmentComponentId] LEFT JOIN [dbo].[Equipment] AS E ON EC.[EquipmentId] = E.[EquipmentId] LEFT JOIN [dbo].[Project] AS P ON E.[ProjectId] = P.[ProjectId] WHERE P.[ProjectName] = 'Antapaccay' AND OA.[Compartimiento] LIKE '%motor%') SELECT TOP (2) [EquipmentNumber] AS [Equipo], [FechaMuestreo] AS [Fecha de Muestreo], [HorasDeAceite] AS [Horas de Aceite], [Fe_ppm], [Cu_ppm], [Si_ppm] FROM RankedOilAnalysis WHERE rn = 1 ORDER BY [Fe_ppm] DESC",
+          "respuesta_textual": "El análisis de las dos muestras de aceite revela un patrón concurrente de alta contaminación y desgaste severo. Ambos equipos presentan niveles elevados de Silicio (Si), un indicador de contaminación por partículas, junto con concentraciones muy altas de Hierro (Fe), que señalan un desgaste mecánico significativo. La evidencia apunta a que ambos fenómenos están ocurriendo simultáneamente, siendo la contaminación un factor probable que contribuye al desgaste.\n- Se observan niveles elevados y simultáneos de Silicio (hasta 117.7 ppm) y Hierro (hasta 214.8 ppm), lo que indica un problema combinado de contaminación y desgaste en los activos.\n- El equipo 3168 registra los valores más altos tanto de contaminación por Silicio (117.7 ppm) como de desgaste por Hierro (214.8 ppm).\n- A pesar de tener un aceite con muchas menos horas de uso (427 vs 2789), el equipo 3175 ya presenta un nivel de desgaste por Hierro (207.31 ppm) casi tan alto como el equipo 3168, sugiriendo una posible tasa de degradación acelerada.\nNota: El análisis se basa en solo dos muestras de equipos distintos, lo que es insuficiente para establecer una tendencia generalizada o confirmar una causa raíz.\nNota: No se dispone de un historial de datos o límites de alarma para contextualizar la severidad real de los valores observados.",
+          "row_count": 2,
+          "filas_resultado": [
+            {
+              "Equipo": "3168",
+              "Fecha de Muestreo": "2025-10-18T00:00:00",
+              "Horas de Aceite": 2789.0,
+              "Fe_ppm": 214.8,
+              "Cu_ppm": 3.41,
+              "Si_ppm": 117.7
+            },
+            {
+              "Equipo": "3175",
+              "Fecha de Muestreo": "2025-10-16T00:00:00",
+              "Horas de Aceite": 427.0,
+              "Fe_ppm": 207.31,
+              "Cu_ppm": 3.64,
+              "Si_ppm": 69.92
+            }
+          ],
+          "analisis_resultado": {
+            "row_count": 2,
+            "columnas": [
+              "Equipo",
+              "Fecha de Muestreo",
+              "Horas de Aceite",
+              "Fe_ppm",
+              "Cu_ppm",
+              "Si_ppm"
+            ],
+            "columna_tiempo": null,
+            "columna_categoria": "Equipo",
+            "metricas": {},
+            "categorias": {
+              "Equipo": {
+                "distinct": 2,
+                "top": [
+                  {
+                    "valor": "3168",
+                    "count": 1,
+                    "share": 0.5
+                  },
+                  {
+                    "valor": "3175",
+                    "count": 1,
+                    "share": 0.5
+                  }
+                ]
+              }
+            },
+            "tendencias": {},
+            "resumen_ejecutivo": "Se analizaron 2 filas y 6 columnas útiles en el resultado. La mayor concentración categórica aparece en Equipo: 3168 representa 50.0% de la muestra categórica observada. No se detectó una serie temporal suficientemente consistente para evaluar tendencia en este resultado.",
+            "graficos_sugeridos": []
+          },
+          "origen_respuesta": "nl_to_sql_normal",
+          "marca_tiempo": "2026-03-10T01:47:39.620898"
         }
       ],
-      "actualizada_en": "2026-03-09T19:21:54.494029"
+      "actualizada_en": "2026-03-10T01:47:39.621899"
     }
   }
 }

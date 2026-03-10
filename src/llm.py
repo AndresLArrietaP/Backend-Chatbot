@@ -14,6 +14,7 @@ Responsabilidades:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -24,10 +25,6 @@ from .providers.factory import obtener_proveedor as _obtener_proveedor
 log = logging.getLogger(__name__)
 
 _proveedor = _obtener_proveedor()
-
-# -----------------------------------------------------------------------------
-# Heurísticas de intención
-# -----------------------------------------------------------------------------
 
 _RE_PISTA_COMPARACION = re.compile(
     r"\b(supera|mayor\s+que|menor\s+que|más\s+que|menos\s+que|compar|vs\.?|versus|diferenc|pendien|despach)\b",
@@ -59,17 +56,17 @@ _RE_PISTA_CONTINUIDAD = re.compile(
 _RE_PISTA_SINTESIS_INTERPRETACION = re.compile(
     r"\b(explica|explícame|explicame|interpreta|interpretación|interpretacion|"
     r"resume|resumen|concluye|conclusión|conclusion|diagnostica|diagnóstico|diagnostico|"
-    r"tendencia|estable|incremento|decreciente|descendente|comportamiento)\b",
+    r"tendencia|estable|incremento|decreciente|descendente|comportamiento|"
+    r"patron|patrón|desgaste|contaminacion|contaminación)\b",
     re.IGNORECASE,
 )
 
 _RE_PISTA_CRITICIDAD = re.compile(
     r"\b(crítico|critico|críticos|criticos|severo|severa|severos|severas|"
-    r"alarma|riesgo|urgente|peor|peores|más\s+alto|mas\s+alto)\b",
+    r"alarma|riesgo|urgente|peor|peores|más\s+alto|mas\s+alto|"
+    r"prioriza|priorizalos|priorízalos|ordena|ordenalos|ordénalos)\b",
     re.IGNORECASE,
 )
-
-# ------------------------- Heurísticas compartimiento aceite ---------------------------
 
 _RE_PISTA_COMPARTIMIENTO_ACEITE = re.compile(
     r"\b(motor|transmision|transmisión|hidraulico|hidráulico|diferencial|mando\s+final|reductor|convertidor)\b",
@@ -82,10 +79,6 @@ _RE_PISTA_ANALISIS_ACEITE = re.compile(
     re.IGNORECASE,
 )
 
-
-# -----------------------------------------------------------------------------
-# Utilidades heurísticas
-# -----------------------------------------------------------------------------
 
 def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
     try:
@@ -125,10 +118,6 @@ def _es_intencion_sintesis_interpretacion(texto: str) -> bool:
 def _es_intencion_criticidad(texto: str) -> bool:
     return bool(_RE_PISTA_CRITICIDAD.search(texto or ""))
 
-
-# -----------------------------------------------------------------------------
-# Refuerzos de prompt
-# -----------------------------------------------------------------------------
 
 def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
     return (
@@ -185,7 +174,9 @@ def _reforzar_consulta_continuidad(q: str) -> str:
           "'quédate solo con', 'sin volver a listar', manteniendo por defecto el mismo subconjunto, "
           "mismo proyecto, mismas entidades, mismos filtros base y mismo universo ya establecido, "
           "salvo que el usuario indique explícitamente un cambio. "
-          "Si el usuario pide reinterpretar, resumir, explicar o priorizar, NO abras un dataset nuevo innecesariamente."
+          "Si el contexto ya contiene un subconjunto previamente filtrado, NO vuelvas al universo completo "
+          "ni amplíes el rango temporal por defecto. "
+          "Si el usuario pide reinterpretar, resumir, explicar o priorizar, prioriza el subconjunto ya disponible."
     )
 
 
@@ -209,10 +200,6 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     )
 
 
-# -----------------------------------------------------------------------------
-# API pública del módulo
-# -----------------------------------------------------------------------------
-
 def listar_modelos() -> Dict[str, Any]:
     if hasattr(_proveedor, "listar_modelos"):
         return _proveedor.listar_modelos()
@@ -235,9 +222,6 @@ async def consulta_humana_a_sql(
     modelo: Optional[str] = None,
     conversation_context: Optional[str] = None,
 ) -> str:
-    """
-    Convierte NL → SQL mediante el proveedor activo.
-    """
     q = (consulta_humana or "").strip()
     if not q:
         raise ValueError("consulta_humana vacía")
@@ -344,6 +328,14 @@ async def construir_respuesta(
         human_query=consulta_humana,
         model=modelo,
     )
+
+
+def run_sync_construir_respuesta(
+    filas: List[Dict[str, Any]],
+    consulta_humana: str,
+    modelo: Optional[str] = None,
+) -> str:
+    return asyncio.run(construir_respuesta(filas, consulta_humana, modelo=modelo))
 
 
 async def human_query_to_sql(
