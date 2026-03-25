@@ -1,10 +1,24 @@
 # src/providers/factory.py
-
+# -*- coding: utf-8 -*-
 """
-Módulo: factory
----------------
-Contiene la interfaz base para los proveedores LLM y la función
-que selecciona automáticamente el proveedor configurado en el .env.
+Módulo: providers.factory
+--------------------------
+Define la interfaz estructural (Protocol) que deben cumplir todos los
+proveedores LLM, y expone la función de fábrica que instancia el proveedor
+configurado en el entorno.
+
+Proveedores disponibles:
+  gemini   → GeminiProvider  (src/providers/gemini_client.py)  ← activo por defecto
+  openai   → OpenAIProvider  (src/providers/openai_client.py)  ← alternativo
+
+Selección:
+  Configura LLM_PROVIDER=gemini o LLM_PROVIDER=openai en el .env.
+  La función obtener_proveedor() devuelve la instancia correcta al importar el módulo.
+
+Uso:
+  from src.providers.factory import obtener_proveedor
+  proveedor = obtener_proveedor()
+  sql = await proveedor.consulta_humana_a_sql(...)
 """
 
 from typing import Protocol, List, Dict, Any, Optional

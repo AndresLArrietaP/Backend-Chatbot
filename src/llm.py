@@ -3,13 +3,24 @@
 """
 Módulo: llm
 -----------
-Capa orquestadora sobre el proveedor LLM (Gemini/OpenAI).
+Capa orquestadora entre la API y el proveedor LLM activo (Gemini / OpenAI).
 
 Responsabilidades:
-- Aplicar heurísticas livianas antes de enviar la consulta al proveedor.
-- Reforzar consultas de continuidad conversacional.
-- Reforzar consultas del dominio análisis de aceite.
-- Mantener compatibilidad con proveedores Gemini/OpenAI.
+  1. Detectar la intención de la consulta mediante heurísticas regex livianas
+     (compartimiento de aceite, ventana CTE, comparativa, continuidad, criticidad…).
+  2. Reforzar el prompt con instrucciones adicionales según la intención detectada,
+     mejorando la precisión del SQL generado sin modificar la consulta del usuario.
+  3. Delegar la generación de SQL al proveedor activo (GeminiProvider u OpenAIProvider).
+  4. Construir la respuesta analítica final (build_answer / construir_respuesta).
+  5. Exponer aliases en inglés para compatibilidad con código anterior.
+
+Flujo principal:
+  consulta_humana_a_sql()
+    → detección de heurísticas
+    → refuerzo del prompt
+    → proveedor.consulta_humana_a_sql()
+    → validación del JSON de salida
+    → enriquecimiento (original_query, heuristicas_aplicadas)
 """
 
 from __future__ import annotations
@@ -25,6 +36,12 @@ from .providers.factory import obtener_proveedor as _obtener_proveedor
 log = logging.getLogger(__name__)
 
 _proveedor = _obtener_proveedor()
+
+
+# ==============================================================================
+#  Patrones regex de detección de intención (heurísticas livianas)
+#  Se evalúan sobre la consulta del usuario + contexto conversacional.
+# ==============================================================================
 
 _RE_PISTA_COMPARACION = re.compile(
     r"\b(supera|mayor\s+que|menor\s+que|más\s+que|menos\s+que|compar|vs\.?|versus|diferenc|pendien|despach)\b",
@@ -80,6 +97,10 @@ _RE_PISTA_ANALISIS_ACEITE = re.compile(
 )
 
 
+# ==============================================================================
+#  Utilidades internas
+# ==============================================================================
+
 def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
     try:
         obj = json.loads(s or "")
@@ -118,6 +139,10 @@ def _es_intencion_sintesis_interpretacion(texto: str) -> bool:
 def _es_intencion_criticidad(texto: str) -> bool:
     return bool(_RE_PISTA_CRITICIDAD.search(texto or ""))
 
+
+# ==============================================================================
+#  Funciones de refuerzo de prompt (inyectadas según heurística detectada)
+# ==============================================================================
 
 def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
     return (
@@ -199,6 +224,10 @@ def _reforzar_consulta_criticidad(q: str) -> str:
           "Evita inventar umbrales operativos que no existan en la base."
     )
 
+
+# ==============================================================================
+#  API pública del módulo
+# ==============================================================================
 
 def listar_modelos() -> Dict[str, Any]:
     if hasattr(_proveedor, "listar_modelos"):
@@ -355,6 +384,10 @@ async def human_query_to_sql(
         conversation_context=conversation_context,
     )
 
+
+# ==============================================================================
+#  Helpers de extracción
+# ==============================================================================
 
 def extraer_sql_de_json(sql_json: str) -> Optional[str]:
     obj = _json_cauto_loads(sql_json)

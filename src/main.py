@@ -3,15 +3,43 @@
 """
 Módulo: main
 ------------
-Router principal de la API (FastAPI) para NL→SQL sobre Azure SQL / PostgreSQL.
+Router principal de la API (FastAPI) — NL→SQL sobre Azure SQL / PostgreSQL.
 
-Incluye:
-- Endpoints base de salud y esquema.
-- Endpoints NL→SQL y SQL directo.
-- Generación opcional de respuesta analítica en lenguaje natural.
-- Contexto conversacional en memoria para continuidad entre turnos.
-- Reuso determinístico del último resultado en memoria cuando la consulta
-  solo pide interpretar, resumir o refinar el subconjunto ya obtenido.
+Endpoints disponibles:
+  GET  /health                      Healthcheck básico.
+  GET  /llm/ping                    Verifica disponibilidad del proveedor LLM.
+  GET  /llm/models                  Lista los modelos disponibles del proveedor.
+  GET  /chat/context/{session_id}   Recupera el historial de conversación de una sesión.
+  GET  /schema                      Devuelve el esquema de la BD (cacheado).
+  POST /schema/refresh              Fuerza la recarga del caché de esquema.
+  POST /human_query                 Endpoint principal: NL → SQL → resultado → respuesta.
+  POST /sql                         Ejecución directa de SQL (solo lectura, validado).
+
+Flujo de /human_query:
+  1. Recupera contexto de sesión (GestorContextoConversacional).
+  2. Evalúa si la consulta puede resolverse desde memoria (sin re-ejecutar SQL):
+     a. _puede_refinar_desde_memoria()   → filtra/ordena el resultado previo.
+     b. _puede_responder_desde_memoria() → sintetiza/interpreta sin nueva query.
+  3. Si necesita SQL nuevo:
+     a. Obtiene/cachea el esquema relevante.
+     b. Llama a llm.consulta_humana_a_sql() con heurísticas de dominio.
+     c. Limpia, valida y ejecuta el SQL.
+     d. Reintentos automáticos: empty-result, null-group, null-projection, window-retry.
+  4. Genera análisis determinístico (analitica.py).
+  5. Construye respuesta en lenguaje natural (LLM o fallback estadístico).
+  6. Registra el turno en la sesión activa.
+
+Mecanismos de reintento:
+  SQL_EMPTY_RESULT_RETRY      — reescribe cuando el resultado es 0 filas.
+  SQL_NULL_GROUP_RETRY        — corrige GROUP BY con NULLs distorsionadores.
+  SQL_NULL_PROJECTION_RETRY   — agrega COALESCE en proyecciones con NULLs.
+  SQL_LATEST_WINDOW_RETRY     — reescribe hacia CTE/ROW_NUMBER para "último registro".
+
+Continuidad conversacional (memoria):
+  _RE_INTERPRETACION_MEMORIA  / _puede_responder_desde_memoria()
+  _RE_REFINAR_MEMORIA         / _puede_refinar_desde_memoria()
+  → Detectan intenciones como "explica", "resume", "prioriza", "quédate solo con…"
+    y responden usando las filas ya en memoria (sql=null, executed=false).
 """
 
 from __future__ import annotations

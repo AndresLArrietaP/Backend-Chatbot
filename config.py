@@ -1,9 +1,20 @@
+# config.py
 # -*- coding: utf-8 -*-
 """
 Módulo: config
 --------------
-Carga de configuración de la aplicación desde variables de entorno
-y utilidades para administrar conexiones dinámicas a bases de datos.
+Carga de configuración de la aplicación desde variables de entorno (.env)
+y registro de conexiones dinámicas a bases de datos.
+
+Uso:
+    from config import config as perfiles
+    configuracion = perfiles.get("development")
+
+Perfiles disponibles:
+    - development (predeterminado)
+
+Extensión futura:
+    - Agregar ProductionConfig / StagingConfig según necesidad.
 """
 
 from __future__ import annotations
@@ -12,10 +23,23 @@ import os
 from decouple import config as env
 
 
+# ==============================================================================
+#  Carga dinámica de conexiones adicionales (prefijo DB_CONN_)
+# ==============================================================================
+
 def cargar_conexiones_desde_entorno(prefix: str = "DB_CONN_") -> dict[str, str]:
     """
-    Lee todas las variables de entorno que empiecen por `prefix` y construye
-    un registro con nombre -> DSN.
+    Lee variables de entorno con el prefijo dado y construye un registro
+    de conexiones { nombre_corto: dsn }.
+
+    Ejemplo de variable de entorno:
+        DB_CONN_REPORTES=mssql+pymssql://user:pass@server/db
+
+    Args:
+        prefix: Prefijo de las variables a leer (default "DB_CONN_").
+
+    Returns:
+        Dict con { nombre: dsn } para cada variable encontrada.
     """
     conexiones: dict[str, str] = {}
     for clave, valor in os.environ.items():
@@ -27,78 +51,103 @@ def cargar_conexiones_desde_entorno(prefix: str = "DB_CONN_") -> dict[str, str]:
     return conexiones
 
 
+# ==============================================================================
+#  Clase base de configuración
+# ==============================================================================
+
 class Config:
-    """Configuración base de la aplicación."""
+    """
+    Configuración base de la aplicación.
 
-    # Metadatos / app
-    APP_NAME = env("APP_NAME", default="NL→SQL API")
-    DEBUG = env("DEBUG", default=False, cast=bool)
-    APP_PROFILE = env("APP_PROFILE", default="development")
+    Todos los valores se leen desde variables de entorno mediante python-decouple.
+    Los defaults garantizan que la app arranque en entorno local sin .env completo.
+    """
 
-    # OpenAPI / CORS / proxy público
-    ALLOW_ORIGINS = env("ALLOW_ORIGINS", default="*")
-    PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="")
+    # --- Metadatos de la aplicación ---
+    APP_NAME: str    = env("APP_NAME", default="NL→SQL API")
+    DEBUG: bool      = env("DEBUG", default=False, cast=bool)
+    APP_PROFILE: str = env("APP_PROFILE", default="development")
 
-    # Seguridad futura (opcional, hoy no obligatoria)
-    API_KEY = env("API_KEY", default="")
+    # --- CORS y proxy público (ngrok / Render) ---
+    ALLOW_ORIGINS: str   = env("ALLOW_ORIGINS", default="*")
+    PUBLIC_BASE_URL: str = env("PUBLIC_BASE_URL", default="")
 
-    # Gemini
-    LLM_PROVIDER = env("LLM_PROVIDER", default="gemini").lower()
-    GOOGLE_API_KEY = env("GOOGLE_API_KEY", default=None)
-    GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-3-flash")
-    GEMINI_MODEL_ANSWER = env("GEMINI_MODEL_ANSWER", default="gemini-3-pro")
+    # --- Seguridad de API (opcional, no obligatoria aún) ---
+    API_KEY: str = env("API_KEY", default="")
 
-    # OpenAI
-    OPENAI_API_KEY = env("OPENAI_API_KEY", default=None)
-    OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-4o")
+    # --- Proveedor LLM activo ---
+    LLM_PROVIDER: str = env("LLM_PROVIDER", default="gemini").lower()
 
-    # Conexiones dinámicas
-    CONNECTIONS = cargar_conexiones_desde_entorno()
-    DEFAULT_CONNECTION = env("DEFAULT_CONNECTION", default=None)
+    # --- Gemini (proveedor principal) ---
+    GOOGLE_API_KEY: str | None    = env("GOOGLE_API_KEY", default=None)
+    GEMINI_MODEL: str             = env("GEMINI_MODEL", default="gemini-3-flash")
+    GEMINI_MODEL_ANSWER: str      = env("GEMINI_MODEL_ANSWER", default="gemini-3-pro")
+
+    # --- OpenAI (proveedor alternativo) ---
+    OPENAI_API_KEY: str | None = env("OPENAI_API_KEY", default=None)
+    OPENAI_MODEL: str          = env("OPENAI_MODEL", default="gpt-4o")
+
+    # --- Conexiones dinámicas (DB_CONN_*) ---
+    CONNECTIONS: dict[str, str] = cargar_conexiones_desde_entorno()
+    DEFAULT_CONNECTION: str | None = env("DEFAULT_CONNECTION", default=None)
     if not DEFAULT_CONNECTION and CONNECTIONS:
         DEFAULT_CONNECTION = next(iter(CONNECTIONS.keys()))
 
-    # Alcance por defecto de introspección
-    ALLOWED_SCHEMAS = [s.strip() for s in env("ALLOWED_SCHEMAS", default="public").split(",") if s.strip()]
-    TARGET_SCHEMAS = env("TARGET_SCHEMAS", default="public")
+    # --- Esquemas de introspección ---
+    ALLOWED_SCHEMAS: list[str] = [
+        s.strip()
+        for s in env("ALLOWED_SCHEMAS", default="public").split(",")
+        if s.strip()
+    ]
+    TARGET_SCHEMAS: str = env("TARGET_SCHEMAS", default="public")
 
-    # Dialecto y límites
-    DB_DIALECT = env("DB_DIALECT", default="postgresql")
-    MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
-    MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=2000, cast=int)
-    MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
-    MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
+    # --- Dialecto y límites de consulta ---
+    DB_DIALECT: str      = env("DB_DIALECT", default="postgresql")
+    MAX_ROWS_DEFAULT: int = env("MAX_ROWS_DEFAULT", default=100, cast=int)
+    MAX_ROWS_HARD: int    = env("MAX_ROWS_HARD", default=2000, cast=int)
+    MAX_SCHEMA_TABLES: int   = env("MAX_SCHEMA_TABLES", default=50, cast=int)
+    MAX_SCHEMA_COLUMNS: int  = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
 
-    # Seguridad SQL opcional
-    ALLOW_SQL_EXPLAIN = env("ALLOW_SQL_EXPLAIN", default=True, cast=bool)
-    ALLOW_EXPLAIN_ANALYZE = env("ALLOW_EXPLAIN_ANALYZE", default=False, cast=bool)
-    ALLOW_SQL_VALUES = env("ALLOW_SQL_VALUES", default=True, cast=bool)
-    ALLOW_SQL_CALL = env("ALLOW_SQL_CALL", default=False, cast=bool)
+    # --- Seguridad SQL (solo lectura) ---
+    ALLOW_SQL_EXPLAIN: bool     = env("ALLOW_SQL_EXPLAIN", default=True, cast=bool)
+    ALLOW_EXPLAIN_ANALYZE: bool = env("ALLOW_EXPLAIN_ANALYZE", default=False, cast=bool)
+    ALLOW_SQL_VALUES: bool      = env("ALLOW_SQL_VALUES", default=True, cast=bool)
+    ALLOW_SQL_CALL: bool        = env("ALLOW_SQL_CALL", default=False, cast=bool)
 
-    # Contexto conversacional en memoria
-    CONTEXTO_CHAT_TTL_MINUTOS = env("CONTEXTO_CHAT_TTL_MINUTOS", default=45, cast=int)
-    CONTEXTO_CHAT_MAX_TURNOS = env("CONTEXTO_CHAT_MAX_TURNOS", default=8, cast=int)
-    CONTEXTO_CHAT_MAX_CARACTERES = env("CONTEXTO_CHAT_MAX_CARACTERES", default=5000, cast=int)
+    # --- Contexto conversacional en memoria ---
+    CONTEXTO_CHAT_TTL_MINUTOS: int     = env("CONTEXTO_CHAT_TTL_MINUTOS", default=45, cast=int)
+    CONTEXTO_CHAT_MAX_TURNOS: int      = env("CONTEXTO_CHAT_MAX_TURNOS", default=8, cast=int)
+    CONTEXTO_CHAT_MAX_CARACTERES: int  = env("CONTEXTO_CHAT_MAX_CARACTERES", default=5000, cast=int)
 
-    # Selección de esquema relevante
-    ESQUEMA_RELEVANTE_ACTIVO = env("ESQUEMA_RELEVANTE_ACTIVO", default=True, cast=bool)
-    ESQUEMA_RELEVANTE_MAX_TABLAS = env("ESQUEMA_RELEVANTE_MAX_TABLAS", default=18, cast=int)
+    # --- Esquema relevante para el prompt del LLM ---
+    ESQUEMA_RELEVANTE_ACTIVO: bool      = env("ESQUEMA_RELEVANTE_ACTIVO", default=True, cast=bool)
+    ESQUEMA_RELEVANTE_MAX_TABLAS: int   = env("ESQUEMA_RELEVANTE_MAX_TABLAS", default=18, cast=int)
 
-    # Respuesta analítica y gráficas sugeridas
-    GENERAR_RESPUESTA_TEXTO = env("GENERAR_RESPUESTA_TEXTO", default=True, cast=bool)
-    INCLUIR_ANALISIS_RESULTADO = env("INCLUIR_ANALISIS_RESULTADO", default=True, cast=bool)
-    INCLUIR_SUGERENCIAS_GRAFICO = env("INCLUIR_SUGERENCIAS_GRAFICO", default=True, cast=bool)
+    # --- Opciones de respuesta analítica ---
+    GENERAR_RESPUESTA_TEXTO: bool        = env("GENERAR_RESPUESTA_TEXTO", default=True, cast=bool)
+    INCLUIR_ANALISIS_RESULTADO: bool     = env("INCLUIR_ANALISIS_RESULTADO", default=True, cast=bool)
+    INCLUIR_SUGERENCIAS_GRAFICO: bool    = env("INCLUIR_SUGERENCIAS_GRAFICO", default=True, cast=bool)
 
+
+# ==============================================================================
+#  Perfil de desarrollo
+# ==============================================================================
 
 class DevelopmentConfig(Config):
-    """Perfil de desarrollo."""
-
+    """
+    Perfil de desarrollo: activa DEBUG y permite recargas automáticas de uvicorn.
+    """
     DEBUG = True
 
+
+# ==============================================================================
+#  Aliases de compatibilidad y registro de perfiles
+# ==============================================================================
 
 Configuracion = Config
 ConfiguracionDesarrollo = DevelopmentConfig
 
+# Registro de perfiles disponibles (usado en index.py)
 config = {
     "development": DevelopmentConfig,
 }

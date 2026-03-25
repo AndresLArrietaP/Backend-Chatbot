@@ -1,8 +1,24 @@
 # src/analitica.py
 # -*- coding: utf-8 -*-
 """
+Módulo: analitica
+-----------------
 Utilidades determinísticas para analizar resultados tabulares y enriquecer
-la respuesta del chatbot con métricas, tendencias y sugerencias de gráfico.
+la respuesta del chatbot con métricas estadísticas, tendencias y sugerencias
+de gráfico.
+
+No depende de ningún LLM: todo el análisis es numérico/categórico puro.
+Se llama desde src/main.py después de ejecutar el SQL y antes de construir
+la respuesta en lenguaje natural.
+
+Funciones públicas:
+    generar_analisis_resultado(filas, consulta_humana) → Dict
+        Genera el bloque de análisis completo: métricas por columna numérica,
+        distribución categórica, tendencias temporales y sugerencias de gráfico.
+
+    renderizar_resumen_analitico(analisis) → str
+        Convierte el dict de análisis en texto legible como fallback cuando
+        el LLM no produce una respuesta aceptable.
 """
 
 from __future__ import annotations

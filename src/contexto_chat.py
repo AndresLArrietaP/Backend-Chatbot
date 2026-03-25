@@ -1,12 +1,31 @@
 # src/contexto_chat.py
 # -*- coding: utf-8 -*-
 """
-Memoria conversacional para desarrollo con:
-- TTL
-- límite de turnos
-- persistencia opcional a archivo JSON
-- recuperación entre recargas/reloads de uvicorn
-- almacenamiento del último resultado para continuidad determinística
+Módulo: contexto_chat
+---------------------
+Memoria conversacional por sesión con TTL, límite de turnos y persistencia
+opcional a disco (archivo JSON).
+
+Características:
+  - Gestiona múltiples sesiones simultáneas en memoria (dict en RAM).
+  - TTL configurable por sesión: las conversaciones expiradas se eliminan
+    automáticamente al siguiente acceso.
+  - Máximo de turnos por sesión (ventana deslizante FIFO).
+  - Persistencia opcional a .cache/contexto_chat.json para sobrevivir
+    recargas de uvicorn en desarrollo.
+  - Expone el último resultado (filas + SQL + análisis) para que src/main.py
+    pueda responder desde memoria sin re-ejecutar SQL.
+
+Clases:
+    TurnoConversacion   — Snapshot de un turno (pregunta + SQL + respuesta + filas).
+    ConversacionActiva  — Lista de turnos de una sesión.
+    GestorContextoConversacional — Gestor principal; instanciado una vez en main.py.
+
+Configuración (.env):
+    CONTEXTO_CHAT_TTL_MINUTOS        (default: 45)
+    CONTEXTO_CHAT_MAX_TURNOS         (default: 8)
+    CONTEXTO_CHAT_MAX_CARACTERES     (default: 5000)
+    CONTEXTO_CHAT_MAX_FILAS_RESULTADO (default: 200)
 """
 
 from __future__ import annotations
