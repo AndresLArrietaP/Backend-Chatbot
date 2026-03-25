@@ -117,7 +117,8 @@ _RE_INTERPRETACION_MEMORIA = re.compile(
     r"sin\s+volver\s+a\s+listar|sin\s+repetir|explica|explicame|explícame|"
     r"interpreta|interpretacion|interpretación|resume|resumen|concluye|conclusion|conclusión|"
     r"patron|patrón|apunta|desgaste|contaminacion|contaminación|"
-    r"diagnostica|diagnóstico|diagnostico"
+    r"diagnostica|diagnóstico|diagnostico|"
+    r"prioriza|priorizarse|priorizalos|priorízalos|cuál\s+priorizar|cuales\s+priorizar"
     r")\b",
     re.IGNORECASE,
 )
@@ -592,7 +593,8 @@ _RE_INTENCION_INTERPRETAR_RESULTADO_PREVIO = re.compile(
     r"resume|resumen|concluye|conclusión|conclusion|"
     r"qué\s+significa|que\s+significa|"
     r"patron|patrón|apunta|sugiere|"
-    r"desgaste|contaminacion|contaminación"
+    r"desgaste|contaminacion|contaminación|"
+    r"prioriza|priorizarse|priorizalos|priorízalos|cuál\s+priorizar|cuales\s+priorizar"
     r")\b",
     re.IGNORECASE,
 )

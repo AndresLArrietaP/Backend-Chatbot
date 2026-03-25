@@ -334,12 +334,14 @@ class GestorContextoConversacional:
 
             ultimo = conv.turnos[-1]
 
+        filas = list(ultimo.filas_resultado or [])
         return {
             "consulta_usuario": ultimo.consulta_usuario,
             "sql_generado": ultimo.sql_generado,
             "respuesta_textual": ultimo.respuesta_textual,
             "row_count": ultimo.row_count,
-            "rows": list(ultimo.filas_resultado or []),
+            "rows": filas,
+            "rows_resultado": filas,
             "analisis": dict(ultimo.analisis_resultado or {}),
             "origen_respuesta": ultimo.origen_respuesta,
         }
