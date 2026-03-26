@@ -177,6 +177,8 @@ def _reforzar_componentes_modelo(q: str) -> str:
           "(ej: dbo.OilAnalysis.Compartimiento), NO en tablas de catálogo de componentes. "
           "USA SELECT DISTINCT [OA].[Compartimiento] — NUNCA uses GROUP BY para listar compartimientos, "
           "ya que en SQL Server GROUP BY con alias en ORDER BY genera error 8127. "
+          "En SQL Server el orden obligatorio es SELECT DISTINCT TOP (N), NUNCA SELECT TOP (N) DISTINCT "
+          "— poner TOP antes de DISTINCT genera error de sintaxis 156. "
           "Filtra con [OA].[Compartimiento] IS NOT NULL directamente en el WHERE, no en COALESCE del SELECT. "
           "Si el usuario menciona un nombre de proyecto (ej: 'Antapaccay'), ese nombre NO es el ID: "
           "haz JOIN entre la tabla de equipos y la tabla de proyectos para resolver nombre → UUID. "
