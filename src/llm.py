@@ -96,6 +96,14 @@ _RE_PISTA_ANALISIS_ACEITE = re.compile(
     re.IGNORECASE,
 )
 
+_RE_PISTA_COMPONENTES_MODELO = re.compile(
+    r"\b(componente[s]?|compartimiento[s]?)\b.{0,80}\b(modelo|equipo|maquina|máquina|proyecto)\b"
+    r"|\b(modelo|equipo|maquina|máquina|proyecto)\b.{0,80}\b(componente[s]?|compartimiento[s]?)\b"
+    r"|\b(qué\s+componentes|cuáles\s+componentes|listar\s+componentes|enlista[r]?\s+componentes"
+    r"|dame\s+los\s+componentes|dame\s+los\s+compartimientos|qué\s+compartimientos)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 # ==============================================================================
 #  Utilidades internas
@@ -107,6 +115,10 @@ def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
         return obj if isinstance(obj, dict) else None
     except Exception:
         return None
+
+
+def _es_intencion_componentes_modelo(texto: str) -> bool:
+    return bool(_RE_PISTA_COMPONENTES_MODELO.search(texto or ""))
 
 
 def _es_intencion_compartimiento_aceite(texto: str) -> bool:
@@ -154,6 +166,23 @@ def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
           "Prefiere filtrar con LIKE sobre Compartimiento. "
           "NO uses dbo.Component.ComponentName salvo que el usuario pida explícitamente el componente maestro, "
           "catálogo de componentes o una dimensión de componente de catálogo."
+    )
+
+
+def _reforzar_componentes_modelo(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE: cuando el usuario pida 'componentes' o 'compartimientos' de un equipo o modelo, "
+          "los compartimientos se encuentran en el campo Compartimiento de la tabla de análisis de aceite "
+          "(ej: dbo.OilAnalysis.Compartimiento), NO en tablas de catálogo de componentes. "
+          "Usa SELECT DISTINCT Compartimiento para listar sin duplicados y filtra con IS NOT NULL. "
+          "Si el usuario menciona un nombre de proyecto (ej: 'Antapaccay'), ese nombre NO es el ID: "
+          "haz JOIN entre la tabla de equipos y la tabla de proyectos para resolver nombre → UUID, "
+          "luego filtra por ese UUID. "
+          "Si el usuario pide 'cualquier modelo' o 'el primer modelo', usa TOP 1 en un subquery o CTE "
+          "para fijar ese modelo primero y luego obtener sus compartimientos. "
+          "Usa COALESCE sobre columnas descriptivas que puedan ser NULL, con fallback a columnas "
+          "relacionadas disponibles en el esquema. No uses literales como 'N/A' o 'Desconocido'."
     )
 
 
@@ -260,6 +289,10 @@ async def consulta_humana_a_sql(
     q_reforzada = q
 
     heuristicas_aplicadas: List[str] = []
+
+    if _es_intencion_componentes_modelo(base_heuristica):
+        q_reforzada = _reforzar_componentes_modelo(q_reforzada)
+        heuristicas_aplicadas.append("componentes_modelo")
 
     if _es_intencion_compartimiento_aceite(base_heuristica):
         q_reforzada = _reforzar_consulta_compartimiento_aceite(q_reforzada)
