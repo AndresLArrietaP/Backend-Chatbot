@@ -187,7 +187,7 @@ class GestorContextoConversacional:
         }
 
         tmp = self.ruta_archivo.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         tmp.replace(self.ruta_archivo)
 
     def _sincronizar_desde_disco(self) -> None:

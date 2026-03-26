@@ -48,6 +48,7 @@ import json
 import logging
 import time
 import unicodedata
+import uuid
 import re
 from decimal import Decimal
 from hashlib import sha1
@@ -214,6 +215,8 @@ def _a_jsonable(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for k, v in (r or {}).items():
             if isinstance(v, Decimal):
                 nr[k] = float(round(v, DECIMAL_PLACES))
+            elif isinstance(v, uuid.UUID):
+                nr[k] = str(v)
             else:
                 nr[k] = v
         out.append(nr)

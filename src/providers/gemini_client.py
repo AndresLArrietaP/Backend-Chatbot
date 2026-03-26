@@ -96,7 +96,7 @@ def _compactar_filas_para_resumen(filas: List[Dict[str, Any]], max_filas: int, m
         return out
 
     datos = [_normalizar_fila(r) for r in filas[:max_filas]]
-    s = json.dumps(datos, ensure_ascii=False)
+    s = json.dumps(datos, ensure_ascii=False, default=str)
 
     if len(s) <= max_caracteres:
         return s
