@@ -175,14 +175,15 @@ def _reforzar_componentes_modelo(q: str) -> str:
         + " | IMPORTANTE: cuando el usuario pida 'componentes' o 'compartimientos' de un equipo o modelo, "
           "los compartimientos se encuentran en el campo Compartimiento de la tabla de análisis de aceite "
           "(ej: dbo.OilAnalysis.Compartimiento), NO en tablas de catálogo de componentes. "
-          "Usa SELECT DISTINCT Compartimiento para listar sin duplicados y filtra con IS NOT NULL. "
+          "USA SELECT DISTINCT [OA].[Compartimiento] — NUNCA uses GROUP BY para listar compartimientos, "
+          "ya que en SQL Server GROUP BY con alias en ORDER BY genera error 8127. "
+          "Filtra con [OA].[Compartimiento] IS NOT NULL directamente en el WHERE, no en COALESCE del SELECT. "
           "Si el usuario menciona un nombre de proyecto (ej: 'Antapaccay'), ese nombre NO es el ID: "
-          "haz JOIN entre la tabla de equipos y la tabla de proyectos para resolver nombre → UUID, "
-          "luego filtra por ese UUID. "
-          "Si el usuario pide 'cualquier modelo' o 'el primer modelo', usa TOP 1 en un subquery o CTE "
-          "para fijar ese modelo primero y luego obtener sus compartimientos. "
-          "Usa COALESCE sobre columnas descriptivas que puedan ser NULL, con fallback a columnas "
-          "relacionadas disponibles en el esquema. No uses literales como 'N/A' o 'Desconocido'."
+          "haz JOIN entre la tabla de equipos y la tabla de proyectos para resolver nombre → UUID. "
+          "Si el usuario pide 'cualquier modelo' o 'el primer modelo', usa un CTE o subquery con TOP 1 "
+          "para fijar ese MachineModel primero, luego obtén sus compartimientos con DISTINCT. "
+          "En ORDER BY usa únicamente columnas que aparezcan directamente en el SELECT sin alias compuesto. "
+          "No uses COALESCE en el SELECT de compartimientos — selecciona la columna directamente."
     )
 
 
