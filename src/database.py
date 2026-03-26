@@ -78,6 +78,8 @@ ALLOW_EXPLAIN_ANALYZE: bool = env("ALLOW_EXPLAIN_ANALYZE", default=False, cast=b
 ALLOW_SQL_VALUES: bool = env("ALLOW_SQL_VALUES", default=True, cast=bool)
 ALLOW_SQL_CALL: bool = env("ALLOW_SQL_CALL", default=False, cast=bool)
 
+DB_QUERY_TIMEOUT: int = env("DB_QUERY_TIMEOUT", default=60, cast=int)
+
 _engine_kwargs = dict(
     poolclass=QueuePool,
     pool_size=5,
@@ -87,9 +89,17 @@ _engine_kwargs = dict(
 
 # SQLAlchemy engine: Postgres usa sslmode, MSSQL no.
 if es_mssql():
-    engine = create_engine(DATABASE_URL, **_engine_kwargs)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"timeout": DB_QUERY_TIMEOUT},
+        **_engine_kwargs,
+    )
 else:
-    engine = create_engine(DATABASE_URL, connect_args={"sslmode": "require"}, **_engine_kwargs)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"sslmode": "require", "options": f"-c statement_timeout={DB_QUERY_TIMEOUT * 1000}"},
+        **_engine_kwargs,
+    )
 
 Session = sessionmaker(bind=engine)
 

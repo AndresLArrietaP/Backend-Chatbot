@@ -44,6 +44,7 @@ Continuidad conversacional (memoria):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -74,6 +75,7 @@ TARGET_SCHEMAS = [s.strip() for s in (env("TARGET_SCHEMAS", default="public") or
 
 MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
 MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
+REQUEST_TIMEOUT = env("REQUEST_TIMEOUT", default=200, cast=int)
 
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
 MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
@@ -1007,6 +1009,19 @@ def schema_refresh(req: SchemaRequest) -> Dict[str, Any]:
 
 @router.post("/human_query", dependencies=[Depends(guardia_api_key)])
 async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
+    try:
+        return await asyncio.wait_for(
+            _procesar_human_query(payload),
+            timeout=REQUEST_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=408,
+            detail="La consulta tardó demasiado. Intenta ser más específico o simplificar la pregunta.",
+        )
+
+
+async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     human = _normalizar_str(payload.human_query)
     if not human:
         raise HTTPException(status_code=400, detail="human_query vacío.")
