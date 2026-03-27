@@ -78,6 +78,7 @@ MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
 REQUEST_TIMEOUT = env("REQUEST_TIMEOUT", default=200, cast=int)
 DB_QUERY_TIMEOUT = env("DB_QUERY_TIMEOUT", default=60, cast=int)
 MAX_SQL_RETRIES_TOTAL = env("MAX_SQL_RETRIES_TOTAL", default=1, cast=int)
+RETRY_TIME_BUDGET = env("RETRY_TIME_BUDGET", default=150, cast=int)  # segundos; si se superan, no se dispara ningún reintento
 
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
 MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
@@ -509,6 +510,12 @@ def _construir_prompt_retry_cero_filas_semantico(
         f"en contexto de análisis de aceite, trátalo preferentemente como valor descriptivo de Compartimiento "
         f"en tablas de análisis de aceite, no como dbo.Component.ComponentName.\n"
         f"- Prefiere filtros tipo LIKE sobre Compartimiento cuando aplique.\n"
+        f"- Amplía el rango de fechas: usa DATEADD(YEAR, -10, GETDATE()) o elimina el filtro de fecha.\n"
+        f"- Si la consulta pide la ÚLTIMA muestra por componente/compartimiento, "
+        f"usa GROUP BY+MAX (NO ROW_NUMBER) para mejor rendimiento: "
+        f"CTE con GROUP BY MiningEquipmentId, Compartimiento y MAX(FechaMuestreo) AS UltimaFecha, "
+        f"luego JOIN de vuelta a [Oil].[LaboratoryData] sobre esas tres columnas.\n"
+        f"- Agrega WITH (NOLOCK) en TODOS los FROM/JOIN.\n"
         f"- Mantén el límite apropiado para SQL Server: TOP({limite_por_defecto}).\n"
         f"- Devuelve SOLO JSON con sql_query.\n\n"
         f"SQL anterior (referencia, NO lo repitas igual):\n{sql_anterior}"
@@ -1306,6 +1313,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     warning_sql_retry: List[str] = []
     _retries_total = 0  # presupuesto compartido entre todos los tipos de reintento
+    _t_inicio_sql = time.time()  # reloj para presupuesto de tiempo de retries
 
     try:
         rows = await _ejecutar_sql_actual(sql_query)
@@ -1338,6 +1346,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
+        and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
         and SQL_EMPTY_RESULT_RETRY
         and len(rows) == 0
         and SQL_EMPTY_RESULT_RETRY_MAX > 0
@@ -1375,6 +1384,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
+        and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
         and SQL_NULL_GROUP_RETRY
         and SQL_NULL_GROUP_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
@@ -1411,6 +1421,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
+        and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
         and SQL_NULL_PROJECTION_RETRY
         and SQL_NULL_PROJECTION_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
@@ -1447,6 +1458,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
+        and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
         and SQL_LATEST_WINDOW_RETRY
         and SQL_LATEST_WINDOW_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
