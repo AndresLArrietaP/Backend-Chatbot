@@ -887,6 +887,15 @@ DIALECT: SQL SERVER (T-SQL / Azure SQL)
 - When using TOP, if the query is an aggregation or ranking, include an ORDER BY that matches the intent
   (e.g., ORDER BY SUM(...) DESC, ORDER BY [Fecha] DESC).
 
+READ-ONLY PERFORMANCE HINT (VERY IMPORTANT):
+- This database is accessed in READ-ONLY mode. Always add WITH (NOLOCK) to every table reference
+  in FROM and JOIN clauses to avoid lock waits from concurrent writes by other applications.
+- Apply WITH (NOLOCK) inside CTEs as well, on each individual table reference.
+- Correct pattern:
+    FROM [Oil].[LaboratoryData] AS LD WITH (NOLOCK)
+    LEFT JOIN [Mine].[MiningEquipment] AS ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+- Do NOT add WITH (NOLOCK) to subquery aliases or CTE names, only to base table references.
+
 JOIN + NULL-SAFE QUERYING (VERY IMPORTANT):
 - Default JOIN strategy:
   - Use INNER JOIN only when the relationship is clearly mandatory OR the user explicitly asks for only matched records.
