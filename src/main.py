@@ -1578,3 +1578,93 @@ async def sql_query(payload: SQLQueryRequest) -> Dict[str, Any]:
     except Exception as e:
         log.exception("Error ejecutando SQL en /sql")
         raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e)}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ENDPOINT FUTURO: GET /alerts/oil
+#  Estado: SCAFFOLDING — comentado hasta que se active la funcionalidad.
+#
+#  Para activar:
+#    1. Descomentar todo el bloque de abajo.
+#    2. Agregar el import en la cabecera del archivo:
+#         from .alertas import verificar_alertas, ALERTAS_ACEITE_HABILITADAS
+#    3. Setear ALERTAS_ACEITE_HABILITADAS=true en .env
+#    4. Completar los TODOs en src/alertas.py (tabla de límites en BD)
+#    5. Configurar el flujo en Power Automate (ver docstring en alertas.py)
+#
+#  Respuesta JSON que consume Power Automate:
+#    {
+#      "ok": true,
+#      "total": 3,
+#      "criticos": 1,
+#      "precaucion": 2,
+#      "periodo_horas": 24,
+#      "checked_at": "2026-03-26T10:00:00Z",
+#      "alertas": [
+#        {
+#          "equipo_id": "...",
+#          "codigo_equipo": "T305459",
+#          "compartimiento": "MOTOR",
+#          "fecha_muestreo": "2026-03-26",
+#          "codigo_muestra": "T317662",
+#          "metal": "Hierro (Fe)",
+#          "categoria": "desgaste",
+#          "valor_ppm": 115.0,
+#          "limite_precaucion": 60.0,
+#          "limite_critico": 100.0,
+#          "severidad": "critico"
+#        },
+#        ...
+#      ]
+#    }
+# ══════════════════════════════════════════════════════════════════════════════
+
+# from .alertas import verificar_alertas, ALERTAS_ACEITE_HABILITADAS   # ← descomentar al activar
+
+# @router.get(
+#     "/alerts/oil",
+#     summary="Alertas de metales fuera de límite en análisis de aceite",
+#     tags=["Alertas"],
+# )
+# async def get_alertas_aceite(
+#     horas_atras: int = Query(
+#         default=24,
+#         ge=1,
+#         le=168,
+#         description="Ventana de tiempo hacia atrás en horas (1–168). Por defecto: 24.",
+#     ),
+# ):
+#     """
+#     Consulta [Oil].[LaboratoryData] para el período indicado y devuelve las
+#     muestras donde algún metal supera los límites LP (precaución) o LC (crítico).
+#
+#     Pensado para ser llamado por Power Automate en un flujo programado que
+#     envía notificaciones por correo cuando total > 0.
+#     """
+#     if not ALERTAS_ACEITE_HABILITADAS:
+#         return {
+#             "ok": False,
+#             "mensaje": "Módulo de alertas deshabilitado. "
+#                        "Setear ALERTAS_ACEITE_HABILITADAS=true en .env para activar.",
+#             "total": 0,
+#             "alertas": [],
+#         }
+#
+#     try:
+#         alertas = await run_in_threadpool(verificar_alertas, horas_atras)
+#     except Exception as e:
+#         log.exception("Error en /alerts/oil")
+#         raise HTTPException(status_code=500, detail=f"Error verificando alertas: {str(e)}")
+#
+#     criticos   = sum(1 for a in alertas if a.severidad == "critico")
+#     precaucion = sum(1 for a in alertas if a.severidad == "precaucion")
+#
+#     return {
+#         "ok"           : True,
+#         "total"        : len(alertas),
+#         "criticos"     : criticos,
+#         "precaucion"   : precaucion,
+#         "periodo_horas": horas_atras,
+#         "checked_at"   : datetime.now(timezone.utc).isoformat(),
+#         "alertas"      : [a.to_dict() for a in alertas],
+#     }

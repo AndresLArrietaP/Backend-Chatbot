@@ -96,6 +96,15 @@ _RE_PISTA_ANALISIS_ACEITE = re.compile(
     re.IGNORECASE,
 )
 
+_RE_PISTA_LABORATORIO_ACEITE = re.compile(
+    r"\b(muestra[s]?|muestreo|analisis\s+de\s+aceite|análisis\s+de\s+aceite|laboratorio|"
+    r"aceite.*reciente|reciente.*aceite|aceite.*ultimo|ultimo.*aceite|aceite.*último|último.*aceite|"
+    r"aceite.*detalle|detalle.*aceite|datos.*aceite|aceite.*datos|"
+    r"ppm|tbn|tan|viscos|fe_ppm|cu_ppm|si_ppm|al_ppm|b_ppm|ca_ppm|na_ppm|k_ppm|"
+    r"grado\s+de\s+aceite|condicion.*aceite|condición.*aceite|aceite.*condicion|aceite.*condición)\b",
+    re.IGNORECASE,
+)
+
 _RE_PISTA_COMPONENTES_MODELO = re.compile(
     r"\b(componente[s]?|compartimiento[s]?)\b.{0,80}\b(modelo|equipo|maquina|máquina|proyecto)\b"
     r"|\b(modelo|equipo|maquina|máquina|proyecto)\b.{0,80}\b(componente[s]?|compartimiento[s]?)\b"
@@ -124,6 +133,10 @@ def _es_intencion_componentes_modelo(texto: str) -> bool:
 def _es_intencion_compartimiento_aceite(texto: str) -> bool:
     t = texto or ""
     return bool(_RE_PISTA_COMPARTIMIENTO_ACEITE.search(t)) and bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
+
+
+def _es_intencion_laboratorio_aceite(texto: str) -> bool:
+    return bool(_RE_PISTA_LABORATORIO_ACEITE.search(texto or ""))
 
 
 def _es_intencion_ultimo_ventana(texto: str) -> bool:
@@ -156,13 +169,27 @@ def _es_intencion_criticidad(texto: str) -> bool:
 #  Funciones de refuerzo de prompt (inyectadas según heurística detectada)
 # ==============================================================================
 
+def _reforzar_tabla_laboratorio_aceite(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE: para consultas sobre muestras de aceite, análisis de aceite o datos de laboratorio, "
+          "la tabla principal y preferida es [Oil].[LaboratoryData] (contiene datos en tiempo real). "
+          "USA [Oil].[LaboratoryData] como tabla base por defecto. "
+          "NO uses [dbo].[OilAnalysis] para este tipo de consultas salvo que el usuario lo pida explícitamente "
+          "o que la columna requerida no exista en [Oil].[LaboratoryData]. "
+          "Las columnas de muestras (FechaMuestreo, Compartimiento, HorasDeAceite, Horometro, CodigoMuestreo, "
+          "Fe_ppm, Cu_ppm, Al_ppm, B_ppm, TBN, TAN, Viscosidad, etc.) están en [Oil].[LaboratoryData]."
+    )
+
+
 def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
     return (
         q.strip()
         + " | IMPORTANTE: si el usuario menciona motor, transmisión, hidráulico, diferencial, mando final, "
           "reductor o convertidor dentro del contexto de análisis de aceite, interprétalo primero como un valor "
-          "del campo descriptivo Compartimiento del hecho de análisis de aceite "
-          "(por ejemplo dbo.OilAnalysis.Compartimiento u Oil.LaboratoryData.Compartimiento). "
+          "del campo descriptivo Compartimiento del hecho de análisis de aceite. "
+          "La tabla preferida para datos de análisis de aceite es [Oil].[LaboratoryData]; "
+          "usa [Oil].[LaboratoryData].[Compartimiento] para filtrar por compartimiento. "
           "Prefiere filtrar con LIKE sobre Compartimiento. "
           "NO uses dbo.Component.ComponentName salvo que el usuario pida explícitamente el componente maestro, "
           "catálogo de componentes o una dimensión de componente de catálogo."
@@ -174,7 +201,7 @@ def _reforzar_componentes_modelo(q: str) -> str:
         q.strip()
         + " | IMPORTANTE: cuando el usuario pida 'componentes' o 'compartimientos' de un equipo o modelo, "
           "los compartimientos se encuentran en el campo Compartimiento de la tabla de análisis de aceite "
-          "(ej: dbo.OilAnalysis.Compartimiento), NO en tablas de catálogo de componentes. "
+          "(tabla preferida: [Oil].[LaboratoryData].[Compartimiento]), NO en tablas de catálogo de componentes. "
           "USA SELECT DISTINCT [OA].[Compartimiento] — NUNCA uses GROUP BY para listar compartimientos, "
           "ya que en SQL Server GROUP BY con alias en ORDER BY genera error 8127. "
           "En SQL Server el orden obligatorio es SELECT DISTINCT TOP (N), NUNCA SELECT TOP (N) DISTINCT "
@@ -292,6 +319,10 @@ async def consulta_humana_a_sql(
     q_reforzada = q
 
     heuristicas_aplicadas: List[str] = []
+
+    if _es_intencion_laboratorio_aceite(base_heuristica):
+        q_reforzada = _reforzar_tabla_laboratorio_aceite(q_reforzada)
+        heuristicas_aplicadas.append("laboratorio_aceite")
 
     if _es_intencion_componentes_modelo(base_heuristica):
         q_reforzada = _reforzar_componentes_modelo(q_reforzada)
