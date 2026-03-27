@@ -109,8 +109,43 @@ _RE_PISTA_COMPONENTES_MODELO = re.compile(
     r"\b(componente[s]?|compartimiento[s]?)\b.{0,80}\b(modelo|equipo|maquina|máquina|proyecto)\b"
     r"|\b(modelo|equipo|maquina|máquina|proyecto)\b.{0,80}\b(componente[s]?|compartimiento[s]?)\b"
     r"|\b(qué\s+componentes|cuáles\s+componentes|listar\s+componentes|enlista[r]?\s+componentes"
-    r"|dame\s+los\s+componentes|dame\s+los\s+compartimientos|qué\s+compartimientos)\b",
+    r"|dame\s+los\s+componentes|dame\s+los\s+compartimientos|qué\s+compartimientos"
+    r"|todos?\s+(?:los?|las?)\s+componentes?|todos?\s+(?:los?|las?)\s+compartimientos?"
+    r"|componentes?\s+presentes?|compartimientos?\s+presentes?"
+    r"|enl[ií]sta(?:me|te|r)?\s+.*\bcomponentes?\b|enl[ií]sta(?:me|te|r)?\s+.*\bcompartimientos?\b)\b",
     re.IGNORECASE | re.DOTALL,
+)
+
+# Detecta consultas de listado/catálogo de entidades dimensionales del negocio
+_RE_PISTA_DIMENSIONAL = re.compile(
+    # "lista/enlista/enumera + entidad"
+    r"\b(?:listar?|enlistar?|enl[ií]sta(?:me|te|r)?|enumerar?)\b"
+    r".{0,80}"
+    r"\b(proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|flota[s]?|incidente[s]?|falla[s]?|aver[ií]a[s]?)\b"
+    r"|"
+    # "dame los/las/todos los X" dimensional — requiere artículo directo para evitar falsos positivos
+    r"\bdame\b\s+(?:los?|las?|todos?\s+los?|todas?\s+las?|un\s+listado\s+de|el\s+listado\s+de)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?\s+de\s+equipo[s]?|flota[s]?|incidente[s]?|falla[s]?)\b"
+    r"|"
+    # "todos los X" dimensional
+    r"\btodo[s]?\s+(?:los?|las?)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|incidente[s]?|falla[s]?)\b"
+    r"|"
+    # "qué/cuáles/cuántos X (de Y)? hay/existen/tienen" — permite "tipos de equipo hay", "cuántos modelos hay"
+    r"\b(?:qu[eé]|cu[aá]les?|cu[aá]ntos?)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|incidente[s]?|falla[s]?).{0,30}(?:hay|existen?|tiene[n]?|present[e]?[s]?)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Detecta menciones de proyecto minero (por nombre o genérico)
+_RE_PISTA_PROYECTO_MINERO = re.compile(
+    r"\b(proyecto|antapaccay|las\s+bambas|antamina|cerro\s+verde|quellaveco|toromocho|"
+    r"cuajone|toquepala|marcona|lagunas\s+norte|bayovar)\b",
+    re.IGNORECASE,
+)
+
+# Detecta menciones de modelo de equipo (nombres Komatsu / Caterpillar / etc.)
+_RE_PISTA_MODELO_EQUIPO = re.compile(
+    r"\b(modelo|980e|d475|d375|d155|wa[0-9]+|hd[0-9]+|ht[0-9]+|pc[0-9]+|730e|830e|"
+    r"wd[0-9]+|bw[0-9]+|pv[0-9]+|gd[0-9]+|vqc?[0-9]+|wb[0-9]+)\b",
+    re.IGNORECASE,
 )
 
 
@@ -137,6 +172,19 @@ def _es_intencion_compartimiento_aceite(texto: str) -> bool:
 
 def _es_intencion_laboratorio_aceite(texto: str) -> bool:
     return bool(_RE_PISTA_LABORATORIO_ACEITE.search(texto or ""))
+
+
+def _es_intencion_dimensional(texto: str) -> bool:
+    return bool(_RE_PISTA_DIMENSIONAL.search(texto or ""))
+
+
+def _es_intencion_join_proyecto_modelo(texto: str) -> bool:
+    """Detecta consultas que cruzan análisis de aceite con proyecto y/o modelo de equipo."""
+    t = texto or ""
+    tiene_aceite = bool(_RE_PISTA_LABORATORIO_ACEITE.search(t)) or bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
+    tiene_proyecto = bool(_RE_PISTA_PROYECTO_MINERO.search(t))
+    tiene_modelo = bool(_RE_PISTA_MODELO_EQUIPO.search(t))
+    return tiene_aceite and (tiene_proyecto or tiene_modelo)
 
 
 def _es_intencion_ultimo_ventana(texto: str) -> bool:
@@ -168,6 +216,43 @@ def _es_intencion_criticidad(texto: str) -> bool:
 # ==============================================================================
 #  Funciones de refuerzo de prompt (inyectadas según heurística detectada)
 # ==============================================================================
+
+def _reforzar_consulta_dimensional(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE — TABLAS DIMENSIONALES / CATÁLOGO: "
+          "Proyectos mineros → [Mine].[MiningProject] (columnas clave: Name, Department, Client). "
+          "Modelos y tipos de equipo → [Mine].[EquipmentFleet] (columnas clave: Model, Type, Description). "
+          "Equipos individuales → [Mine].[MiningEquipment] (columnas: Code; "
+          "FK EquipmentFleetId → [Mine].[EquipmentFleet]; FK MiningProjectId → [Mine].[MiningProject]). "
+          "Para listar todos los componentes/compartimientos distintos → "
+          "SELECT DISTINCT [Compartimiento] FROM [Oil].[LaboratoryData] WHERE [Compartimiento] IS NOT NULL. "
+          "Incidentes o fallas → buscar en el esquema [Eqpcare] (revisar schema para el nombre exacto de la tabla). "
+          "En listados usa SELECT DISTINCT sin métricas agregadas. "
+          "En SQL Server: SELECT DISTINCT TOP(N) — DISTINCT siempre antes de TOP."
+    )
+
+
+def _reforzar_join_proyecto_modelo_aceite(q: str) -> str:
+    return (
+        q.strip()
+        + " | IMPORTANTE — CADENA DE JOIN para análisis de aceite con proyecto y/o modelo: "
+          "La tabla base de muestras es [Oil].[LaboratoryData] (alias LD). "
+          "Para cruzar con proyecto y modelo usa SIEMPRE esta cadena exacta de JOINs: "
+          "JOIN [Mine].[MiningEquipment] AS ME ON ME.[Id] = LD.[MiningEquipmentId] "
+          "JOIN [Mine].[EquipmentFleet]  AS EF ON EF.[Id] = ME.[EquipmentFleetId] "
+          "JOIN [Mine].[MiningProject]   AS MP ON MP.[Id] = ME.[MiningProjectId] . "
+          "Filtro por proyecto: WHERE MP.[Name] LIKE '%<NombreProyecto>%'  (no es UUID, es texto). "
+          "Filtro por modelo: EF.[Model] contiene el modelo (ej: '980E'); "
+          "si el usuario dice '980E-5', interpreta como EF.[Model] = '980E' AND EF.[Type] = '5'. "
+          "Si dice solo '980E' sin tipo, filtra con EF.[Model] LIKE '980E%'. "
+          "El código legible del equipo está en ME.[Code]. "
+          "Si la consulta pide las últimas N muestras POR componente/compartimiento, "
+          "usa ROW_NUMBER() OVER (PARTITION BY LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+          "dentro de un CTE y luego filtra WHERE rn <= N (no rn = 1). "
+          "NO pongas TOP ni LIMIT dentro del CTE; aplica el límite solo en el SELECT final."
+    )
+
 
 def _reforzar_tabla_laboratorio_aceite(q: str) -> str:
     return (
@@ -202,15 +287,21 @@ def _reforzar_componentes_modelo(q: str) -> str:
         + " | IMPORTANTE: cuando el usuario pida 'componentes' o 'compartimientos' de un equipo o modelo, "
           "los compartimientos se encuentran en el campo Compartimiento de la tabla de análisis de aceite "
           "(tabla preferida: [Oil].[LaboratoryData].[Compartimiento]), NO en tablas de catálogo de componentes. "
-          "USA SELECT DISTINCT [OA].[Compartimiento] — NUNCA uses GROUP BY para listar compartimientos, "
+          "USA SELECT DISTINCT [LD].[Compartimiento] — NUNCA uses GROUP BY para listar compartimientos, "
           "ya que en SQL Server GROUP BY con alias en ORDER BY genera error 8127. "
           "En SQL Server el orden obligatorio es SELECT DISTINCT TOP (N), NUNCA SELECT TOP (N) DISTINCT "
           "— poner TOP antes de DISTINCT genera error de sintaxis 156. "
-          "Filtra con [OA].[Compartimiento] IS NOT NULL directamente en el WHERE, no en COALESCE del SELECT. "
+          "Filtra con [LD].[Compartimiento] IS NOT NULL directamente en el WHERE, no en COALESCE del SELECT. "
           "Si el usuario menciona un nombre de proyecto (ej: 'Antapaccay'), ese nombre NO es el ID: "
-          "haz JOIN entre la tabla de equipos y la tabla de proyectos para resolver nombre → UUID. "
+          "haz JOIN [Mine].[MiningEquipment] → [Mine].[MiningProject] para resolver nombre → UUID. "
+          "El modelo del equipo está en [Mine].[EquipmentFleet].[Model], no en ninguna otra tabla. "
+          "Para obtener compartimientos por modelo, la cadena de JOIN es: "
+          "[Mine].[EquipmentFleet] AS EF "
+          "JOIN [Mine].[MiningEquipment] AS ME ON ME.[EquipmentFleetId] = EF.[Id] "
+          "JOIN [Oil].[LaboratoryData] AS LD ON LD.[MiningEquipmentId] = ME.[Id], "
+          "luego SELECT DISTINCT LD.[Compartimiento]. "
           "Si el usuario pide 'cualquier modelo' o 'el primer modelo', usa un CTE o subquery con TOP 1 "
-          "para fijar ese MachineModel primero, luego obtén sus compartimientos con DISTINCT. "
+          "sobre [Mine].[EquipmentFleet] para fijar ese modelo, luego obtén sus compartimientos con DISTINCT. "
           "En ORDER BY usa únicamente columnas que aparezcan directamente en el SELECT sin alias compuesto. "
           "No uses COALESCE en el SELECT de compartimientos — selecciona la columna directamente."
     )
@@ -320,9 +411,17 @@ async def consulta_humana_a_sql(
 
     heuristicas_aplicadas: List[str] = []
 
+    if _es_intencion_dimensional(base_heuristica):
+        q_reforzada = _reforzar_consulta_dimensional(q_reforzada)
+        heuristicas_aplicadas.append("dimensional")
+
     if _es_intencion_laboratorio_aceite(base_heuristica):
         q_reforzada = _reforzar_tabla_laboratorio_aceite(q_reforzada)
         heuristicas_aplicadas.append("laboratorio_aceite")
+
+    if _es_intencion_join_proyecto_modelo(base_heuristica):
+        q_reforzada = _reforzar_join_proyecto_modelo_aceite(q_reforzada)
+        heuristicas_aplicadas.append("join_proyecto_modelo")
 
     if _es_intencion_componentes_modelo(base_heuristica):
         q_reforzada = _reforzar_componentes_modelo(q_reforzada)
