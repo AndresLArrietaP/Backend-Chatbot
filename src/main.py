@@ -76,6 +76,7 @@ TARGET_SCHEMAS = [s.strip() for s in (env("TARGET_SCHEMAS", default="public") or
 MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
 MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
 REQUEST_TIMEOUT = env("REQUEST_TIMEOUT", default=200, cast=int)
+DB_QUERY_TIMEOUT = env("DB_QUERY_TIMEOUT", default=30, cast=int)
 
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
 MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
@@ -1252,13 +1253,25 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"SQL rechazada tras reintento automático: {ultimo_detalle}")
 
     async def _ejecutar_sql_actual(sql_actual: str) -> List[Dict[str, Any]]:
-        rows_local = await run_in_threadpool(
-            database.consultar,
-            sql_actual,
-            allowed_fqn,
-            limite_por_defecto,
-            limite_maximo,
-        )
+        try:
+            rows_local = await asyncio.wait_for(
+                run_in_threadpool(
+                    database.consultar,
+                    sql_actual,
+                    allowed_fqn,
+                    limite_por_defecto,
+                    limite_maximo,
+                ),
+                timeout=DB_QUERY_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=408,
+                detail=(
+                    f"La consulta SQL tardó más de {DB_QUERY_TIMEOUT}s en ejecutarse. "
+                    "Intenta acotar el rango de fechas o simplificar la pregunta."
+                ),
+            )
         return _a_jsonable(rows_local)
 
     sql_query = await _generar_y_blindar(human)
