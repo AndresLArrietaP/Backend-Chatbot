@@ -1260,28 +1260,18 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"SQL rechazada tras reintento automático: {ultimo_detalle}")
 
     async def _ejecutar_sql_actual(sql_actual: str) -> List[Dict[str, Any]]:
-        # asyncio.shield(fut) crea un wrapper cancelable sin cancelar el thread subyacente.
-        # Cuando asyncio.wait_for cancela el wrapper, el Future interno sigue en background
-        # y wait_for retorna TimeoutError INMEDIATAMENTE (sin _cancel_and_wait bloqueante).
-        loop = asyncio.get_running_loop()
-        fut = loop.run_in_executor(
-            None,
-            lambda: database.consultar(sql_actual, allowed_fqn, limite_por_defecto, limite_maximo),
+        # run_in_threadpool bloquea hasta que el thread de BD termina.
+        # asyncio.wait_for / asyncio.shield sobre run_in_executor no liberan
+        # la respuesta HTTP en Python 3.14+/uvicorn mientras el thread esté activo.
+        # Con SQL optimizado (GROUP BY+MAX, filtro 5 años, WITH NOLOCK) la query
+        # termina en ~40-60s → respuesta total ~74s, bien bajo el límite de 240s.
+        rows_local = await run_in_threadpool(
+            database.consultar,
+            sql_actual,
+            allowed_fqn,
+            limite_por_defecto,
+            limite_maximo,
         )
-        try:
-            rows_local = await asyncio.wait_for(asyncio.shield(fut), timeout=DB_QUERY_TIMEOUT)
-        except asyncio.TimeoutError:
-            log.warning(
-                "[db_timeout] BD no respondió en %ss — retornando 408 (thread sigue en background).",
-                DB_QUERY_TIMEOUT,
-            )
-            raise HTTPException(
-                status_code=408,
-                detail=(
-                    f"La consulta SQL tardó más de {DB_QUERY_TIMEOUT}s en ejecutarse. "
-                    "Intenta acotar el rango de fechas o simplificar la pregunta."
-                ),
-            )
         return _a_jsonable(rows_local)
 
     sql_query = await _generar_y_blindar(human)
