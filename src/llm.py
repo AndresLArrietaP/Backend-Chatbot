@@ -250,7 +250,11 @@ def _reforzar_join_proyecto_modelo_aceite(q: str) -> str:
           "Si la consulta pide las últimas N muestras POR componente/compartimiento, "
           "usa ROW_NUMBER() OVER (PARTITION BY LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn "
           "dentro de un CTE y luego filtra WHERE rn <= N (no rn = 1). "
-          "NO pongas TOP ni LIMIT dentro del CTE; aplica el límite solo en el SELECT final."
+          "NO pongas TOP ni LIMIT dentro del CTE; aplica el límite solo en el SELECT final. "
+          "OPTIMIZACIÓN CRÍTICA: dentro del CTE, agrega siempre el filtro "
+          "LD.[FechaMuestreo] >= DATEADD(MONTH, -18, GETDATE()) para limitar el scan "
+          "a datos recientes antes de calcular ROW_NUMBER — esto reduce el escaneo de "
+          "cientos de miles de filas a solo las recientes sin afectar el resultado."
     )
 
 
