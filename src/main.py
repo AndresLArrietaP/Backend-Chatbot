@@ -1259,18 +1259,16 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"SQL rechazada tras reintento automático: {ultimo_detalle}")
 
     async def _ejecutar_sql_actual(sql_actual: str) -> List[Dict[str, Any]]:
-        try:
-            rows_local = await asyncio.wait_for(
-                run_in_threadpool(
-                    database.consultar,
-                    sql_actual,
-                    allowed_fqn,
-                    limite_por_defecto,
-                    limite_maximo,
-                ),
-                timeout=DB_QUERY_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
+        # asyncio.wait_for con run_in_threadpool NO retorna inmediatamente al expirar
+        # el timeout — espera a que el hilo de BD termine (_cancel_and_wait).
+        # asyncio.wait({fut}, timeout=N) sí retorna al instante dejando el hilo en background.
+        loop = asyncio.get_event_loop()
+        fut = loop.run_in_executor(
+            None,
+            lambda: database.consultar(sql_actual, allowed_fqn, limite_por_defecto, limite_maximo),
+        )
+        done, pending = await asyncio.wait({fut}, timeout=DB_QUERY_TIMEOUT)
+        if pending:
             raise HTTPException(
                 status_code=408,
                 detail=(
@@ -1278,7 +1276,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                     "Intenta acotar el rango de fechas o simplificar la pregunta."
                 ),
             )
-        return _a_jsonable(rows_local)
+        return _a_jsonable(await done.pop())
 
     sql_query = await _generar_y_blindar(human)
 
@@ -1314,6 +1312,8 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     try:
         rows = await _ejecutar_sql_actual(sql_query)
+    except HTTPException:
+        raise  # propaga 408 (timeout BD) sin convertirlo en 500
     except Exception as e:
         detalle_sql = str(e)
         if _es_error_sql_reintentable(detalle_sql):
