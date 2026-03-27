@@ -457,7 +457,7 @@ class GeminiProvider:
         defaults = [
             "models/gemini-3-pro",
             "models/gemini-3-flash",
-            "models/gemini-2.5-pro",
+            #"models/gemini-2.5-pro",
             "models/gemini-2.5-flash",
             "models/gemini-2-flash",
             "models/gemini-2-flash-lite",
