@@ -76,7 +76,7 @@ TARGET_SCHEMAS = [s.strip() for s in (env("TARGET_SCHEMAS", default="public") or
 MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
 MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
 REQUEST_TIMEOUT = env("REQUEST_TIMEOUT", default=200, cast=int)
-DB_QUERY_TIMEOUT = env("DB_QUERY_TIMEOUT", default=30, cast=int)
+DB_QUERY_TIMEOUT = env("DB_QUERY_TIMEOUT", default=60, cast=int)
 MAX_SQL_RETRIES_TOTAL = env("MAX_SQL_RETRIES_TOTAL", default=1, cast=int)
 
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
@@ -1260,16 +1260,21 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"SQL rechazada tras reintento automático: {ultimo_detalle}")
 
     async def _ejecutar_sql_actual(sql_actual: str) -> List[Dict[str, Any]]:
-        # asyncio.wait_for con run_in_threadpool NO retorna inmediatamente al expirar
-        # el timeout — espera a que el hilo de BD termine (_cancel_and_wait).
-        # asyncio.wait({fut}, timeout=N) sí retorna al instante dejando el hilo en background.
+        # asyncio.shield(fut) crea un wrapper cancelable sin cancelar el thread subyacente.
+        # Cuando asyncio.wait_for cancela el wrapper, el Future interno sigue en background
+        # y wait_for retorna TimeoutError INMEDIATAMENTE (sin _cancel_and_wait bloqueante).
         loop = asyncio.get_running_loop()
         fut = loop.run_in_executor(
             None,
             lambda: database.consultar(sql_actual, allowed_fqn, limite_por_defecto, limite_maximo),
         )
-        done, pending = await asyncio.wait({fut}, timeout=DB_QUERY_TIMEOUT)
-        if pending:
+        try:
+            rows_local = await asyncio.wait_for(asyncio.shield(fut), timeout=DB_QUERY_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(
+                "[db_timeout] BD no respondió en %ss — retornando 408 (thread sigue en background).",
+                DB_QUERY_TIMEOUT,
+            )
             raise HTTPException(
                 status_code=408,
                 detail=(
@@ -1277,7 +1282,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                     "Intenta acotar el rango de fechas o simplificar la pregunta."
                 ),
             )
-        return _a_jsonable(await done.pop())
+        return _a_jsonable(rows_local)
 
     sql_query = await _generar_y_blindar(human)
 
@@ -1372,6 +1377,8 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 sql_query = sql_retry
                 rows = rows_retry
 
+            except HTTPException:
+                raise
             except Exception:
                 log.exception("Reintento semántico (0 filas) falló.")
                 break
@@ -1406,6 +1413,8 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 sql_query = sql_retry
                 rows = rows_retry
 
+            except HTTPException:
+                raise
             except Exception:
                 log.exception("Reintento null-safe (grupo NULL) falló.")
                 break
@@ -1440,6 +1449,8 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 sql_query = sql_retry
                 rows = rows_retry
 
+            except HTTPException:
+                raise
             except Exception:
                 log.exception("Reintento null-safe (proyección nula) falló.")
                 break
@@ -1471,6 +1482,8 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                     )
                     break
 
+            except HTTPException:
+                raise
             except Exception:
                 log.exception("Reintento latest/window falló.")
                 break
