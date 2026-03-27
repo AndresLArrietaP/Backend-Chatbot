@@ -77,6 +77,7 @@ MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
 MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
 REQUEST_TIMEOUT = env("REQUEST_TIMEOUT", default=200, cast=int)
 DB_QUERY_TIMEOUT = env("DB_QUERY_TIMEOUT", default=30, cast=int)
+MAX_SQL_RETRIES_TOTAL = env("MAX_SQL_RETRIES_TOTAL", default=1, cast=int)
 
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
 MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
@@ -1262,7 +1263,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         # asyncio.wait_for con run_in_threadpool NO retorna inmediatamente al expirar
         # el timeout — espera a que el hilo de BD termine (_cancel_and_wait).
         # asyncio.wait({fut}, timeout=N) sí retorna al instante dejando el hilo en background.
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         fut = loop.run_in_executor(
             None,
             lambda: database.consultar(sql_actual, allowed_fqn, limite_por_defecto, limite_maximo),
@@ -1309,6 +1310,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         return respuesta_dry
 
     warning_sql_retry: List[str] = []
+    _retries_total = 0  # presupuesto compartido entre todos los tipos de reintento
 
     try:
         rows = await _ejecutar_sql_actual(sql_query)
@@ -1340,13 +1342,15 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {detalle_sql}")
 
     if (
-        SQL_EMPTY_RESULT_RETRY
+        _retries_total < MAX_SQL_RETRIES_TOTAL
+        and SQL_EMPTY_RESULT_RETRY
         and len(rows) == 0
         and SQL_EMPTY_RESULT_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
         and _sql_sugiere_riesgo_de_cero_filas(sql_query)
     ):
         for _ in range(int(SQL_EMPTY_RESULT_RETRY_MAX)):
+            _retries_total += 1
             try:
                 human_retry = _construir_prompt_retry_cero_filas_semantico(
                     human_query=human,
@@ -1373,12 +1377,14 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 break
 
     if (
-        SQL_NULL_GROUP_RETRY
+        _retries_total < MAX_SQL_RETRIES_TOTAL
+        and SQL_NULL_GROUP_RETRY
         and SQL_NULL_GROUP_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
         and _resultado_parece_grupo_nulo(rows, sql_query)
     ):
         for _ in range(int(SQL_NULL_GROUP_RETRY_MAX)):
+            _retries_total += 1
             try:
                 human_retry = _construir_prompt_retry_nullsafe(
                     human_query=human,
@@ -1405,12 +1411,14 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 break
 
     if (
-        SQL_NULL_PROJECTION_RETRY
+        _retries_total < MAX_SQL_RETRIES_TOTAL
+        and SQL_NULL_PROJECTION_RETRY
         and SQL_NULL_PROJECTION_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
         and _resultado_parece_proyeccion_nula(rows, sql_query)
     ):
         for _ in range(int(SQL_NULL_PROJECTION_RETRY_MAX)):
+            _retries_total += 1
             try:
                 human_retry = _construir_prompt_retry_proyeccion_nullsafe(
                     human_query=human,
@@ -1437,12 +1445,14 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 break
 
     if (
-        SQL_LATEST_WINDOW_RETRY
+        _retries_total < MAX_SQL_RETRIES_TOTAL
+        and SQL_LATEST_WINDOW_RETRY
         and SQL_LATEST_WINDOW_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
         and _resultado_parece_latest_sobre_restringido(rows, sql_query, limite_por_defecto)
     ):
         for _ in range(int(SQL_LATEST_WINDOW_RETRY_MAX)):
+            _retries_total += 1
             try:
                 human_retry = _construir_prompt_retry_latest_window(
                     human_query=human,
