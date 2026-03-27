@@ -82,6 +82,7 @@ ALERTAS_ACEITE_HABILITADAS: bool = env("ALERTAS_ACEITE_HABILITADAS", default=Fal
 
 METALES_A_VIGILAR: Dict[str, str] = {
     # columna_bd       : etiqueta_legible
+    # --- Desgaste ---
     "Fe_ppm"   : "Hierro (Fe)",
     "Cu_ppm"   : "Cobre (Cu)",
     "Al_ppm"   : "Aluminio (Al)",
@@ -89,18 +90,36 @@ METALES_A_VIGILAR: Dict[str, str] = {
     "Pb_ppm"   : "Plomo (Pb)",
     "Sn_ppm"   : "Estaño (Sn)",
     "Ni_ppm"   : "Níquel (Ni)",
-    "Si_ppm"   : "Silicio (Si)",      # contaminación
-    "Na_ppm"   : "Sodio (Na)",        # contaminación
-    "K_ppm"    : "Potasio (K)",       # contaminación
-    "B_ppm"    : "Boro (B)",          # aditivo
-    "Ca_ppm"   : "Calcio (Ca)",       # aditivo
+    "Ag_ppm"   : "Plata (Ag)",
+    "Mn_ppm"   : "Manganeso (Mn)",
+    # --- Contaminación ---
+    "Si_ppm"   : "Silicio (Si)",
+    "Na_ppm"   : "Sodio (Na)",
+    "K_ppm"    : "Potasio (K)",
+    "V_ppm"    : "Vanadio (V)",
+    "Ti_ppm"   : "Titanio (Ti)",
+    "Cd_ppm"   : "Cadmio (Cd)",
+    # --- Aditivos ---
+    "B_ppm"    : "Boro (B)",
+    "Mg_ppm"   : "Magnesio (Mg)",
+    "Ca_ppm"   : "Calcio (Ca)",
+    "Zn_ppm"   : "Zinc (Zn)",
+    "P_ppm"    : "Fósforo (P)",
+    "Mo_ppm"   : "Molibdeno (Mo)",    # aditivo a niveles normales; vigila si sube (posible desgaste)
+    "Ba_ppm"   : "Bario (Ba)",
 }
 
 CATEGORIA_METAL: Dict[str, str] = {
+    # Desgaste
     "Fe_ppm": "desgaste",  "Cu_ppm": "desgaste",  "Al_ppm": "desgaste",
-    "Cr_ppm": "desgaste",  "Pb_ppm": "desgaste",  "Sn_ppm": "desgaste",  "Ni_ppm": "desgaste",
+    "Cr_ppm": "desgaste",  "Pb_ppm": "desgaste",  "Sn_ppm": "desgaste",
+    "Ni_ppm": "desgaste",  "Ag_ppm": "desgaste",  "Mn_ppm": "desgaste",
+    # Contaminación
     "Si_ppm": "contaminacion",  "Na_ppm": "contaminacion",  "K_ppm": "contaminacion",
-    "B_ppm" : "aditivo",   "Ca_ppm": "aditivo",
+    "V_ppm" : "contaminacion",  "Ti_ppm": "contaminacion",  "Cd_ppm": "contaminacion",
+    # Aditivos
+    "B_ppm" : "aditivo",  "Mg_ppm": "aditivo",  "Ca_ppm": "aditivo",
+    "Zn_ppm": "aditivo",  "P_ppm" : "aditivo",  "Mo_ppm": "aditivo",  "Ba_ppm": "aditivo",
 }
 
 

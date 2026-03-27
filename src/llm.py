@@ -92,7 +92,11 @@ _RE_PISTA_COMPARTIMIENTO_ACEITE = re.compile(
 
 _RE_PISTA_ANALISIS_ACEITE = re.compile(
     r"\b(aceite|ppm|tbn|tan|viscos|muestra|muestreo|horas\s+de\s+aceite|horometro|horómetro|"
-    r"fe_ppm|cu_ppm|si_ppm|hierro|cobre|silicio|cromo|plomo|aluminio|indice\s+pq|índice\s+pq)\b",
+    r"fe_ppm|cu_ppm|si_ppm|al_ppm|cr_ppm|pb_ppm|sn_ppm|ni_ppm|ag_ppm|mn_ppm|"
+    r"v_ppm|ti_ppm|cd_ppm|b_ppm|mg_ppm|ca_ppm|zn_ppm|p_ppm|mo_ppm|ba_ppm|"
+    r"hierro|cobre|silicio|cromo|plomo|aluminio|niquel|níquel|estaño|plata|manganeso|"
+    r"vanadio|titanio|cadmio|boro|magnesio|calcio|zinc|fosforo|fósforo|molibdeno|bario|"
+    r"indice\s+pq|índice\s+pq)\b",
     re.IGNORECASE,
 )
 
