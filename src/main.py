@@ -1179,14 +1179,20 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     dialecto = payload.dialect or ("mssql" if es_mssql() else "postgresql")
 
     async def _generar_sql(consulta_humana: str) -> str:
-        sql_json = await llm.consulta_humana_a_sql(
-            consulta_humana=consulta_humana,
-            esquema_json=esquema_llm,
-            dialecto=dialecto,
-            limite_por_defecto=limite_por_defecto,
-            modelo=None,
-            conversation_context=contexto_conversacional,
-        )
+        try:
+            sql_json = await llm.consulta_humana_a_sql(
+                consulta_humana=consulta_humana,
+                esquema_json=esquema_llm,
+                dialecto=dialecto,
+                limite_por_defecto=limite_por_defecto,
+                modelo=None,
+                conversation_context=contexto_conversacional,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"El modelo LLM no pudo generar la consulta: {str(exc)[:300]}",
+            )
         try:
             obj = json.loads(sql_json)
         except Exception:
