@@ -51,6 +51,7 @@ import time
 import unicodedata
 import uuid
 import re
+import anyio
 from decimal import Decimal
 from hashlib import sha1
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -1292,18 +1293,30 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"SQL rechazada tras reintento automático: {ultimo_detalle}")
 
     async def _ejecutar_sql_actual(sql_actual: str) -> List[Dict[str, Any]]:
-        # run_in_threadpool bloquea hasta que el thread de BD termina.
-        # asyncio.wait_for / asyncio.shield sobre run_in_executor no liberan
-        # la respuesta HTTP en Python 3.14+/uvicorn mientras el thread esté activo.
-        # Con SQL optimizado (GROUP BY+MAX, filtro 5 años, WITH NOLOCK) la query
-        # termina en ~40-60s → respuesta total ~74s, bien bajo el límite de 240s.
-        rows_local = await run_in_threadpool(
-            database.consultar,
-            sql_actual,
-            allowed_fqn,
-            limite_por_defecto,
-            limite_maximo,
-        )
+        # anyio.to_thread.run_sync con abandon_on_cancel=True abandona el thread
+        # inmediatamente cuando asyncio.wait_for dispara el timeout, sin esperar
+        # a que el thread de BD termine (a diferencia de run_in_threadpool/cancellable=False).
+        try:
+            rows_local = await asyncio.wait_for(
+                anyio.to_thread.run_sync(
+                    lambda: database.consultar(
+                        sql_actual,
+                        allowed_fqn,
+                        limite_por_defecto,
+                        limite_maximo,
+                    ),
+                    abandon_on_cancel=True,
+                ),
+                timeout=DB_QUERY_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=408,
+                detail=(
+                    f"La consulta SQL tardó más de {DB_QUERY_TIMEOUT}s. "
+                    "Intenta ser más específico o usar un rango de fechas menor."
+                ),
+            )
         return _a_jsonable(rows_local)
 
     sql_query = await _generar_y_blindar(human)
