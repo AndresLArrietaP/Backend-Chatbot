@@ -130,7 +130,8 @@ def _mensaje_excepcion(e: Exception) -> str:
     """Estándar de logging para excepciones de la API Gemini."""
     status = (getattr(e, "status", "") or "")
     code = (getattr(e, "code", "") or "")
-    msg = (getattr(e, "message", "") or str(e))
+    # Fallback: str(e) puede ser vacío para TimeoutError → usar nombre del tipo
+    msg = (getattr(e, "message", "") or str(e) or type(e).__name__)
     return f"status={status} code={code} msg={msg}"
 
 
