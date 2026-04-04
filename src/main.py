@@ -1344,6 +1344,11 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         rows = await _ejecutar_sql_actual(sql_query)
     except HTTPException:
         raise  # propaga 408 (timeout BD) sin convertirlo en 500
+    except TimeoutError as e:
+        raise HTTPException(
+            status_code=408,
+            detail=f"La consulta SQL tardó demasiado. Intenta ser más específico o usar un rango de fechas menor. ({e})",
+        )
     except Exception as e:
         detalle_sql = str(e)
         if _es_error_sql_reintentable(detalle_sql):
@@ -1362,6 +1367,8 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 )
             except HTTPException:
                 raise
+            except TimeoutError as e2:
+                raise HTTPException(status_code=408, detail=f"La consulta SQL tardó demasiado en el reintento. ({e2})")
             except Exception as e2:
                 log.exception("Reintento automático por error SQL ejecutable falló.")
                 raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {str(e2)}")

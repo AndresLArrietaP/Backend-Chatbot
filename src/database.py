@@ -40,6 +40,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple, Set
 import logging
 import re
+import threading
 import warnings
 
 from sqlalchemy.exc import SAWarning
@@ -1265,11 +1266,44 @@ def consultar(
         sql_final = sql_query
 
     log.debug("[database.consultar] final=%r", sql_final[:800])
+    # Log INFO en producción para diagnóstico de queries lentas en Render
+    log.info("[DB] SQL ejecutando (%.400s...)", sql_final.replace("\n", " "))
 
-    with Session() as session:
-        result = session.execute(text(sql_final))
-        rows = result.mappings().all()
-        return [dict(r) for r in rows]
+    _result: List[Dict[str, Any]] = []
+    _error: List[BaseException] = []
+
+    def _run_query() -> None:
+        try:
+            with Session() as session:
+                result = session.execute(text(sql_final))
+                _result.extend([dict(r) for r in result.mappings().all()])
+        except Exception as exc:
+            _error.append(exc)
+
+    # Timeout Python-level: garantizado independiente de pymssql / driver.
+    # connect_args={"timeout": N} en pymssql puede ser solo el login timeout;
+    # este mecanismo corta la espera en DB_QUERY_TIMEOUT segundos sin importar el driver.
+    # El thread de BD sigue corriendo en background (daemon) hasta que Azure SQL responda,
+    # pero la función retorna error inmediatamente, evitando el bloqueo de 240s en Copilot.
+    t = threading.Thread(target=_run_query, daemon=True)
+    t.start()
+    t.join(timeout=DB_QUERY_TIMEOUT)
+
+    if t.is_alive():
+        log.warning(
+            "[DB] TIMEOUT: query superó %ds — sigue en background. SQL=%.300s",
+            DB_QUERY_TIMEOUT,
+            sql_final.replace("\n", " "),
+        )
+        raise TimeoutError(
+            f"La consulta SQL superó el límite de {DB_QUERY_TIMEOUT}s. "
+            "Intenta ser más específico o usar un rango de fechas menor."
+        )
+
+    if _error:
+        raise _error[0]
+
+    return _result
 
 
 # Alias legacy
