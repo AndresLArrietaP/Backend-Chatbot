@@ -152,6 +152,40 @@ _RE_PISTA_MODELO_EQUIPO = re.compile(
     re.IGNORECASE,
 )
 
+# ==============================================================================
+#  CASO DE USO PRINCIPAL: Triage masivo de componentes observados
+#  "estado de los 54 motores de tracción → solo los observados"
+# ==============================================================================
+
+_RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
+    # Estado explícito de observación / anomalía
+    r"\b(observado[s]?|con\s+observaci[oó]n|en\s+observaci[oó]n|"
+    r"fuera\s+de\s+l[ií]mite[s]?|fuera\s+de\s+rango|fuera\s+de\s+norma|"
+    r"con\s+anomal[ií]a[s]?|con\s+alerta[s]?|con\s+problema[s]?|"
+    r"necesitan?\s+atenci[oó]n|requieren?\s+atenci[oó]n|"
+    r"prestar(?:le)?\s+atenci[oó]n|a\s+(?:los?\s+)?que\s+prestarle\s+atenci[oó]n|"
+    # Patrón "estado de los N [componente]"
+    r"estado\s+de\s+(?:los?|las?|todos?\s+los?|todas?\s+las?)?\s*\d*\s*"
+    r"(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?|compartimiento[s]?|"
+    r"mando[s]?\s+final(?:es)?|diferencial(?:es)?|hidr[aá]ulico[s]?|rueda[s]?)|"
+    # "cuáles/qué [componentes] están observados/con anomalía"
+    r"cu[aá]les?\s+(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?)\s+"
+    r"(?:est[aá][ns]?|tienen?|presentan?)\s+(?:observaci[oó]n|anomal[ií]a|problema|alerta|fuera)|"
+    r"qu[eé]\s+(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?)\s+"
+    r"(?:est[aá][ns]?|tiene[n]?)\s+(?:observaci[oó]n|anomal[ií]a|problema)|"
+    # "cuáles están observados / tienen problemas"
+    r"cu[aá]les?\s+(?:est[aá][ns]?|tienen?|presentan?)\s+(?:observaci[oó]n|anomal[ií]a|problema|fuera)|"
+    # Acción directa de filtrado
+    r"filtrar?\s+(?:los?|las?)\s+observados?|"
+    r"solo\s+(?:los?|las?)\s+observados?|"
+    r"dame\s+(?:los?|las?)\s+observados?|"
+    # Masa crítica de componentes sin nombre de metal específico
+    r"(?:54|todos?\s+los?)\s+(?:motor(?:es)?\s+de\s+tracci[oó]n|transmisi[oó]n(?:es)?)|"
+    r"masa\s+de\s+componentes?|universo\s+de\s+(?:componentes?|equipos?)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 # ==============================================================================
 #  Utilidades internas
@@ -163,6 +197,11 @@ def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
         return obj if isinstance(obj, dict) else None
     except Exception:
         return None
+
+
+def _es_intencion_triage_observados(texto: str) -> bool:
+    """Detecta el caso de uso principal: estado masivo de componentes → solo los observados."""
+    return bool(_RE_PISTA_TRIAGE_OBSERVADOS.search(texto or ""))
 
 
 def _es_intencion_componentes_modelo(texto: str) -> bool:
@@ -385,6 +424,58 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     )
 
 
+def _reforzar_triage_observados(q: str) -> str:
+    """
+    Refuerzo de prompt para el caso de uso PRINCIPAL:
+    consulta masiva del estado de N componentes → devolver SOLO los observados.
+    Genera SQL eficiente (GROUP BY+MAX, WITH NOLOCK, filtro LP/LC) desde el primer intento.
+    """
+    return (
+        q.strip()
+        + " | IMPORTANTE — TRIAGE DE COMPONENTES OBSERVADOS (caso de uso prioritario): "
+          "El usuario quiere consultar el UNIVERSO COMPLETO de un tipo de componente/equipo "
+          "y obtener SOLO los que están fuera de límite (observados / con anomalía). "
+          "INSTRUCCIONES OBLIGATORIAS para SQL Server (Azure SQL): "
+          # Patrón de última muestra
+          "1. Para obtener la última muestra por equipo+compartimiento usa SIEMPRE el patrón "
+          "GROUP BY+MAX (NUNCA ROW_NUMBER — es muy lento en tablas de 183k filas sin índices de columna): "
+          "CTE_Ultimas: SELECT ME.[Code], LD.[Compartimiento], MAX(LD.[FechaMuestreo]) AS UltimaFecha "
+          "FROM [Oil].[LaboratoryData] AS LD WITH (NOLOCK) "
+          "JOIN [Mine].[MiningEquipment] AS ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId] "
+          "JOIN [Mine].[EquipmentFleet] AS EF WITH (NOLOCK) ON EF.[Id] = ME.[EquipmentFleetId] "
+          "JOIN [Mine].[MiningProject] AS MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId] "
+          "WHERE <filtros_proyecto_modelo_compartimiento> "
+          "AND LD.[FechaMuestreo] >= DATEADD(YEAR, -5, GETDATE()) "
+          "GROUP BY ME.[Code], LD.[Compartimiento]. "
+          # JOIN de vuelta para obtener columnas de la muestra
+          "2. Luego un segundo CTE o SELECT que hace JOIN de [Oil].[LaboratoryData] AS LD WITH (NOLOCK) "
+          "JOIN CTE_Ultimas ON LD.[MiningEquipmentId] = ME.[Id] AND LD.[Compartimiento] = CTE_Ultimas.[Compartimiento] "
+          "AND LD.[FechaMuestreo] = CTE_Ultimas.[UltimaFecha], "
+          "incluyendo columnas: ME.[Code], LD.[Compartimiento], LD.[FechaMuestreo], "
+          "y los metales relevantes (Fe_ppm, Cu_ppm, Si_ppm, Al_ppm, TBN, Viscosidad según aplique). "
+          # Filtro de observados
+          "3. Para filtrar SOLO los observados: "
+          "PRIMERO intenta JOIN con [Eqpcare].[LC] (tabla de límites LP/LC por modelo+compartimiento+metal). "
+          "Si [Eqpcare].[LC] no está disponible en el esquema, usa estos umbrales de dominio como WHERE: "
+          "Fe_ppm > 60 OR Cu_ppm > 30 OR Si_ppm > 25 OR Al_ppm > 25 OR TBN < 3.0 OR Viscosidad > 230 OR Viscosidad < 80. "
+          "4. Si hay tabla de límites disponible, agrega columna calculada: "
+          "Severidad = CASE WHEN valor > LC THEN 'CRÍTICO' WHEN valor > LP THEN 'PRECAUCIÓN' END. "
+          "5. ORDER BY Severidad DESC (CRÍTICO primero), luego por la métrica más alta DESC. "
+          "6. TOP(200) SOLO en el SELECT final, nunca dentro de un CTE. "
+          "7. WITH (NOLOCK) en TODOS los FROM y JOIN sin excepción. "
+          "8. Cadena de JOIN base: [Oil].[LaboratoryData] → [Mine].[MiningEquipment] → "
+          "[Mine].[EquipmentFleet] → [Mine].[MiningProject]. "
+          "9. Filtro por proyecto: WHERE MP.[Name] LIKE '%<nombre_proyecto>%'. "
+          "Filtro por modelo: EF.[Model] LIKE '%<modelo>%'. "
+          "Filtro por compartimiento: LD.[Compartimiento] LIKE '%<tipo_componente>%'. "
+          "10. DEVUELVE SOLO los equipos/componentes con al menos un metal fuera de LP o LC "
+          "(NO toda la lista — solo los observados). "
+          "Si ninguno está fuera de límite, devuelve 0 filas (eso es respuesta válida: 'todos normales'). "
+          "11. La respuesta textual debe decir: "
+          "'De los N [componentes] consultados, X están observados' o 'Ningún componente fuera de límite'."
+    )
+
+
 # ==============================================================================
 #  API pública del módulo
 # ==============================================================================
@@ -420,6 +511,17 @@ async def consulta_humana_a_sql(
     q_reforzada = q
 
     heuristicas_aplicadas: List[str] = []
+
+    # ── PRIORIDAD MÁXIMA: caso de uso principal del producto ──────────────────
+    # "estado de los N motores → solo los observados"
+    # Se evalúa primero para que el prompt triage domine sobre heurísticas generales.
+    if _es_intencion_triage_observados(base_heuristica):
+        q_reforzada = _reforzar_triage_observados(q_reforzada)
+        heuristicas_aplicadas.append("triage_observados")
+        # También activa join_proyecto_modelo para garantizar la cadena de JOINs
+        if not _es_intencion_join_proyecto_modelo(base_heuristica):
+            q_reforzada = _reforzar_join_proyecto_modelo_aceite(q_reforzada)
+            heuristicas_aplicadas.append("join_proyecto_modelo")
 
     if _es_intencion_dimensional(base_heuristica):
         q_reforzada = _reforzar_consulta_dimensional(q_reforzada)

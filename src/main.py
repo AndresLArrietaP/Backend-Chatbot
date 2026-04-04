@@ -171,6 +171,31 @@ _RE_PIDE_LISTAR = re.compile(
     re.IGNORECASE,
 )
 
+# Detecta el caso de uso principal: triage de componentes observados.
+# Cuando 0 filas = respuesta VÁLIDA ("ningún componente fuera de límite") → NO disparar retry.
+_RE_TRIAGE_OBSERVADOS = re.compile(
+    r"\b(observado[s]?|con\s+observaci[oó]n|en\s+observaci[oó]n|"
+    r"fuera\s+de\s+l[ií]mite[s]?|fuera\s+de\s+rango|"
+    r"con\s+anomal[ií]a[s]?|con\s+alerta[s]?|con\s+problema[s]?|"
+    r"necesitan?\s+atenci[oó]n|requieren?\s+atenci[oó]n|"
+    r"prestar(?:le)?\s+atenci[oó]n|"
+    r"estado\s+de\s+(?:los?|las?|todos?)?.*?(?:motor(?:es)?|transmisi[oó]n|componente[s]?|equipo[s]?)|"
+    r"solo\s+(?:los?|las?)\s+observados?|dame\s+(?:los?|las?)\s+observados?|"
+    r"filtrar?\s+(?:los?|las?)\s+observados?|"
+    r"cu[aá]les?\s+(?:est[aá][ns]?|tienen?|presentan?)\s+(?:observaci[oó]n|anomal[ií]a|fuera)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _es_consulta_triage_observados(human_query: str) -> bool:
+    """
+    Devuelve True si la consulta es un triage de observados.
+    En ese caso, 0 filas es una respuesta VÁLIDA ('ningún componente fuera de límite')
+    y NO debe dispararse el retry de cero-filas.
+    """
+    return bool(_RE_TRIAGE_OBSERVADOS.search(human_query or ""))
+
 
 class SchemaRequest(BaseModel):
     schemas: Optional[List[str]] = Field(default=None)
@@ -1351,6 +1376,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         and len(rows) == 0
         and SQL_EMPTY_RESULT_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
+        and (not _es_consulta_triage_observados(human))  # 0 filas = "ninguno observado" → válido
         and _sql_sugiere_riesgo_de_cero_filas(sql_query)
     ):
         for _ in range(int(SQL_EMPTY_RESULT_RETRY_MAX)):
@@ -1509,7 +1535,13 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     elif rows:
         respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
     else:
-        respuesta_textual = "La consulta no devolvió filas, por lo que no fue posible construir una respuesta analítica con evidencia suficiente."
+        if _es_consulta_triage_observados(human):
+            respuesta_textual = (
+                "Ningún componente fuera de límite en el universo consultado. "
+                "Todos los equipos del tipo solicitado se encuentran dentro de los rangos normales de operación."
+            )
+        else:
+            respuesta_textual = "La consulta no devolvió filas, por lo que no fue posible construir una respuesta analítica con evidencia suficiente."
 
     if session_id:
         _GESTOR_CONTEXTO.registrar_turno(
