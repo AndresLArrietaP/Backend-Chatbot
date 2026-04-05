@@ -485,10 +485,10 @@ class GeminiProvider:
     def _tiempos_espera(self) -> Dict[str, float]:
         """Lee configuración de timeouts/hedging desde .env."""
         return {
-            "per_model_timeout": env("LLM_PER_MODEL_TIMEOUT", default=18.0, cast=float),
-            "total_timeout": env("LLM_TOTAL_TIMEOUT", default=40.0, cast=float),
-            "hedge_stagger": env("LLM_HEDGE_STAGGER", default=0.6, cast=float),
-            "hedge_parallel": env("LLM_HEDGE_PARALLEL", default=2, cast=int),
+            "per_model_timeout": env("LLM_PER_MODEL_TIMEOUT", default=28.0, cast=float),
+            "total_timeout": env("LLM_TOTAL_TIMEOUT", default=58.0, cast=float),
+            "hedge_stagger": env("LLM_HEDGE_STAGGER", default=0.5, cast=float),
+            "hedge_parallel": env("LLM_HEDGE_PARALLEL", default=3, cast=int),
         }
 
     async def _llamar_generar(self, modelo: str, contenidos: Any, configuracion: Dict[str, Any], timeout_modelo: float):
@@ -1200,7 +1200,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
         configuracion = {
             "response_mime_type": "application/json",
             "temperature": 0.06 if continuidad_fuerte else 0.08,
-            "max_output_tokens": int(env("SQL_MAX_OUTPUT_TOKENS", default=3800)),
+            "max_output_tokens": int(env("SQL_MAX_OUTPUT_TOKENS", default=8000)),
             "system_instruction": system_instruction,
         }
 
@@ -1451,7 +1451,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                         config={
                             "response_mime_type": "application/json",
                             "temperature": 0.0,
-                            "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=1400)),
+                            "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=4096)),
                         },
                     )
                     obj_ganador = json.loads(self._asegurar_sql_json((resp_reparar.text or "").strip()))
@@ -1502,7 +1502,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                                 config={
                                     "response_mime_type": "application/json",
                                     "temperature": 0.0,
-                                    "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=1400)),
+                                    "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=4096)),
                                 },
                             ),
                             timeout=min(timeout_por_modelo, 20.0),
