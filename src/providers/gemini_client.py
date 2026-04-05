@@ -485,8 +485,8 @@ class GeminiProvider:
     def _tiempos_espera(self) -> Dict[str, float]:
         """Lee configuración de timeouts/hedging desde .env."""
         return {
-            "per_model_timeout": env("LLM_PER_MODEL_TIMEOUT", default=28.0, cast=float),
-            "total_timeout": env("LLM_TOTAL_TIMEOUT", default=58.0, cast=float),
+            "per_model_timeout": env("LLM_PER_MODEL_TIMEOUT", default=45.0, cast=float),
+            "total_timeout": env("LLM_TOTAL_TIMEOUT", default=90.0, cast=float),
             "hedge_stagger": env("LLM_HEDGE_STAGGER", default=0.5, cast=float),
             "hedge_parallel": env("LLM_HEDGE_PARALLEL", default=3, cast=int),
         }
@@ -1411,11 +1411,16 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             self._proteger_numeric_clean_no_texto(sql2, esquema_json=esquema_json)
 
             if (dialecto or "").lower() in ("mssql", "sqlserver"):
-                sql2 = database.hacer_groupby_nullsafe_mssql(
-                    sql=sql2,
-                    esquema_json=esquema_json,
-                    consulta_humana=consulta,
-                )
+                # Saltear hacer_groupby_nullsafe_mssql para CTEs:
+                # el rewriter es para SELECTs planos; en CTEs el GROUP BY es interno
+                # al CTE y no corresponde reescribirlo con COALESCE desde afuera.
+                _es_cte = re.match(r"^\s*with\b", sql2.strip(), re.IGNORECASE)
+                if not _es_cte:
+                    sql2 = database.hacer_groupby_nullsafe_mssql(
+                        sql=sql2,
+                        esquema_json=esquema_json,
+                        consulta_humana=consulta,
+                    )
 
                 sql2 = _quitar_placeholders_sinteticos_en_groupby_coalesce(sql2)
 
