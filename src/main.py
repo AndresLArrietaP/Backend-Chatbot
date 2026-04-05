@@ -852,7 +852,7 @@ def _puede_responder_desde_memoria(
     return True
 
 
-def _armar_respuesta_desde_resultado_previo(
+async def _armar_respuesta_desde_resultado_previo(
     *,
     human: str,
     session_id: str,
@@ -879,7 +879,7 @@ def _armar_respuesta_desde_resultado_previo(
 
     if rows and incluir_respuesta_texto:
         try:
-            respuesta_textual = llm.run_sync_construir_respuesta(rows, human)
+            respuesta_textual = await llm.construir_respuesta(rows, human)
             if not (respuesta_textual or "").strip():
                 respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
         except Exception:
@@ -1086,7 +1086,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             consulta_humana=human,
         )
         if refinado and refinado.get("rows"):
-            return _armar_respuesta_desde_resultado_previo(
+            return await _armar_respuesta_desde_resultado_previo(
                 human=human,
                 session_id=session_id,
                 rows=refinado["rows"],
@@ -1106,7 +1106,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     if _puede_responder_desde_memoria(human, ultimo_resultado):
         rows_previas = ultimo_resultado.get("rows_resultado") or []
         if rows_previas:
-            return _armar_respuesta_desde_resultado_previo(
+            return await _armar_respuesta_desde_resultado_previo(
                 human=human,
                 session_id=session_id,
                 rows=rows_previas,
