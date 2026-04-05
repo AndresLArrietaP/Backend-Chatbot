@@ -1163,6 +1163,23 @@ Field coverage (VERY IMPORTANT):
 - If a LEFT JOIN can create NULL groups in aggregations, prefer either filtering NULLs (strict) or COALESCE fallback (non-strict),
   as defined in the DIALECT rules above.
 
+OIL ANALYSIS DOMAIN — compartimiento (component) name mapping (CRITICAL):
+When the user mentions a component type, map it to the correct LIKE filter on [Oil].[LaboratoryData].[Compartimiento]:
+- “motor de tracción” / “motores de tracción” / “tracción” → LIKE '%TRACCION%' (NOT '%MOTOR TRACCION%')
+- “motor principal” / “motor” (without tracción) → LIKE '%MOTOR%' AND NOT LIKE '%TRACCION%'
+- “transmisión” → LIKE '%TRANSMIS%'
+- “sistema hidráulico” / “hidráulico” → LIKE '%HIDRAUL%'
+- “rueda delantera” → LIKE '%RUEDA%'
+- “mando final” → LIKE '%MANDO%FINAL%'
+- “diferencial” → LIKE '%DIFERENCIAL%'
+Real values in DB: 'MOTOR DE TRACCION RH', 'MOTOR DE TRACCION LH', 'RUEDA DELANTERA RH', 'RUEDA DELANTERA LH', 'SISTEMA HIDRAULICO', 'MOTOR'
+NEVER use compound phrases like '%MOTOR TRACCION%' — use single keyword: '%TRACCION%'
+
+OIL LIMITS TABLE [Eqpcare].[lc]:
+- Do NOT guess column names. Only use this table if its columns appear in the provided schema.
+- If [Eqpcare].[lc] columns are not in the schema, use hardcoded thresholds as fallback:
+  Fe_ppm > 60 OR Cu_ppm > 30 OR Si_ppm > 25 OR Al_ppm > 25 OR TBN < 3.0
+
 Return ONLY valid JSON, minified in a single line:
 {{
   "sql_query": "...",

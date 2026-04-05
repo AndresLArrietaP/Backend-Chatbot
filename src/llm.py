@@ -422,10 +422,11 @@ def _reforzar_triage_observados(q: str) -> str:
           "CTE con GROUP BY+MAX para última muestra (NUNCA ROW_NUMBER). "
           "WITH (NOLOCK) en todos los FROM/JOIN. "
           "DATEADD(YEAR,-5,GETDATE()). "
-          "JOIN [Eqpcare].[LC] para límites LP/LC; si no está: Fe_ppm>60 OR Cu_ppm>30 OR Si_ppm>25 OR Al_ppm>25 OR TBN<3.0. "
-          "Severidad=CASE WHEN >LC THEN 'CRÍTICO' WHEN >LP THEN 'PRECAUCIÓN' END. "
-          "DEVUELVE SOLO observados (valor>LP o >LC). 0 filas=válido. "
-          "TOP(200) solo en SELECT final. ORDER BY Severidad DESC."
+          "Compartimiento: usa keyword simple (ej: '%TRACCION%' para motor de tracción, '%HIDRAUL%' para hidráulico). "
+          "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
+          "Límites: SOLO usa [Eqpcare].[lc] si sus columnas están en el esquema proporcionado. "
+          "Si no están: WHERE Fe_ppm>60 OR Cu_ppm>30 OR Si_ppm>25 OR Al_ppm>25 OR TBN<3.0. "
+          "DEVUELVE SOLO observados. 0 filas=válido. TOP(200) en SELECT final. ORDER BY Severidad DESC."
     )
 
 
