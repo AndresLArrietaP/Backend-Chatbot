@@ -1226,6 +1226,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
         lanzadas = 0
         errores: List[str] = []
         ganador: Optional[str] = None
+        modelos_503: set = set()  # modelos que retornaron 503 en esta request — se saltan en repair y fallback
 
         async def _lanzar(m: str):
             res = await self._llamar_generar(m, contenidos, configuracion, timeout_por_modelo)
@@ -1259,6 +1260,7 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                     code_str = str(code).upper()
 
                     if status == "NOT_FOUND" or "not found" in msg.lower() or "no longer available" in msg.lower():
+                        modelos_503.add(mdl)
                         continue
 
                     if status == "RESOURCE_EXHAUSTED" or code_str == "429":
@@ -1268,7 +1270,8 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                         continue
 
                     if status in ("UNAVAILABLE", "SERVICE_UNAVAILABLE") or code_str == "503":
-                        log.warning("[gemini.consulta_humana_a_sql] %s no disponible (503) — continuando con siguientes modelos", mdl)
+                        log.warning("[gemini.consulta_humana_a_sql] %s no disponible (503) — se omitirá en fallback secuencial", mdl)
+                        modelos_503.add(mdl)
                         continue
 
                     continue
@@ -1470,16 +1473,24 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                 )
 
                 try:
+                    # Usar el primer modelo disponible que no haya 503-eado en este request
+                    modelo_reparar = next(
+                        (m for m in modelos if m not in modelos_503),
+                        modelos[0],
+                    )
                     contenidos_reparar = [{"role": "user", "parts": [{"text": prompt_reparacion}]}]
-                    resp_reparar = await asyncio.to_thread(
-                        self.cliente.models.generate_content,
-                        model=modelos[0],
-                        contents=contenidos_reparar,
-                        config={
-                            "response_mime_type": "application/json",
-                            "temperature": 0.0,
-                            "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=4096)),
-                        },
+                    resp_reparar = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.cliente.models.generate_content,
+                            model=modelo_reparar,
+                            contents=contenidos_reparar,
+                            config={
+                                "response_mime_type": "application/json",
+                                "temperature": 0.0,
+                                "max_output_tokens": int(env("SQL_REPAIR_MAX_TOKENS", default=4096)),
+                            },
+                        ),
+                        timeout=20.0,
                     )
                     obj_ganador = json.loads(self._asegurar_sql_json((resp_reparar.text or "").strip()))
                 except Exception:
@@ -1500,6 +1511,9 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
             errores.append("winner_sql_incompleta: SQL truncada/incompleta después del posproceso.")
 
         for mdl in modelos:
+            if mdl in modelos_503:
+                log.debug("[gemini.consulta_humana_a_sql] fallback: saltando %s (503 previo en este request)", mdl)
+                continue
             try:
                 res = await asyncio.wait_for(
                     asyncio.to_thread(self.cliente.models.generate_content, model=mdl, contents=contenidos, config=configuracion),
