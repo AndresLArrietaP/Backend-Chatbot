@@ -1267,19 +1267,24 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                             await asyncio.sleep(esperar_s)
                         continue
 
-                    continue
+                    if status in ("UNAVAILABLE", "SERVICE_UNAVAILABLE") or code_str == "503":
+                        log.warning("[gemini.consulta_humana_a_sql] %s no disponible (503) — continuando con siguientes modelos", mdl)
+                        continue
 
-                for p in pendientes:
-                    p.cancel()
+                    continue
 
                 texto = (res.text or "").strip()
                 if texto:
+                    # Cancelar tareas pendientes solo cuando hay un ganador real
+                    for p in pendientes:
+                        p.cancel()
                     log.info("[gemini.consulta_humana_a_sql] ganador=%s (lat=%.2fs)", mdl, time.time() - inicio)
                     ganador = texto
                     tareas.clear()
                     break
 
                 errores.append(f"{mdl}: respuesta vacía")
+                # No cancelar pendientes — dejar que otros modelos continúen
 
             tareas = [t for t in tareas if not t.done()]
             if ganador:
