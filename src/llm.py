@@ -470,19 +470,20 @@ def _reforzar_triage_observados(q: str) -> str:
     proyecto = _detectar_proyecto(q)
 
     if like_compartimiento and proyecto:
-        # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros
+        # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros.
+        # Usa 2 años (no 5) porque tenemos filtros específicos: menos datos, query más rápida.
         instruccion_cte = (
             f"OBLIGATORIO (todo en la CTE, NO en el SELECT externo): "
             f"INNER JOIN [Mine].[MiningEquipment] AS ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
             f"INNER JOIN [Mine].[MiningProject] AS MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
             f"WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND MP.[Name] LIKE '%{proyecto}%' "
-            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-5,GETDATE()). "
+            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
         )
     elif like_compartimiento:
         instruccion_cte = (
             f"OBLIGATORIO en la CTE: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
-            f"(sin este filtro la query es demasiado lenta). "
+            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
         )
     else:
         instruccion_cte = (

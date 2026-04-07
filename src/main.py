@@ -1296,6 +1296,11 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         # anyio.to_thread.run_sync con abandon_on_cancel=True abandona el thread
         # inmediatamente cuando asyncio.wait_for dispara el timeout, sin esperar
         # a que el thread de BD termine (a diferencia de run_in_threadpool/cancellable=False).
+        # database.consultar() tiene su propio thread con t.join(timeout=DB_QUERY_TIMEOUT).
+        # El asyncio.wait_for externo usa DB_QUERY_TIMEOUT + 10s de margen para dejar que
+        # el thread interno resuelva primero y propague el error limpiamente.
+        # Si el thread interno no responde (bug), el asyncio timeout es el seguro final.
+        _asyncio_db_timeout = DB_QUERY_TIMEOUT + 10
         try:
             rows_local = await asyncio.wait_for(
                 anyio.to_thread.run_sync(
@@ -1307,7 +1312,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                     ),
                     abandon_on_cancel=True,
                 ),
-                timeout=DB_QUERY_TIMEOUT,
+                timeout=_asyncio_db_timeout,
             )
         except asyncio.TimeoutError:
             raise HTTPException(
