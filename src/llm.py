@@ -188,6 +188,30 @@ _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
 
 
 # ==============================================================================
+#  Mapeo determinístico: keyword del usuario → filtro LIKE en Compartimiento
+#  Se usa en triage_observados para garantizar el filtro en la CTE.
+# ==============================================================================
+
+_COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
+    # (regex de detección, patrón LIKE para SQL)
+    (re.compile(r"\btracci[oó]n\b", re.IGNORECASE), "%TRACCION%"),
+    (re.compile(r"\bhidr[aá]ulic[ao]\b", re.IGNORECASE), "%HIDRAUL%"),
+    (re.compile(r"\brueda[s]?\s+delantera[s]?\b", re.IGNORECASE), "%RUEDA%"),
+    (re.compile(r"\bmando\s+final\b", re.IGNORECASE), "%MANDO%"),
+    (re.compile(r"\bdiferencial\b", re.IGNORECASE), "%DIFERENCIAL%"),
+    (re.compile(r"\btransmisi[oó]n\b", re.IGNORECASE), "%TRANSMISION%"),
+]
+
+
+def _detectar_like_compartimiento(q: str) -> Optional[str]:
+    """Detecta el patrón LIKE de compartimiento desde keywords en la consulta."""
+    for patron, like in _COMPARTIMIENTO_KEYWORD_MAP:
+        if patron.search(q or ""):
+            return like
+    return None
+
+
+# ==============================================================================
 #  Utilidades internas
 # ==============================================================================
 
@@ -415,15 +439,27 @@ def _reforzar_triage_observados(q: str) -> str:
     Refuerzo de prompt para el caso de uso PRINCIPAL:
     consulta masiva del estado de N componentes → devolver SOLO los observados.
     Genera SQL eficiente (GROUP BY+MAX, WITH NOLOCK, filtro LP/LC) desde el primer intento.
+    Si se detecta el tipo de compartimiento en la consulta, inyecta el LIKE como obligatorio
+    para evitar escaneos completos de [Oil].[LaboratoryData] que causan timeouts.
     """
+    like_compartimiento = _detectar_like_compartimiento(q)
+    if like_compartimiento:
+        instruccion_compartimiento = (
+            f"OBLIGATORIO en la CTE: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
+            f"(sin este filtro la query es demasiado lenta). "
+        )
+    else:
+        instruccion_compartimiento = (
+            "Compartimiento: usa keyword simple (ej: '%TRACCION%' para motor de tracción, '%HIDRAUL%' para hidráulico). "
+        )
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
           "CTE con GROUP BY+MAX para última muestra (NUNCA ROW_NUMBER). "
           "WITH (NOLOCK) en todos los FROM/JOIN. "
           "DATEADD(YEAR,-5,GETDATE()). "
-          "Compartimiento: usa keyword simple (ej: '%TRACCION%' para motor de tracción, '%HIDRAUL%' para hidráulico). "
-          "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
+        + instruccion_compartimiento
+        + "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
           "Límites: SOLO usa [Eqpcare].[lc] si sus columnas están en el esquema proporcionado. "
           "Si no están: WHERE Fe_ppm>60 OR Cu_ppm>30 OR Si_ppm>25 OR Al_ppm>25 OR TBN<3.0. "
           "DEVUELVE SOLO observados. 0 filas=válido. TOP(200) en SELECT final. ORDER BY Severidad DESC."
