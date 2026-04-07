@@ -538,14 +538,23 @@ async def consulta_humana_a_sql(
 
     heuristicas_aplicadas: List[str] = []
 
+    # Detectar proyecto y compartimiento al inicio — usados en triage y para suprimir
+    # heurísticas redundantes que añaden EquipmentFleet (puede no estar en allowed_fqn).
+    _triage_like_comp = _detectar_like_compartimiento(base_heuristica)
+    _triage_proyecto = _detectar_proyecto(base_heuristica)
+    _triage_cte_completo = bool(_triage_like_comp and _triage_proyecto)
+
     # ── PRIORIDAD MÁXIMA: caso de uso principal del producto ──────────────────
     # "estado de los N motores → solo los observados"
     # Se evalúa primero para que el prompt triage domine sobre heurísticas generales.
     if _es_intencion_triage_observados(base_heuristica):
         q_reforzada = _reforzar_triage_observados(q_reforzada)
         heuristicas_aplicadas.append("triage_observados")
-        # También activa join_proyecto_modelo para garantizar la cadena de JOINs
-        if not _es_intencion_join_proyecto_modelo(base_heuristica):
+        # Forzar join_proyecto_modelo SOLO si el triage no inyectó JOINs específicos.
+        # Cuando _triage_cte_completo=True, el prompt ya tiene MiningEquipment+MiningProject
+        # sin EquipmentFleet — agregar join_proyecto_modelo causaría SQL con EquipmentFleet
+        # que puede no estar en allowed_fqn → blindar 400 → segunda llamada LLM innecesaria.
+        if not _triage_cte_completo and not _es_intencion_join_proyecto_modelo(base_heuristica):
             q_reforzada = _reforzar_join_proyecto_modelo_aceite(q_reforzada)
             heuristicas_aplicadas.append("join_proyecto_modelo")
 
@@ -557,7 +566,9 @@ async def consulta_humana_a_sql(
         q_reforzada = _reforzar_tabla_laboratorio_aceite(q_reforzada)
         heuristicas_aplicadas.append("laboratorio_aceite")
 
-    if _es_intencion_join_proyecto_modelo(base_heuristica):
+    # join_proyecto_modelo: suprimir cuando triage ya especificó los JOINs completos
+    # (evita que Flash incluya EquipmentFleet y provoque rechazo en blindar_sql).
+    if not _triage_cte_completo and _es_intencion_join_proyecto_modelo(base_heuristica):
         q_reforzada = _reforzar_join_proyecto_modelo_aceite(q_reforzada)
         heuristicas_aplicadas.append("join_proyecto_modelo")
 
