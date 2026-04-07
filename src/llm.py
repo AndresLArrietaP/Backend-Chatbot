@@ -202,12 +202,36 @@ _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
     (re.compile(r"\btransmisi[oó]n\b", re.IGNORECASE), "%TRANSMISION%"),
 ]
 
+# Proyectos mineros conocidos: (keyword lowercase, nombre para LIKE)
+_PROYECTOS_CONOCIDOS: List[tuple] = [
+    ("antapaccay", "Antapaccay"),
+    ("las bambas", "Las Bambas"),
+    ("antamina", "Antamina"),
+    ("cerro verde", "Cerro Verde"),
+    ("quellaveco", "Quellaveco"),
+    ("toromocho", "Toromocho"),
+    ("cuajone", "Cuajone"),
+    ("toquepala", "Toquepala"),
+    ("marcona", "Marcona"),
+    ("lagunas norte", "Lagunas Norte"),
+    ("bayovar", "Bayovar"),
+]
+
 
 def _detectar_like_compartimiento(q: str) -> Optional[str]:
     """Detecta el patrón LIKE de compartimiento desde keywords en la consulta."""
     for patron, like in _COMPARTIMIENTO_KEYWORD_MAP:
         if patron.search(q or ""):
             return like
+    return None
+
+
+def _detectar_proyecto(q: str) -> Optional[str]:
+    """Detecta el nombre del proyecto minero desde la consulta."""
+    q_lower = (q or "").lower()
+    for keyword, nombre in _PROYECTOS_CONOCIDOS:
+        if keyword in q_lower:
+            return nombre
     return None
 
 
@@ -443,26 +467,37 @@ def _reforzar_triage_observados(q: str) -> str:
     para evitar escaneos completos de [Oil].[LaboratoryData] que causan timeouts.
     """
     like_compartimiento = _detectar_like_compartimiento(q)
-    if like_compartimiento:
-        instruccion_compartimiento = (
+    proyecto = _detectar_proyecto(q)
+
+    if like_compartimiento and proyecto:
+        # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros
+        instruccion_cte = (
+            f"OBLIGATORIO (todo en la CTE, NO en el SELECT externo): "
+            f"INNER JOIN [Mine].[MiningEquipment] AS ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+            f"INNER JOIN [Mine].[MiningProject] AS MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+            f"WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
+            f"AND MP.[Name] LIKE '%{proyecto}%' "
+            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-5,GETDATE()). "
+        )
+    elif like_compartimiento:
+        instruccion_cte = (
             f"OBLIGATORIO en la CTE: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"(sin este filtro la query es demasiado lenta). "
         )
     else:
-        instruccion_compartimiento = (
-            "Compartimiento: usa keyword simple (ej: '%TRACCION%' para motor de tracción, '%HIDRAUL%' para hidráulico). "
+        instruccion_cte = (
+            "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
         )
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
           "CTE con GROUP BY+MAX para última muestra (NUNCA ROW_NUMBER). "
           "WITH (NOLOCK) en todos los FROM/JOIN. "
-          "DATEADD(YEAR,-5,GETDATE()). "
-        + instruccion_compartimiento
+        + instruccion_cte
         + "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
-          "Límites: SOLO usa [Eqpcare].[lc] si sus columnas están en el esquema proporcionado. "
-          "Si no están: WHERE Fe_ppm>60 OR Cu_ppm>30 OR Si_ppm>25 OR Al_ppm>25 OR TBN<3.0. "
-          "DEVUELVE SOLO observados. 0 filas=válido. TOP(200) en SELECT final. ORDER BY Severidad DESC."
+          "Límites: SOLO usa [Eqpcare].[lc] si sus columnas están en el esquema. "
+          "Si no: Fe_ppm>60 OR Cu_ppm>30 OR Si_ppm>25 OR Al_ppm>25 OR TBN<3.0. "
+          "DEVUELVE SOLO observados. 0 filas=válido. TOP(200) SELECT final. ORDER BY Severidad DESC."
     )
 
 
