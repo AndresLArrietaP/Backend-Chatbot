@@ -17,12 +17,18 @@ Arquitectura:
 index.py -> init_app(config) -> app.include_router(src.main.router)
 """
 
+import asyncio
+import logging
 from typing import Type, List
+
+import anyio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from . import main as api
+
+log = logging.getLogger(__name__)
 
 
 def init_app(configuration: Type) -> FastAPI:
@@ -60,6 +66,48 @@ def init_app(configuration: Type) -> FastAPI:
 
     # ------------------- Router ---------------------
     app.include_router(api.router)
+
+    # ------------------- Startup: DB warmup ---------
+    @app.on_event("startup")
+    async def _warmup_db_on_startup() -> None:
+        """
+        Calienta el pool de conexiones y el caché de esquema al arrancar.
+        Corre en background para no bloquear el startup; si falla, el primer
+        request real pagará el cold-start (degradación graceful).
+        """
+        async def _bg() -> None:
+            from decouple import config as env_cfg
+            from . import database
+
+            # 1. Pool de conexiones: query mínima → Azure SQL compila plan base
+            try:
+                await anyio.to_thread.run_sync(database.warmup_connection, abandon_on_cancel=False)
+            except Exception as exc:
+                log.warning("[startup] warmup conexión falló: %s", exc)
+
+            # 2. Caché de esquema: la primera llamada real no tendrá que esperar la introspección
+            try:
+                target_schemas = [
+                    s.strip()
+                    for s in (env_cfg("TARGET_SCHEMAS", default="public") or "").split(",")
+                    if s.strip()
+                ]
+                max_tablas = env_cfg("MAX_SCHEMA_TABLES", default=80, cast=int)
+                max_cols = env_cfg("MAX_SCHEMA_COLUMNS", default=4000, cast=int)
+                await anyio.to_thread.run_sync(
+                    lambda: database.obtener_esquema_json(
+                        esquemas=target_schemas,
+                        tablas=None,
+                        max_tablas=max_tablas,
+                        max_columnas=max_cols,
+                    ),
+                    abandon_on_cancel=False,
+                )
+                log.info("[startup] Caché de esquema pre-cargado.")
+            except Exception as exc:
+                log.warning("[startup] warmup esquema falló: %s", exc)
+
+        asyncio.create_task(_bg())
 
     # ------------------- OpenAPI servers (ngrok) ----
     public_base_url = (settings.PUBLIC_BASE_URL or "").strip()

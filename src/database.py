@@ -1310,6 +1310,20 @@ def consultar(
 query = consultar
 
 
+def warmup_connection() -> None:
+    """
+    Pre-calienta el pool de conexiones ejecutando una query mínima.
+    Llamar al arrancar el servidor para evitar cold-start en la primera petición real.
+    Toca [Oil].[LaboratoryData] para que Azure SQL compile y cachee el plan de esa tabla.
+    """
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT TOP 1 1 AS ping FROM [Oil].[LaboratoryData] WITH (NOLOCK)"))
+        log.info("[DB] warmup completado — pool y plan de Azure SQL calientes.")
+    except Exception as exc:
+        log.warning("[DB] warmup falló (ignorado, se reintentará en la primera petición): %s", exc)
+
+
 def limpiar_recursos() -> None:
     """Libera conexiones del pool."""
     engine.dispose()
