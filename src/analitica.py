@@ -392,6 +392,114 @@ def generar_analisis_resultado(
     }
 
 
+# ==============================================================================
+#  Generación de URL de gráfico via QuickChart.io
+#  Deshabilitado por defecto — activar con INCLUIR_CHART_URL=true en .env
+#  No afecta ninguna funcionalidad existente.
+# ==============================================================================
+
+def generar_chart_url(
+    filas: List[Dict[str, Any]],
+    graficos_sugeridos: List[Dict[str, Any]],
+    max_filas: int = 20,
+) -> Optional[str]:
+    """
+    Genera una URL pública de imagen de gráfico usando QuickChart.io.
+
+    Toma la primera sugerencia de graficos_sugeridos y los datos de filas,
+    construye un Chart.js config, y hace POST a QuickChart para obtener
+    una URL corta permanente.
+
+    Devuelve None si no hay sugerencias, si los datos son insuficientes,
+    o si la llamada HTTP falla — nunca lanza excepciones.
+
+    Activar con INCLUIR_CHART_URL=true en .env (deshabilitado por defecto).
+    """
+    if not filas or not graficos_sugeridos:
+        return None
+
+    sugerencia = graficos_sugeridos[0]
+    eje_x = sugerencia.get("eje_x", "")
+    eje_y = sugerencia.get("eje_y", "")
+    titulo = sugerencia.get("titulo", "")
+    tipo_interno = sugerencia.get("tipo", "barras")
+
+    if not eje_x or not eje_y:
+        return None
+
+    _tipo_map = {"barras": "bar", "linea": "line", "dispersión": "scatter"}
+    tipo_chartjs = _tipo_map.get(tipo_interno, "bar")
+
+    muestra = filas[:max_filas]
+    labels = [str(r.get(eje_x, "")) for r in muestra]
+    data: List[Any] = []
+    for r in muestra:
+        v = _a_float(r.get(eje_y))
+        data.append(round(v, 2) if v is not None else 0)
+
+    if not any(v != 0 for v in data):
+        return None
+
+    # Colores por severidad si la columna X contiene códigos de equipo
+    color_fondo = "rgba(54, 162, 235, 0.8)"
+    color_borde = "rgba(54, 162, 235, 1)"
+
+    chart_config: Dict[str, Any] = {
+        "type": tipo_chartjs,
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": eje_y,
+                "data": data,
+                "backgroundColor": color_fondo,
+                "borderColor": color_borde,
+                "borderWidth": 1,
+                "fill": tipo_chartjs == "line",
+            }],
+        },
+        "options": {
+            "plugins": {
+                "title": {"display": bool(titulo), "text": titulo},
+                "legend": {"display": False},
+            },
+            "scales": {
+                "x": {"ticks": {"maxRotation": 45, "minRotation": 0}},
+                "y": {"beginAtZero": False},
+            },
+        },
+    }
+
+    try:
+        import json
+        import urllib.request
+
+        payload = json.dumps({"chart": chart_config}, separators=(",", ":")).encode()
+        req = urllib.request.Request(
+            "https://quickchart.io/chart/create",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read().decode())
+            url = result.get("url", "")
+            if url:
+                return url
+    except Exception:
+        pass
+
+    # Fallback: GET URL codificada (funciona para datasets pequeños)
+    try:
+        import json
+        import urllib.parse
+        encoded = urllib.parse.quote(
+            json.dumps(chart_config, separators=(",", ":")), safe=""
+        )
+        return f"https://quickchart.io/chart?c={encoded}&w=700&h=400&bkg=white"
+    except Exception:
+        return None
+
+
 def renderizar_resumen_analitico(analisis: Dict[str, Any]) -> str:
     """Convierte el análisis estructurado en un texto breve y legible."""
     if not analisis or not analisis.get("row_count"):

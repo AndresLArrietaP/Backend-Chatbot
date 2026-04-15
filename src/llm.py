@@ -473,21 +473,26 @@ def _reforzar_triage_observados(q: str) -> str:
         # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros.
         # Usa 2 años (no 5) porque tenemos filtros específicos: menos datos, query más rápida.
         instruccion_cte = (
-            f"OBLIGATORIO (todo en la CTE, NO en el SELECT externo): "
+            f"CTE interna (GROUP BY+MAX): "
             f"INNER JOIN [Mine].[MiningEquipment] AS ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
             f"INNER JOIN [Mine].[MiningProject] AS MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
             f"WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND MP.[Name] LIKE '%{proyecto}%' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"SELECT externo: INNER JOIN LatestSamples (NUNCA LEFT JOIN). "
+            f"Repetir en WHERE externo: AND LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%'. "
         )
     elif like_compartimiento:
         instruccion_cte = (
-            f"OBLIGATORIO en la CTE: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
+            f"CTE interna: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"SELECT externo: INNER JOIN LatestSamples (NUNCA LEFT JOIN). "
+            f"Repetir en WHERE externo: AND LD.[Compartimiento] LIKE '{like_compartimiento}'. "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
+            "SELECT externo: INNER JOIN LatestSamples (NUNCA LEFT JOIN). "
         )
     return (
         q.strip()

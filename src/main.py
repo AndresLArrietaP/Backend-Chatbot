@@ -63,7 +63,7 @@ from pydantic import BaseModel, Field
 
 from . import database
 from . import llm
-from .analitica import generar_analisis_resultado, renderizar_resumen_analitico
+from .analitica import generar_analisis_resultado, generar_chart_url, renderizar_resumen_analitico
 from .contexto_chat import GestorContextoConversacional
 
 log = logging.getLogger(__name__)
@@ -107,6 +107,8 @@ ESQUEMA_RELEVANTE_MAX_TABLAS = env("ESQUEMA_RELEVANTE_MAX_TABLAS", default=18, c
 GENERAR_RESPUESTA_TEXTO = env("GENERAR_RESPUESTA_TEXTO", default=False, cast=bool)
 INCLUIR_ANALISIS_RESULTADO = env("INCLUIR_ANALISIS_RESULTADO", default=True, cast=bool)
 INCLUIR_SUGERENCIAS_GRAFICO = env("INCLUIR_SUGERENCIAS_GRAFICO", default=True, cast=bool)
+# Deshabilitado por defecto — activar cuando se integre Copilot Studio con gráficos
+INCLUIR_CHART_URL = env("INCLUIR_CHART_URL", default=False, cast=bool)
 
 CONTEXTO_CHAT_TTL_MINUTOS = env("CONTEXTO_CHAT_TTL_MINUTOS", default=45, cast=int)
 CONTEXTO_CHAT_MAX_TURNOS = env("CONTEXTO_CHAT_MAX_TURNOS", default=8, cast=int)
@@ -1574,6 +1576,15 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     if (not INCLUIR_SUGERENCIAS_GRAFICO) and isinstance(analisis_resultado, dict):
         analisis_resultado.pop("graficos_sugeridos", None)
 
+    # Generación de URL de gráfico — deshabilitada por defecto (INCLUIR_CHART_URL=false)
+    # Activar en .env cuando se integre Copilot Studio con gráficos.
+    _chart_url: Optional[str] = None
+    if INCLUIR_CHART_URL and rows and isinstance(analisis_resultado, dict):
+        _chart_url = generar_chart_url(
+            filas=rows,
+            graficos_sugeridos=analisis_resultado.get("graficos_sugeridos") or [],
+        )
+
     if rows and incluir_respuesta_texto:
         try:
             respuesta_textual = await llm.construir_respuesta(rows, human)
@@ -1622,6 +1633,9 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     if INCLUIR_ANALISIS_RESULTADO:
         respuesta["analisis"] = analisis_resultado
+
+    if _chart_url:
+        respuesta["chart_url"] = _chart_url
 
     if warning_sql_retry:
         respuesta["warning"] = " ".join(warning_sql_retry)
