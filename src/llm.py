@@ -479,20 +479,20 @@ def _reforzar_triage_observados(q: str) -> str:
             f"WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND MP.[Name] LIKE '%{proyecto}%' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: INNER JOIN LatestSamples (NUNCA LEFT JOIN). "
+            f"SELECT externo: INNER JOIN LatestSamples AS LS ON LD.[MiningEquipmentId]=LS.[MiningEquipmentId] AND LD.[Compartimiento]=LS.[Compartimiento] (NUNCA LEFT JOIN, NUNCA solo MiningEquipmentId). "
             f"Repetir en WHERE externo: AND LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%'. "
         )
     elif like_compartimiento:
         instruccion_cte = (
             f"CTE interna: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: INNER JOIN LatestSamples (NUNCA LEFT JOIN). "
+            f"SELECT externo: INNER JOIN LatestSamples AS LS ON LD.[MiningEquipmentId]=LS.[MiningEquipmentId] AND LD.[Compartimiento]=LS.[Compartimiento] (NUNCA LEFT JOIN, NUNCA solo MiningEquipmentId). "
             f"Repetir en WHERE externo: AND LD.[Compartimiento] LIKE '{like_compartimiento}'. "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
-            "SELECT externo: INNER JOIN LatestSamples (NUNCA LEFT JOIN). "
+            "SELECT externo: INNER JOIN LatestSamples AS LS ON LD.[MiningEquipmentId]=LS.[MiningEquipmentId] AND LD.[Compartimiento]=LS.[Compartimiento] (NUNCA LEFT JOIN). "
         )
     return (
         q.strip()
