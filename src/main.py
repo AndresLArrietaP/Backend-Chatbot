@@ -1223,10 +1223,35 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 conversation_context=contexto_conversacional,
             )
         except RuntimeError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail=f"El modelo LLM no pudo generar la consulta: {str(exc)[:300]}",
-            )
+            # Gemini agotó todos sus modelos — intentar OpenAI como fallback cross-provider
+            _openai_key = env("OPENAI_API_KEY", default="").strip()
+            if _openai_key and llm._proveedor.__class__.__name__ != "OpenAIProvider":
+                log.warning("[human_query] Gemini falló (%s) — reintentando con OpenAI", str(exc)[:120])
+                try:
+                    from .providers.openai_client import OpenAIProvider as _OpenAIProvider
+                    _proveedor_fallback = _OpenAIProvider()
+                    sql_json = await asyncio.wait_for(
+                        _proveedor_fallback.consulta_humana_a_sql(
+                            consulta_humana=consulta_humana,
+                            esquema_json=esquema_llm,
+                            dialecto=dialecto,
+                            limite_por_defecto=limite_por_defecto,
+                            modelo=None,
+                            conversation_context=contexto_conversacional,
+                        ),
+                        timeout=90.0,
+                    )
+                except Exception as exc2:
+                    log.error("[human_query] OpenAI fallback también falló: %s", str(exc2)[:200])
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"El modelo LLM no pudo generar la consulta: {str(exc)[:300]}",
+                    )
+            else:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"El modelo LLM no pudo generar la consulta: {str(exc)[:300]}",
+                )
         try:
             obj = json.loads(sql_json)
         except Exception:

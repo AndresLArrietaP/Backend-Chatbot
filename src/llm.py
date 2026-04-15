@@ -496,8 +496,9 @@ def _reforzar_triage_observados(q: str) -> str:
           "WITH (NOLOCK) en todos los FROM/JOIN. "
         + instruccion_cte
         + "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
-          "Límites: SOLO usa [Eqpcare].[lc] si sus columnas están en el esquema. "
-          "Si no: Fe_ppm>60 OR Cu_ppm>30 OR Si_ppm>25 OR Al_ppm>25 OR TBN<3.0. "
+          "Umbral OBSERVADO — copia exacta obligatoria, OR lógico (NUNCA AND): "
+          "(LD.[Fe_ppm]>60 OR LD.[Cu_ppm]>30 OR LD.[Si_ppm]>25 OR LD.[Al_ppm]>25 OR LD.[TBN]<3.0). "
+          "No uses [Eqpcare].[lc] a menos que sus columnas aparezcan en el esquema provisto. "
           "DEVUELVE SOLO observados. 0 filas=válido. TOP(200) SELECT final. ORDER BY Severidad DESC."
     )
 
