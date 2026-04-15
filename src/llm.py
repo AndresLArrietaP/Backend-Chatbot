@@ -500,7 +500,8 @@ def _reforzar_triage_observados(q: str) -> str:
           "CTE con GROUP BY+MAX para última muestra (NUNCA ROW_NUMBER). "
           "WITH (NOLOCK) en todos los FROM/JOIN. "
         + instruccion_cte
-        + "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
+        + "JOINs permitidos: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet] ni otras tablas adicionales. "
+          "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
           "Umbral OBSERVADO — copia exacta obligatoria, OR lógico (NUNCA AND): "
           "(LD.[Fe_ppm]>60 OR LD.[Cu_ppm]>30 OR LD.[Si_ppm]>25 OR LD.[Al_ppm]>25 OR LD.[TBN]<3.0). "
           "No uses [Eqpcare].[lc] a menos que sus columnas aparezcan en el esquema provisto. "

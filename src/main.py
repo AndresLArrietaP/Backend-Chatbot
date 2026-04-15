@@ -696,6 +696,10 @@ def _debe_responder_desde_resultado_previo(
     if _RE_INTENCION_PEDIR_DATOS_NUEVOS.search(q):
         return False
 
+    # Un triage nuevo siempre requiere SQL fresco — evita contaminar con resultados de otro componente
+    if _es_consulta_triage_observados(q):
+        return False
+
     return bool(_RE_INTENCION_INTERPRETAR_RESULTADO_PREVIO.search(q))
 
 
@@ -830,6 +834,10 @@ def _puede_refinar_desde_memoria(
     if not _RE_REFINAR_MEMORIA.search(q):
         return False
 
+    # Un triage nuevo (diferente compartimiento) siempre requiere SQL fresco
+    if _es_consulta_triage_observados(q):
+        return False
+
     if "sin volver a listar" in _normalizar_token(q):
         return False
 
@@ -846,6 +854,10 @@ def _puede_responder_desde_memoria(
 
     q = consulta_humana or ""
     if not _RE_INTERPRETACION_MEMORIA.search(q):
+        return False
+
+    # Un triage nuevo siempre requiere SQL fresco — evita contaminar con resultados de otro componente
+    if _es_consulta_triage_observados(q):
         return False
 
     if _RE_PIDE_LISTAR.search(q):
