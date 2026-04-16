@@ -80,8 +80,8 @@ class Config:
 
     # --- Gemini (proveedor principal) ---
     GOOGLE_API_KEY: str | None    = env("GOOGLE_API_KEY", default=None)
-    GEMINI_MODEL: str             = env("GEMINI_MODEL", default="gemini-3-flash")
-    GEMINI_MODEL_ANSWER: str      = env("GEMINI_MODEL_ANSWER", default="gemini-3-pro")
+    GEMINI_MODEL: str             = env("GEMINI_MODEL", default="gemini-2.5-flash")
+    GEMINI_MODEL_ANSWER: str      = env("GEMINI_MODEL_ANSWER", default="gemini-2.5-pro")
 
     # --- OpenAI (proveedor alternativo) ---
     OPENAI_API_KEY: str | None = env("OPENAI_API_KEY", default=None)

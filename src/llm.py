@@ -333,7 +333,7 @@ def _reforzar_join_proyecto_modelo_aceite(q: str) -> str:
           "JOIN [Mine].[MiningProject] AS MP ON MP.[Id]=ME.[MiningProjectId]. "
           "Proyecto: MP.[Name] LIKE '%nombre%'. Modelo: EF.[Model] LIKE '%modelo%'. Equipo: ME.[Code]. "
           "Siempre: LD.[Compartimiento] IS NOT NULL AND LD.[FechaMuestreo]>=DATEADD(YEAR,-5,GETDATE()). "
-          "Última muestra por componente: CTE GROUP BY+MAX (no ROW_NUMBER). TOP(200) en SELECT final."
+          "Última muestra por componente: CTE con ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn, filtra rn=1 (NUNCA GROUP BY+MAX). TOP(200) en SELECT final."
     )
 
 
@@ -462,7 +462,7 @@ def _reforzar_triage_observados(q: str) -> str:
     """
     Refuerzo de prompt para el caso de uso PRINCIPAL:
     consulta masiva del estado de N componentes → devolver SOLO los observados.
-    Genera SQL eficiente (GROUP BY+MAX, WITH NOLOCK, filtro LP/LC) desde el primer intento.
+    Genera SQL eficiente (ROW_NUMBER, WITH NOLOCK, filtro LP/LC) desde el primer intento.
     Si se detecta el tipo de compartimiento en la consulta, inyecta el LIKE como obligatorio
     para evitar escaneos completos de [Oil].[LaboratoryData] que causan timeouts.
     """
@@ -473,35 +473,36 @@ def _reforzar_triage_observados(q: str) -> str:
         # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros.
         # Usa 2 años (no 5) porque tenemos filtros específicos: menos datos, query más rápida.
         instruccion_cte = (
-            f"CTE interna (GROUP BY+MAX): "
-            f"INNER JOIN [Mine].[MiningEquipment] AS ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
-            f"INNER JOIN [Mine].[MiningProject] AS MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
-            f"WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
+            f"CTE interna: incluye JOINs a ME y MP dentro del CTE. "
+            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND MP.[Name] LIKE '%{proyecto}%' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: INNER JOIN LatestSamples AS LS ON LD.[MiningEquipmentId]=LS.[MiningEquipmentId] AND LD.[Compartimiento]=LS.[Compartimiento] (NUNCA LEFT JOIN, NUNCA solo MiningEquipmentId). "
-            f"Repetir en WHERE externo: AND LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%'. "
+            f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
+            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. "
         )
     elif like_compartimiento:
         instruccion_cte = (
-            f"CTE interna: AND LD.[Compartimiento] LIKE '{like_compartimiento}' "
+            f"CTE interna: WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: INNER JOIN LatestSamples AS LS ON LD.[MiningEquipmentId]=LS.[MiningEquipmentId] AND LD.[Compartimiento]=LS.[Compartimiento] (NUNCA LEFT JOIN, NUNCA solo MiningEquipmentId). "
-            f"Repetir en WHERE externo: AND LD.[Compartimiento] LIKE '{like_compartimiento}'. "
+            f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
+            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
-            "SELECT externo: INNER JOIN LatestSamples AS LS ON LD.[MiningEquipmentId]=LS.[MiningEquipmentId] AND LD.[Compartimiento]=LS.[Compartimiento] (NUNCA LEFT JOIN). "
+            "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
+            "SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. "
         )
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
-          "CTE con GROUP BY+MAX para última muestra (NUNCA ROW_NUMBER). "
+          "CTE con ROW_NUMBER (NUNCA GROUP BY+MAX — la BD tiene duplicados por fecha que generan datos incorrectos). "
           "WITH (NOLOCK) en todos los FROM/JOIN. "
         + instruccion_cte
         + "JOINs permitidos: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet] ni otras tablas adicionales. "
-          "NUNCA '%MOTOR TRACCION%' — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
+          "Compartimiento — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
+          "NUNCA '%MOTOR TRACCION%'. "
+          "Motor sin tracción → LIKE '%MOTOR%' AND [Compartimiento] NOT LIKE '%TRACCION%'. "
           "Umbral OBSERVADO — copia exacta obligatoria, OR lógico (NUNCA AND): "
           "(LD.[Fe_ppm]>60 OR LD.[Cu_ppm]>30 OR LD.[Si_ppm]>25 OR LD.[Al_ppm]>25 OR LD.[TBN]<3.0). "
           "No uses [Eqpcare].[lc] a menos que sus columnas aparezcan en el esquema provisto. "

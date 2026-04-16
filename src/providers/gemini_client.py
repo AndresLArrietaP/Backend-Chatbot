@@ -456,12 +456,9 @@ class GeminiProvider:
         en_lista = [s.strip() for s in cruda.split(",") if s.strip()]
 
         defaults = [
-            "models/gemini-3-pro",
-            "models/gemini-3-flash",
-            #"models/gemini-2.5-pro",
             "models/gemini-2.5-flash",
-            "models/gemini-2-flash",
-            "models/gemini-2-flash-lite",
+            "models/gemini-2.5-flash-lite",
+            "models/gemini-2.0-flash-001",
         ]
 
         def norm(m: str) -> str:
