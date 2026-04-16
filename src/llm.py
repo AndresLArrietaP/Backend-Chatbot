@@ -474,24 +474,28 @@ def _reforzar_triage_observados(q: str) -> str:
         # Usa 2 años (no 5) porque tenemos filtros específicos: menos datos, query más rápida.
         instruccion_cte = (
             f"CTE interna: incluye JOINs a ME y MP dentro del CTE. "
+            f"Proyectar en CTE: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo]. "
             f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND MP.[Name] LIKE '%{proyecto}%' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. "
+            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. Mostrar [EquipmentCode] (NUNCA MiningEquipmentId). "
         )
     elif like_compartimiento:
         instruccion_cte = (
-            f"CTE interna: WHERE LD.[Compartimiento] LIKE '{like_compartimiento}' "
+            f"CTE interna: incluye JOIN a ME. "
+            f"Proyectar en CTE: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo]. "
+            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. "
+            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. Mostrar [EquipmentCode] (NUNCA MiningEquipmentId). "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
+            "CTE: incluye JOIN a ME, proyecta ME.[Code] AS [EquipmentCode]. "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            "SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. "
+            "SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. Mostrar [EquipmentCode] (NUNCA MiningEquipmentId). "
         )
     return (
         q.strip()

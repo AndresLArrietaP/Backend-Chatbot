@@ -458,7 +458,6 @@ class GeminiProvider:
         defaults = [
             "models/gemini-2.5-flash",
             "models/gemini-2.5-flash-lite",
-            "models/gemini-2.0-flash-001",
         ]
 
         def norm(m: str) -> str:
