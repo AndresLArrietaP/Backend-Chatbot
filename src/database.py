@@ -223,6 +223,22 @@ def _quitar_comentarios_sql(s: str) -> str:
 _RE_ESPACIOS = re.compile(r"\s+")
 
 
+def _fix_cte_alias_prefixes(sql: str) -> str:
+    """
+    Elimina prefijos de alias de tabla (LD., ME., MP., LS.) en el SELECT externo
+    de queries con CTE LatestSamples.
+    Problema: el LLM genera LD.[Fe_ppm] en el WHERE externo, pero LD solo existe
+    dentro del CTE — en el SELECT externo las columnas vienen de LatestSamples sin alias.
+    """
+    m = re.search(r"\bFROM\s+LatestSamples\b", sql, re.IGNORECASE)
+    if not m:
+        return sql
+    prefix = sql[: m.start()]
+    suffix = sql[m.start() :]
+    suffix = re.sub(r"\b(?:LD|ME|MP|LS)\.\[", "[", suffix, flags=re.IGNORECASE)
+    return prefix + suffix
+
+
 def limpiar_sql(sql: str) -> str:
     """
     Limpia SQL de entrada:
@@ -230,6 +246,7 @@ def limpiar_sql(sql: str) -> str:
     - Quita prefijos 'sql:' o 'query:'.
     - Quita ';' final.
     - Colapsa espacios.
+    - Elimina prefijos de alias (LD./ME./MP.) en SELECT externo de CTEs.
     """
     s = sql or ""
     s = _quitar_bloques_codigo(s)
@@ -239,6 +256,7 @@ def limpiar_sql(sql: str) -> str:
     if s.endswith(";"):
         s = s[:-1].strip()
     s = _RE_ESPACIOS.sub(" ", s)
+    s = _fix_cte_alias_prefixes(s)
     log.debug("[database.limpiar_sql] IN=%r OUT=%r", (sql or "")[:300], s[:300])
     return s
 

@@ -477,8 +477,8 @@ def _reforzar_triage_observados(q: str) -> str:
             f"SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN] FROM LatestSamples WHERE rn=1 AND [umbral]. "
-            f"CRÍTICO: en SELECT externo NO usar prefijo LD. — columnas vienen del CTE sin alias de tabla. "
+            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] FROM LatestSamples WHERE rn=1 AND [umbral]. "
+            f"CRÍTICO SELECT externo: NO usar LD./ME./MP. como prefijo — columnas sin alias. NO incluir [MiningEquipmentId]. "
         )
     elif like_compartimiento:
         instruccion_cte = (
@@ -486,16 +486,16 @@ def _reforzar_triage_observados(q: str) -> str:
             f"SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN] FROM LatestSamples WHERE rn=1 AND [umbral]. "
-            f"CRÍTICO: en SELECT externo NO usar prefijo LD. — columnas vienen del CTE sin alias de tabla. "
+            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] FROM LatestSamples WHERE rn=1 AND [umbral]. "
+            f"CRÍTICO SELECT externo: NO usar LD./ME./MP. como prefijo — columnas sin alias. NO incluir [MiningEquipmentId]. "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
             "CTE: incluye JOIN a ME. SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            "SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],... FROM LatestSamples WHERE rn=1 AND [umbral]. "
-            "CRÍTICO: en SELECT externo NO usar prefijo LD. — columnas vienen del CTE sin alias de tabla. "
+            "SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] FROM LatestSamples WHERE rn=1 AND [umbral]. "
+            "CRÍTICO SELECT externo: NO usar LD./ME./MP. como prefijo — columnas sin alias. NO incluir [MiningEquipmentId]. "
         )
     return (
         q.strip()
