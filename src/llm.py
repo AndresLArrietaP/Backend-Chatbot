@@ -473,44 +473,45 @@ def _reforzar_triage_observados(q: str) -> str:
         # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros.
         # Usa 2 años (no 5) porque tenemos filtros específicos: menos datos, query más rápida.
         instruccion_cte = (
-            f"CTE interna: incluye JOINs a ME y MP dentro del CTE. "
-            f"Proyectar en CTE: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo]. "
-            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' "
-            f"AND MP.[Name] LIKE '%{proyecto}%' "
-            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"CTE interna: incluye JOINs a ME y MP. "
+            f"SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. Mostrar [EquipmentCode] (NUNCA MiningEquipmentId). "
+            f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN] FROM LatestSamples WHERE rn=1 AND [umbral]. "
+            f"CRÍTICO: en SELECT externo NO usar prefijo LD. — columnas vienen del CTE sin alias de tabla. "
         )
     elif like_compartimiento:
         instruccion_cte = (
             f"CTE interna: incluye JOIN a ME. "
-            f"Proyectar en CTE: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo]. "
-            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' "
-            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. Mostrar [EquipmentCode] (NUNCA MiningEquipmentId). "
+            f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN] FROM LatestSamples WHERE rn=1 AND [umbral]. "
+            f"CRÍTICO: en SELECT externo NO usar prefijo LD. — columnas vienen del CTE sin alias de tabla. "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
-            "CTE: incluye JOIN a ME, proyecta ME.[Code] AS [EquipmentCode]. "
+            "CTE: incluye JOIN a ME. SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            "SELECT externo: FROM LatestSamples WHERE rn=1 AND [umbral observado]. Mostrar [EquipmentCode] (NUNCA MiningEquipmentId). "
+            "SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],... FROM LatestSamples WHERE rn=1 AND [umbral]. "
+            "CRÍTICO: en SELECT externo NO usar prefijo LD. — columnas vienen del CTE sin alias de tabla. "
         )
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
-          "CTE con ROW_NUMBER (NUNCA GROUP BY+MAX — la BD tiene duplicados por fecha que generan datos incorrectos). "
+          "CTE con ROW_NUMBER (NUNCA GROUP BY+MAX — BD tiene duplicados por fecha). "
+          "NUNCA poner TOP dentro del CTE — el TOP(200) va ÚNICAMENTE en el SELECT externo después de WHERE rn=1. "
           "WITH (NOLOCK) en todos los FROM/JOIN. "
         + instruccion_cte
-        + "JOINs permitidos: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet] ni otras tablas adicionales. "
+        + "JOINs permitidos: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet]. "
           "Compartimiento — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
           "NUNCA '%MOTOR TRACCION%'. "
           "Motor sin tracción → LIKE '%MOTOR%' AND [Compartimiento] NOT LIKE '%TRACCION%'. "
-          "Umbral OBSERVADO — copia exacta obligatoria, OR lógico (NUNCA AND): "
-          "(LD.[Fe_ppm]>60 OR LD.[Cu_ppm]>30 OR LD.[Si_ppm]>25 OR LD.[Al_ppm]>25 OR LD.[TBN]<3.0). "
-          "No uses [Eqpcare].[lc] a menos que sus columnas aparezcan en el esquema provisto. "
-          "DEVUELVE SOLO observados. 0 filas=válido. TOP(200) SELECT final. ORDER BY Severidad DESC."
+          "Umbral OBSERVADO — OR lógico (NUNCA AND): "
+          "([Fe_ppm]>60 OR [Cu_ppm]>30 OR [Si_ppm]>25 OR [Al_ppm]>25 OR [TBN]<3.0). "
+          "No uses [Eqpcare].[lc] a menos que sus columnas aparezcan en el esquema. "
+          "DEVUELVE SOLO observados. 0 filas=válido. ORDER BY Severidad DESC."
     )
 
 
