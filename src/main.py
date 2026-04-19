@@ -1226,6 +1226,13 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     dialecto = payload.dialect or ("mssql" if es_mssql() else "postgresql")
 
     async def _generar_sql(consulta_humana: str) -> str:
+        # Triage directo: SQL generado en Python para el caso de uso principal.
+        # Solo activa cuando compartimiento + proyecto son detectables — más fiable que LLM.
+        sql_triage = llm.intentar_triage_directo(consulta_humana)
+        if sql_triage:
+            log.info("[human_query] triage_directo activado — SQL generado en Python sin LLM")
+            return sql_triage
+
         try:
             sql_json = await llm.consulta_humana_a_sql(
                 consulta_humana=consulta_humana,

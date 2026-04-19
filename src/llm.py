@@ -519,6 +519,56 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     )
 
 
+def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera el SQL de triage directamente en Python cuando compartimiento + proyecto son conocidos.
+    Evita la llamada al LLM para el caso de uso principal (mayor confiabilidad que el template LLM).
+    Retorna la SQL string lista para ejecutar, o None si no aplica.
+    """
+    if not _es_intencion_triage_observados(consulta_humana):
+        return None
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    proyecto = _detectar_proyecto(consulta_humana)
+    if not like_comp or not proyecto:
+        return None
+
+    sql = (
+        f"WITH LatestSamples AS ("
+        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],"
+        f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN],LD.[FechaMuestreo],"
+        f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+        f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+        f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
+        f"AND MP.[Name] LIKE '%{proyecto}%' "
+        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"
+        f") "
+        f"SELECT TOP(200) "
+        f"LS.[EquipmentCode],LS.[Compartimiento],"
+        f"LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],"
+        f"LC.[FIERRO - LP],LC.[FIERRO - LC],"
+        f"LC.[ALUMINIO - LP],LC.[ALUMINIO - LC],"
+        f"LC.[COBRE - LP],LC.[COBRE - LC],"
+        f"LC.[SILICIO - LP],LC.[SILICIO - LC],"
+        f"LC.[TBN - LP],LC.[TBN - LC] "
+        f"FROM LatestSamples LS "
+        f"LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) "
+        f"ON LC.[COMPONENTE]=LS.[Compartimiento] AND LC.[Proyecto] LIKE '%{proyecto}%' "
+        f"WHERE LS.rn=1 "
+        f"AND ("
+        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
+        f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
+        f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
+        f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
+        f"LS.[TBN]<ISNULL(LC.[TBN - LP],0)"
+        f") "
+        f"ORDER BY LS.[Fe_ppm] DESC"
+    )
+    return sql
+
+
 def _reforzar_triage_observados(q: str) -> str:
     """
     Refuerzo de prompt para el caso de uso PRINCIPAL:
