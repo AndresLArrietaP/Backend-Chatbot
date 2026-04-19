@@ -153,6 +153,67 @@ _RE_PISTA_MODELO_EQUIPO = re.compile(
 )
 
 # ==============================================================================
+#  TENDENCIAS HISTÓRICAS: evolución de métricas de aceite en el tiempo
+#  "cómo ha variado el Fe", "tendencia del TBN en los últimos 2 años"
+# ==============================================================================
+
+_RE_PISTA_TENDENCIA_HISTORICA = re.compile(
+    r"\b(tendencia[s]?|evoluci[oó]n|evolucionar?|fluctuaci[oó]n(?:es)?|fluctu[aá]|"
+    r"variaci[oó]n|c[oó]mo\s+ha\s+variado|ha\s+variado|c[oó]mo\s+evolucion[oó]|"
+    r"a\s+lo\s+largo\s+del\s+tiempo|con\s+el\s+tiempo|en\s+el\s+tiempo|"
+    r"hist[oó]rico[s]?|hist[oó]rica[s]?|historial|progresi[oó]n|"
+    r"mes\s+a\s+mes|mensual(?:mente)?|por\s+mes|por\s+periodo|"
+    r"[uú]ltimos?\s+\d+\s+mes(?:es)?|[uú]ltimos?\s+\d+\s+a[nñ]os?)\b",
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_tendencia_historica(texto: str) -> bool:
+    return bool(_RE_PISTA_TENDENCIA_HISTORICA.search(texto or ""))
+
+
+def _reforzar_tendencia_historica(q: str) -> str:
+    """
+    Guía al LLM a generar SQL de tendencia histórica mensual.
+    Usa EOMONTH() como columna de fecha agrupada (devuelve tipo date — compatible con analitica.py).
+    AVG por mes reduce filas y suaviza la serie temporal.
+    """
+    like_compartimiento = _detectar_like_compartimiento(q)
+    proyecto = _detectar_proyecto(q)
+
+    filtros = ["LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE())"]
+    joins = "JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId]"
+    group_prefix = "LD.[Compartimiento]"
+
+    if like_compartimiento:
+        filtros.append(f"LD.[Compartimiento] LIKE '{like_compartimiento}'")
+    if proyecto:
+        joins += (
+            " JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
+        )
+        filtros.append(f"MP.[Name] LIKE '%{proyecto}%'")
+        group_prefix = "MP.[Name],LD.[Compartimiento]"
+
+    where_clause = " AND ".join(filtros)
+
+    instruccion = (
+        f"SELECT TOP(300) {group_prefix},EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+        "AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
+        "AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+        "AVG(LD.[TBN]) AS [TBN],COUNT(*) AS [Muestras] "
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) {joins} "
+        f"WHERE {where_clause} "
+        f"GROUP BY {group_prefix},EOMONTH(LD.[FechaMuestreo]) "
+        f"ORDER BY {group_prefix},[Mes]. "
+        "EOMONTH() devuelve tipo date — úsalo tal cual, sin CAST. "
+        "NUNCA usar ROW_NUMBER/rn para este tipo de consulta. "
+        "Si el usuario pide un metal específico, incluirlo como primera métrica AVG."
+    )
+
+    return q.strip() + " | TENDENCIA-HISTORICA: " + instruccion
+
+
+# ==============================================================================
 #  CASO DE USO PRINCIPAL: Triage masivo de componentes observados
 #  "estado de los 54 motores de tracción → solo los observados"
 # ==============================================================================
@@ -469,49 +530,63 @@ def _reforzar_triage_observados(q: str) -> str:
     like_compartimiento = _detectar_like_compartimiento(q)
     proyecto = _detectar_proyecto(q)
 
+    # Columnas con espacio/guión en [Eqpcare].[lc] — siempre con corchetes en SQL Server
+    _lc_cols = (
+        "LC.[FIERRO - LP],LC.[FIERRO - LC],"
+        "LC.[ALUMINIO - LP],LC.[ALUMINIO - LC],"
+        "LC.[COBRE - LP],LC.[COBRE - LC],"
+        "LC.[SILICIO - LP],LC.[SILICIO - LC],"
+        "LC.[TBN - LP],LC.[TBN - LC]"
+    )
+    # Umbral con ISNULL: si LC no tiene fila o columna es NULL → fallback conservador
+    _umbral_lc = (
+        "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
+        "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
+        "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
+        "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
+        "LS.[TBN]<ISNULL(LC.[TBN - LP],0)"
+    )
+
     if like_compartimiento and proyecto:
-        # Caso más común: componente + proyecto conocido → CTE con JOINs y ambos filtros.
-        # Usa 2 años (no 5) porque tenemos filtros específicos: menos datos, query más rápida.
         instruccion_cte = (
-            f"CTE interna: incluye JOINs a ME y MP. "
-            f"SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
+            f"CTE interna (alias LatestSamples): JOINs a ME y MP WITH (NOLOCK). "
+            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] FROM LatestSamples WHERE rn=1 AND [umbral]. "
-            f"CRÍTICO SELECT externo: NO usar LD./ME./MP. como prefijo — columnas sin alias. NO incluir [MiningEquipmentId]. "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            f"FROM LatestSamples LS LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) ON LC.[COMPONENTE]=LS.[Compartimiento] AND LC.[Proyecto] LIKE '%{proyecto}%' "
+            f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     elif like_compartimiento:
         instruccion_cte = (
-            f"CTE interna: incluye JOIN a ME. "
-            f"SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
+            f"CTE interna (alias LatestSamples): JOIN a ME WITH (NOLOCK). "
+            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
-            f"SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] FROM LatestSamples WHERE rn=1 AND [umbral]. "
-            f"CRÍTICO SELECT externo: NO usar LD./ME./MP. como prefijo — columnas sin alias. NO incluir [MiningEquipmentId]. "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            f"FROM LatestSamples LS LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     else:
         instruccion_cte = (
-            "Compartimiento: usa keyword simple (ej: '%TRACCION%' para tracción, '%HIDRAUL%' para hidráulico). "
-            "CTE: incluye JOIN a ME. SELECT del CTE SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
+            "Compartimiento: usa keyword simple (ej: '%TRACCION%', '%HIDRAUL%'). "
+            "CTE (alias LatestSamples): JOIN a ME. SELECT SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            "SELECT externo: SELECT TOP(200) [EquipmentCode],[Compartimiento],[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] FROM LatestSamples WHERE rn=1 AND [umbral]. "
-            "CRÍTICO SELECT externo: NO usar LD./ME./MP. como prefijo — columnas sin alias. NO incluir [MiningEquipmentId]. "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            "FROM LatestSamples LS LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
           "CTE con ROW_NUMBER (NUNCA GROUP BY+MAX — BD tiene duplicados por fecha). "
-          "NUNCA poner TOP dentro del CTE — el TOP(200) va ÚNICAMENTE en el SELECT externo después de WHERE rn=1. "
-          "WITH (NOLOCK) en todos los FROM/JOIN. "
+          "NUNCA poner TOP dentro del CTE. WITH (NOLOCK) en todos los FROM/JOIN. "
         + instruccion_cte
-        + "JOINs permitidos: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet]. "
+        + "JOINs en CTE: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet]. "
           "Compartimiento — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
-          "NUNCA '%MOTOR TRACCION%'. "
-          "Motor sin tracción → LIKE '%MOTOR%' AND [Compartimiento] NOT LIKE '%TRACCION%'. "
-          "Umbral OBSERVADO — OR lógico (NUNCA AND): "
-          "([Fe_ppm]>60 OR [Cu_ppm]>30 OR [Si_ppm]>25 OR [Al_ppm]>25 OR [TBN]<3.0). "
-          "No uses [Eqpcare].[lc] a menos que sus columnas aparezcan en el esquema. "
-          "DEVUELVE SOLO observados. 0 filas=válido. ORDER BY Severidad DESC."
+          "NUNCA '%MOTOR TRACCION%'. Motor sin tracción → LIKE '%MOTOR%' AND NOT LIKE '%TRACCION%'. "
+          "Columnas [Eqpcare].[lc] llevan corchetes por espacios: [FIERRO - LP], [TBN - LP], etc. "
+          "DEVUELVE SOLO observados (umbral ya inyectado). 0 filas=válido. ORDER BY LS.[Fe_ppm] DESC."
     )
 
 
@@ -612,6 +687,14 @@ async def consulta_humana_a_sql(
     if _es_intencion_criticidad(base_heuristica):
         q_reforzada = _reforzar_consulta_criticidad(q_reforzada)
         heuristicas_aplicadas.append("criticidad")
+
+    # Tendencia histórica: solo si NO es triage (triage devuelve última muestra, no serie temporal)
+    if (
+        _es_intencion_tendencia_historica(base_heuristica)
+        and "triage_observados" not in heuristicas_aplicadas
+    ):
+        q_reforzada = _reforzar_tendencia_historica(q_reforzada)
+        heuristicas_aplicadas.append("tendencia_historica")
 
     if contexto:
         q_reforzada = (
