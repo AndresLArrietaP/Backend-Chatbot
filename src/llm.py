@@ -532,6 +532,8 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     if not like_comp or not proyecto:
         return None
 
+    # LimitesLC colapsa múltiples filas por modelo en [Eqpcare].[lc]
+    # usando MIN para ppm (límite más restrictivo) y MAX para TBN (invertido).
     sql = (
         f"WITH LatestSamples AS ("
         f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],"
@@ -544,6 +546,17 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
         f"AND MP.[Name] LIKE '%{proyecto}%' "
         f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"
+        f"), "
+        f"LimitesLC AS ("
+        f"SELECT [COMPONENTE],"
+        f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+        f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+        f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+        f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+        f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}' "
+        f"GROUP BY [COMPONENTE]"
         f") "
         f"SELECT TOP(200) "
         f"LS.[EquipmentCode],LS.[Compartimiento],"
@@ -554,8 +567,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"LC.[SILICIO - LP],LC.[SILICIO - LC],"
         f"LC.[TBN - LP],LC.[TBN - LC] "
         f"FROM LatestSamples LS "
-        f"LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) "
-        f"ON LC.[COMPONENTE]=LS.[Compartimiento] AND LC.[Proyecto] LIKE '%{proyecto}%' "
+        f"LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
         f"WHERE LS.rn=1 "
         f"AND ("
         f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
@@ -597,46 +609,86 @@ def _reforzar_triage_observados(q: str) -> str:
         "LS.[TBN]<ISNULL(LC.[TBN - LP],0)"
     )
 
+    # CTE de límites: colapsa múltiples filas por modelo con MIN (ppm) y MAX (TBN invertido)
+    _limites_cte_con_proyecto = (
+        f"LimitesLC AS ("
+        f"SELECT [COMPONENTE],"
+        f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+        f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+        f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+        f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+        f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_compartimiento}' "
+        f"GROUP BY [COMPONENTE])"
+    ) if proyecto else (
+        f"LimitesLC AS ("
+        f"SELECT [COMPONENTE],"
+        f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+        f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+        f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+        f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+        f"WHERE [COMPONENTE] LIKE '{like_compartimiento}' "
+        f"GROUP BY [COMPONENTE])"
+    ) if like_compartimiento else (
+        "LimitesLC AS ("
+        "SELECT [COMPONENTE],"
+        "MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+        "MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+        "MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+        "MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        "MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [COMPONENTE])"
+    )
+
     if like_compartimiento and proyecto:
         instruccion_cte = (
-            f"CTE interna (alias LatestSamples): JOINs a ME y MP WITH (NOLOCK). "
+            f"2 CTEs: LatestSamples y LimitesLC. "
+            f"LatestSamples: JOINs a ME y MP WITH (NOLOCK). "
             f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"{_limites_cte_con_proyecto}. "
             f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
-            f"FROM LatestSamples LS LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) ON LC.[COMPONENTE]=LS.[Compartimiento] AND LC.[Proyecto] LIKE '%{proyecto}%' "
+            f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     elif like_compartimiento:
         instruccion_cte = (
-            f"CTE interna (alias LatestSamples): JOIN a ME WITH (NOLOCK). "
+            f"2 CTEs: LatestSamples y LimitesLC. "
+            f"LatestSamples: JOIN a ME WITH (NOLOCK). "
             f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"WHERE CTE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"{_limites_cte_con_proyecto}. "
             f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
-            f"FROM LatestSamples LS LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     else:
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%', '%HIDRAUL%'). "
-            "CTE (alias LatestSamples): JOIN a ME. SELECT SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
+            "2 CTEs: LatestSamples y LimitesLC. LatestSamples: JOIN a ME. "
+            "SELECT SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
+            f"LimitesLC: {_limites_cte_con_proyecto}. "
             f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
-            "FROM LatestSamples LS LEFT JOIN [Eqpcare].[lc] LC WITH (NOLOCK) ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            "FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
           "CTE con ROW_NUMBER (NUNCA GROUP BY+MAX — BD tiene duplicados por fecha). "
-          "NUNCA poner TOP dentro del CTE. WITH (NOLOCK) en todos los FROM/JOIN. "
+          "NUNCA poner TOP dentro de ningún CTE. WITH (NOLOCK) en todos los FROM/JOIN de datos. "
         + instruccion_cte
-        + "JOINs en CTE: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet]. "
+        + "JOINs en LatestSamples: SOLO [Mine].[MiningEquipment] y [Mine].[MiningProject] — NUNCA [Mine].[EquipmentFleet]. "
           "Compartimiento — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
           "NUNCA '%MOTOR TRACCION%'. Motor sin tracción → LIKE '%MOTOR%' AND NOT LIKE '%TRACCION%'. "
-          "Columnas [Eqpcare].[lc] llevan corchetes por espacios: [FIERRO - LP], [TBN - LP], etc. "
-          "DEVUELVE SOLO observados (umbral ya inyectado). 0 filas=válido. ORDER BY LS.[Fe_ppm] DESC."
+          "Columnas [Eqpcare].[lc] con espacios usan corchetes: [FIERRO - LP], [TBN - LP]. "
+          "DEVUELVE SOLO observados. 0 filas=válido. ORDER BY LS.[Fe_ppm] DESC."
     )
 
 
