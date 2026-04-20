@@ -1226,6 +1226,12 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     dialecto = payload.dialect or ("mssql" if es_mssql() else "postgresql")
 
     async def _generar_sql(consulta_humana: str) -> str:
+        # Tendencia directo: serie temporal mensual sin ROW_NUMBER/LP/LC — más fiable que LLM.
+        sql_tendencia = llm.intentar_tendencia_directo(consulta_humana)
+        if sql_tendencia:
+            log.info("[human_query] tendencia_directo activado — SQL generado en Python sin LLM")
+            return sql_tendencia
+
         # Triage directo: SQL generado en Python para el caso de uso principal.
         # Solo activa cuando compartimiento + proyecto son detectables — más fiable que LLM.
         sql_triage = llm.intentar_triage_directo(consulta_humana)

@@ -519,6 +519,41 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     )
 
 
+def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera SQL de tendencia histórica mensual directamente en Python.
+    Retorna ALL muestras agrupadas por mes — sin filtro LP/LC, sin ROW_NUMBER/rn.
+    Solo activa cuando se detecta intención tendencia + compartimiento + proyecto.
+    """
+    if not _es_intencion_tendencia_historica(consulta_humana):
+        return None
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    proyecto = _detectar_proyecto(consulta_humana)
+    if not like_comp or not proyecto:
+        return None
+
+    sql = (
+        f"SELECT TOP(300) "
+        f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+        f"LD.[Compartimiento],"
+        f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],"
+        f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
+        f"AVG(LD.[Si_ppm]) AS [Si_ppm],"
+        f"AVG(LD.[Al_ppm]) AS [Al_ppm],"
+        f"AVG(LD.[TBN]) AS [TBN],"
+        f"COUNT(*) AS [Muestras] "
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+        f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
+        f"AND MP.[Name] LIKE '%{proyecto}%' "
+        f"AND LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE()) "
+        f"GROUP BY EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
+        f"ORDER BY [Mes] ASC"
+    )
+    return sql
+
+
 def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     """
     Genera el SQL de triage directamente en Python cuando compartimiento + proyecto son conocidos.
