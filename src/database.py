@@ -225,10 +225,12 @@ _RE_ESPACIOS = re.compile(r"\s+")
 
 def _fix_cte_alias_prefixes(sql: str) -> str:
     """
-    Elimina prefijos de alias de tabla (LD., ME., MP., LS.) en el SELECT externo
-    de queries con CTE LatestSamples.
-    Problema: el LLM genera LD.[Fe_ppm] en el WHERE externo, pero LD solo existe
-    dentro del CTE — en el SELECT externo las columnas vienen de LatestSamples sin alias.
+    Elimina alias fugados (LD., ME., MP., LS.) en el SELECT externo de CTEs LatestSamples.
+
+    Problema recurrente: Flash genera SELECT LS.EquipmentCode, LD.[Fe_ppm] en el SELECT
+    externo, pero LD/ME/MP solo existen dentro del CTE LatestSamples. Fuera del CTE,
+    las columnas se acceden directamente por nombre (LS.[Fe_ppm] o solo [Fe_ppm]).
+    Esta función elimina esos prefijos en la porción FROM LatestSamples en adelante.
     """
     m = re.search(r"\bFROM\s+LatestSamples\b", sql, re.IGNORECASE)
     if not m:
@@ -451,7 +453,14 @@ def es_select_seguro(sql: str) -> bool:
 # =============================================================================
 
 def _forzar_top_mssql(sql: str, n: int) -> str:
-    """Inserta/recorta TOP(n) en SQL Server sin romper CTEs/ventanas."""
+    """
+    Inserta TOP(n) en SQL Server o recorta un TOP existente si supera n.
+
+    Regla crítica: si la query empieza con WITH (CTE), NO se inserta TOP automáticamente.
+    Insertar TOP dentro de un CTE con ROW_NUMBER/PARTITION BY cambia la semántica
+    y puede romper la ventana de ranking antes de filtrar rn=1.
+    El TOP en ese caso debe estar en el SELECT externo al CTE, no aquí.
+    """
     s = (sql or "").strip()
 
     # Si ya existe TOP al inicio del SELECT principal simple, recortar si excede
@@ -1079,18 +1088,21 @@ def hacer_groupby_nullsafe_mssql(
     consulta_humana: str = "",
 ) -> str:
     """
-    Reescritura determinística para MSSQL:
+    Reescritura determinística para MSSQL cuando LEFT JOIN + GROUP BY producen grupos NULL.
 
     Caso objetivo:
-    - LEFT JOIN a una dimensión nullable/opcional
-    - GROUP BY sobre campo del lado derecho
-    - Resultado termina en grupo NULL o puede perder semántica
+      - LEFT JOIN a una dimensión nullable/opcional
+      - GROUP BY sobre un campo del lado derecho (puede ser NULL cuando no hay match)
+      - El grupo NULL distorsiona la agregación o confunde al usuario final
 
-    Regla:
-    - Si el usuario pidió estricto -> WHERE dim IS NOT NULL
-    - Si no -> COALESCE(dim, fallback1, fallback2)
-             + WHERE COALESCE(...) <> ''
-             + GROUP BY la misma expresión
+    Estrategia:
+      - Usuario pidió "estricto" / "sin null"  → añade WHERE dim IS NOT NULL
+      - Caso normal (usuario no técnico)        → COALESCE(dim, fallback1, fallback2)
+                                                  + WHERE COALESCE(...) <> ''
+                                                  + GROUP BY la misma expresión COALESCE
+
+    Nota: esta función NO se aplica a CTEs (re-escritura desde gemini_client.py).
+    Solo actúa sobre SELECT planos con GROUP BY y LEFT JOIN visible en el nivel raíz.
     """
     s = (sql or "").strip()
     if not s or not es_mssql():

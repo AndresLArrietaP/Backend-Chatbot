@@ -153,8 +153,11 @@ _RE_PISTA_MODELO_EQUIPO = re.compile(
 )
 
 # ==============================================================================
-#  TENDENCIAS HISTÓRICAS: evolución de métricas de aceite en el tiempo
-#  "cómo ha variado el Fe", "tendencia del TBN en los últimos 2 años"
+#  TENDENCIAS HISTÓRICAS
+#  Detecta consultas del tipo "cómo ha variado el Fe", "tendencia del TBN",
+#  "evolución mes a mes", "histórico de los últimos 2 años".
+#  Co-exclusiva con triage_observados: si el usuario quiere tendencia de los
+#  observados, triage tiene prioridad (ve la última muestra, no serie temporal).
 # ==============================================================================
 
 _RE_PISTA_TENDENCIA_HISTORICA = re.compile(
@@ -174,9 +177,14 @@ def _es_intencion_tendencia_historica(texto: str) -> bool:
 
 def _reforzar_tendencia_historica(q: str) -> str:
     """
-    Guía al LLM a generar SQL de tendencia histórica mensual.
-    Usa EOMONTH() como columna de fecha agrupada (devuelve tipo date — compatible con analitica.py).
-    AVG por mes reduce filas y suaviza la serie temporal.
+    Refuerzo de prompt para consultas de tendencia histórica mensual.
+    Se aplica cuando intentar_tendencia_directo() devuelve None
+    (sin compartimiento detectado → el LLM debe inferirlo).
+
+    Claves:
+    - EOMONTH() devuelve tipo date → compatible con _a_fecha() en analitica.py.
+    - AVG por mes suaviza outliers puntuales y reduce filas al LLM.
+    - NUNCA ROW_NUMBER/rn: la tendencia necesita TODAS las muestras, no solo la última.
     """
     like_compartimiento = _detectar_like_compartimiento(q)
     proyecto = _detectar_proyecto(q)
@@ -216,6 +224,13 @@ def _reforzar_tendencia_historica(q: str) -> str:
 # ==============================================================================
 #  CASO DE USO PRINCIPAL: Triage masivo de componentes observados
 #  "estado de los 54 motores de tracción → solo los observados"
+#
+#  Flujo de despacho (en main.py/_generar_sql):
+#    1. intentar_tendencia_directo()  → si es tendencia → SQL mensual directo
+#    2. intentar_triage_directo()     → si compartimiento+proyecto → SQL triage directo
+#    3. LLM con _reforzar_triage_observados() → caso general (sin proyecto o sin compartimiento)
+#
+#  0 filas = respuesta válida ("ningún motor fuera de límites"). No es un error.
 # ==============================================================================
 
 _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
@@ -521,44 +536,99 @@ def _reforzar_consulta_criticidad(q: str) -> str:
 
 def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     """
-    Genera SQL de tendencia histórica mensual directamente en Python.
-    Retorna ALL muestras agrupadas por mes — sin filtro LP/LC, sin ROW_NUMBER/rn.
-    Solo activa cuando se detecta intención tendencia + compartimiento + proyecto.
+    Genera el SQL de tendencia histórica mensual directamente en Python, sin llamar al LLM.
+
+    SQL producido:
+      - AVG de métricas agrupado por EOMONTH(FechaMuestreo) + Compartimiento [+ Proyecto]
+      - Sin ROW_NUMBER / sin rn=1: devuelve TODAS las muestras (no solo la última)
+      - Sin filtro LP/LC: la tendencia es indiferente a si el valor supera o no el límite
+      - ORDER BY [Mes] ASC → serie cronológica ascendente
+
+    Condiciones de activación:
+      - Intención tendencia detectada por _RE_PISTA_TENDENCIA_HISTORICA
+      - Compartimiento detectado (al menos un keyword en _COMPARTIMIENTO_KEYWORD_MAP)
+      - NO es intención triage_observados (triage tiene prioridad)
+
+    Proyecto:
+      - Con proyecto → filtra por proyecto, agrupa solo por mes + compartimiento
+      - Sin proyecto → agrupa también por MP.[Name] para distinguir flotas
+
+    Devuelve None si no aplica (el llamador cae al LLM).
     """
     if not _es_intencion_tendencia_historica(consulta_humana):
         return None
-    like_comp = _detectar_like_compartimiento(consulta_humana)
-    proyecto = _detectar_proyecto(consulta_humana)
-    if not like_comp or not proyecto:
+    # Triage tiene prioridad: si la consulta busca observados, no redirigir a tendencia.
+    if _es_intencion_triage_observados(consulta_humana):
         return None
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    if not like_comp:
+        return None  # sin compartimiento no hay SQL determinístico útil
 
-    sql = (
-        f"SELECT TOP(300) "
-        f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-        f"LD.[Compartimiento],"
+    proyecto = _detectar_proyecto(consulta_humana)
+
+    base_metricas = (
         f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],"
         f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
         f"AVG(LD.[Si_ppm]) AS [Si_ppm],"
         f"AVG(LD.[Al_ppm]) AS [Al_ppm],"
         f"AVG(LD.[TBN]) AS [TBN],"
-        f"COUNT(*) AS [Muestras] "
+        f"COUNT(*) AS [Muestras]"
+    )
+    base_joins = (
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
         f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
-        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
-        f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
-        f"AND MP.[Name] LIKE '%{proyecto}%' "
-        f"AND LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE()) "
-        f"GROUP BY EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
-        f"ORDER BY [Mes] ASC"
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
     )
+    filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE())"
+    filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
+
+    if proyecto:
+        sql = (
+            f"SELECT TOP(300) "
+            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+            f"LD.[Compartimiento],"
+            f"{base_metricas} "
+            f"{base_joins} "
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha} "
+            f"GROUP BY EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
+            f"ORDER BY [Mes] ASC"
+        )
+    else:
+        # Sin proyecto: agrupar también por proyecto para distinguir flotas
+        sql = (
+            f"SELECT TOP(300) "
+            f"MP.[Name] AS [Proyecto],"
+            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+            f"LD.[Compartimiento],"
+            f"{base_metricas} "
+            f"{base_joins} "
+            f"WHERE {filtro_comp} AND {filtro_fecha} "
+            f"GROUP BY MP.[Name],EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
+            f"ORDER BY MP.[Name],[Mes] ASC"
+        )
     return sql
 
 
 def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     """
     Genera el SQL de triage directamente en Python cuando compartimiento + proyecto son conocidos.
-    Evita la llamada al LLM para el caso de uso principal (mayor confiabilidad que el template LLM).
-    Retorna la SQL string lista para ejecutar, o None si no aplica.
+    Bypass total del LLM para el caso de uso principal → máxima confiabilidad.
+
+    SQL producido (doble CTE):
+      LatestSamples — última muestra por equipo+compartimiento (ROW_NUMBER DESC)
+      LimitesLC     — límites reales de [Eqpcare].[lc] colapsados por MIN/MAX (por modelo)
+
+    Filtro de observados:
+      WHERE Fe > ISNULL(LP,9999) OR Al > ISNULL(LP,9999) OR ...
+      ISNULL(LC.col, 9999) como fallback conservador: si no hay fila en lc,
+      el umbral es 9999 → nunca dispara falso positivo.
+
+    Condiciones de activación:
+      - Intención triage detectada
+      - Compartimiento detectado en _COMPARTIMIENTO_KEYWORD_MAP
+      - Proyecto detectado en _PROYECTOS_CONOCIDOS
+
+    Devuelve None si no aplica (el llamador usará el LLM con refuerzo de prompt).
     """
     if not _es_intencion_triage_observados(consulta_humana):
         return None

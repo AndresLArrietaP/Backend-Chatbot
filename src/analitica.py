@@ -30,7 +30,13 @@ import math
 import re
 
 
+# ==============================================================================
+#  Conversión de tipos
+# ==============================================================================
+
 def _a_float(valor: Any) -> Optional[float]:
+    """Convierte cualquier valor a float manejando formatos ES/US y símbolos.
+    Devuelve None si no es convertible para no contaminar estadísticas."""
     if valor is None:
         return None
     if isinstance(valor, bool):
@@ -61,6 +67,8 @@ def _a_float(valor: Any) -> Optional[float]:
 
 
 def _a_fecha(valor: Any) -> Optional[datetime]:
+    """Parsea fechas desde datetime/date nativos o strings en múltiples formatos.
+    Soporta el tipo date que devuelve EOMONTH() en SQL Server."""
     if valor is None:
         return None
     if isinstance(valor, datetime):
@@ -86,6 +94,10 @@ def _a_fecha(valor: Any) -> Optional[datetime]:
                 continue
     return None
 
+
+# ==============================================================================
+#  Detección de columnas por nombre y tipo de contenido
+# ==============================================================================
 
 def _es_nombre_fecha(nombre: str) -> bool:
     n = (nombre or "").lower()
@@ -116,7 +128,12 @@ def _formatear_numero(x: float) -> str:
         return str(x)
 
 
+# ==============================================================================
+#  Estadísticas numéricas
+# ==============================================================================
+
 def _percentil(valores: List[float], q: float) -> float:
+    """Percentil por interpolación lineal discreta sobre lista ya ordenada."""
     if not valores:
         return 0.0
     vs = sorted(valores)
@@ -125,6 +142,7 @@ def _percentil(valores: List[float], q: float) -> float:
 
 
 def _resumen_numerico(valores: List[float]) -> Dict[str, Any]:
+    """Calcula min/max/media/mediana/p90/Q1/Q3/outliers IQR para una columna numérica."""
     vs = sorted(valores)
     n = len(vs)
     q1 = _percentil(vs, 0.25)
@@ -147,7 +165,12 @@ def _resumen_numerico(valores: List[float]) -> Dict[str, Any]:
     }
 
 
+# ==============================================================================
+#  Selección de columnas representativas
+# ==============================================================================
+
 def _buscar_columna_tiempo(filas: List[Dict[str, Any]]) -> Optional[str]:
+    """Detecta la columna más apta para eje temporal (por nombre y por contenido parseable)."""
     if not filas:
         return None
     columnas = list(filas[0].keys())
@@ -209,7 +232,16 @@ def _buscar_columna_categoria(filas: List[Dict[str, Any]], excluir: Iterable[str
     return candidatas[0][1] if candidatas else None
 
 
+# ==============================================================================
+#  Tendencia temporal
+# ==============================================================================
+
 def _calcular_tendencia_simple(fechas: List[datetime], valores: List[float]) -> Dict[str, Any]:
+    """
+    Estima dirección de tendencia (ascendente/descendente/estable/mixta)
+    comparando primer vs último valor y contando cambios de signo.
+    Mínimo 3 puntos. Umbral de estabilidad: cambio relativo < 5%.
+    """
     pares = sorted(zip(fechas, valores), key=lambda x: x[0])
     if len(pares) < 3:
         return {"direccion": "insuficiente", "descripcion": "Sin suficientes puntos para estimar tendencia."}
@@ -254,13 +286,28 @@ def _calcular_tendencia_simple(fechas: List[datetime], valores: List[float]) -> 
     }
 
 
+# ==============================================================================
+#  API pública
+# ==============================================================================
+
 def generar_analisis_resultado(
     filas: List[Dict[str, Any]],
     consulta_humana: str = "",
     max_metricas: int = 4,
 ) -> Dict[str, Any]:
     """
-    Genera un análisis estructurado y determinístico del resultado.
+    Genera un análisis estructurado y determinístico del resultado tabular.
+
+    Detecta automáticamente:
+      - Columnas numéricas → min/max/media/p90/outliers IQR
+      - Columna categórica → distribución top-5
+      - Columna temporal   → tendencia por serie (si hay ≥ 3 puntos)
+      - Sugerencias de gráfico → línea, barras o dispersión según los datos
+
+    Devuelve un dict con claves:
+      row_count, columnas, columna_tiempo, columna_categoria,
+      metricas, categorias, tendencias, resumen_ejecutivo,
+      graficos_sugeridos, consulta_humana
     """
     if not filas:
         return {

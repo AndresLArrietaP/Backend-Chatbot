@@ -3,11 +3,22 @@
 """
 Módulo: providers.openai_client
 -------------------------------
-Cliente del proveedor OpenAI para:
-- NL → SQL
-- Construcción de respuesta en lenguaje natural
+Cliente del proveedor OpenAI (Chat Completions) como alternativa a Gemini.
 
-Queda preparado como alternativa futura al flujo principal con Gemini.
+Rol en el sistema:
+  - Proveedor activo cuando LLM_PROVIDER=openai en .env
+  - Fallback cross-provider: Gemini agota sus modelos → main.py instancia
+    OpenAIProvider directamente para el reintento (ver src/main.py._generar_sql)
+
+Diferencias vs GeminiProvider:
+  - Sin hedging paralelo: llamada única síncrona en un thread
+  - Prompt de sistema más corto (suficiente como fallback)
+  - max_tokens más conservador (1400 vs 8000): suficiente para SQL simples
+  - No aplica postprocesos defensivos (ORDER BY automático, TRIM guard, etc.)
+
+Configuración (.env):
+  OPENAI_API_KEY   — requerido
+  OPENAI_MODEL     — default: gpt-4o
 """
 
 from __future__ import annotations
@@ -24,7 +35,13 @@ from ..analitica import generar_analisis_resultado, renderizar_resumen_analitico
 
 
 class OpenAIProvider:
-    """Proveedor OpenAI usando la API Chat Completions."""
+    """
+    Proveedor OpenAI usando la API Chat Completions.
+
+    Implementa la misma interfaz que GeminiProvider (ProveedorLLM):
+      consulta_humana_a_sql(), construir_respuesta(), ping(), listar_modelos()
+    más los aliases legacy: human_query_to_sql(), build_answer(), list_models()
+    """
 
     def __init__(self) -> None:
         api_key = (env("OPENAI_API_KEY", default=None) or "").strip()
@@ -33,9 +50,12 @@ class OpenAIProvider:
         self.cliente = OpenAI(api_key=api_key)
 
     def _resolver_modelo(self, nombre: Optional[str]) -> str:
+        """Devuelve el modelo activo: parámetro → OPENAI_MODEL → gpt-4o."""
         return (nombre or env("OPENAI_MODEL", default="gpt-4o")).strip()
 
     def _asegurar_sql_json(self, contenido: str) -> str:
+        """Normaliza la salida del modelo a JSON {sql_query, original_query}.
+        Acepta JSON limpio, JSON embebido en texto, o SQL cruda (WITH/SELECT)."""
         def _probar(s: str) -> Optional[str]:
             try:
                 obj = json.loads(s)
@@ -205,7 +225,9 @@ Rows (muestra):
             items.append({"name": getattr(modelo, "id", None)})
         return {"status": "ok", "models": items}
 
-    # Aliases legacy
+    # ------------------------------------------------------------------
+    #  Aliases legacy (compatibilidad con código que usa nombres en inglés)
+    # ------------------------------------------------------------------
     async def human_query_to_sql(
         self,
         human_query: str,

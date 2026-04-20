@@ -62,10 +62,15 @@ class ProveedorLLM(Protocol):
 
 def obtener_proveedor() -> ProveedorLLM:
     """
-    Devuelve una instancia del proveedor LLM configurado en el .env.
+    Devuelve una instancia del proveedor LLM configurado en LLM_PROVIDER (.env).
 
-    Returns:
-        ProveedorLLM: instancia del proveedor activo (Gemini u OpenAI).
+    Proveedor activo:
+      LLM_PROVIDER=gemini  → GeminiProvider  (default; requiere GOOGLE_API_KEY)
+      LLM_PROVIDER=openai  → OpenAIProvider  (requiere OPENAI_API_KEY)
+
+    Cualquier valor distinto de "openai" cae a Gemini.
+    El fallback cross-provider (Gemini → OpenAI en caso de fallo total) se maneja
+    en src/main.py._generar_sql(), no aquí.
     """
     proveedor = leer_env("LLM_PROVIDER", default="gemini").lower().strip()
 
@@ -73,5 +78,6 @@ def obtener_proveedor() -> ProveedorLLM:
         from .openai_client import OpenAIProvider
         return OpenAIProvider()
 
+    # Gemini es el proveedor principal (default)
     from .gemini_client import GeminiProvider
     return GeminiProvider()

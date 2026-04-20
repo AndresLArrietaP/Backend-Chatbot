@@ -80,6 +80,8 @@ def init_app(configuration: Type) -> FastAPI:
             from . import database
 
             # 1. Pool de conexiones: query mínima → Azure SQL compila plan base
+            # abandon_on_cancel=False: el warmup debe completarse aunque tarde;
+            # si se cancelara prematuramente, el primer request real pagaría el cold-start.
             try:
                 await anyio.to_thread.run_sync(database.warmup_connection, abandon_on_cancel=False)
             except Exception as exc:

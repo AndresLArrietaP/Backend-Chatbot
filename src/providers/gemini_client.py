@@ -34,7 +34,9 @@ from ..analitica import generar_analisis_resultado, renderizar_resumen_analitico
 log = getLogger(__name__)
 
 
-# ============================= Utilidades comunes =============================
+# ==============================================================================
+#  Utilidades comunes (serialización, parsing, texto)
+# ==============================================================================
 
 _RE_PISTA_CONTINUIDAD_FUERTE = re.compile(
     r"\b("
@@ -192,7 +194,12 @@ def _compactar_texto_respuesta(texto: str, max_chars: int = 3200) -> str:
     return recorte + "\n\nNota: Se recortó la respuesta para mantenerla compacta."
 
 
-# ======================= Perfil analítico determinístico =======================
+# ==============================================================================
+#  Perfil analítico determinístico
+#  Calcula estadísticas básicas (min/max/media/p90/outliers) sobre las filas
+#  de resultado para usarlas como contexto en el prompt de construir_respuesta().
+#  No depende del LLM — es rápido y predecible.
+# ==============================================================================
 
 def _intentar_float(v: Any) -> Optional[float]:
     """
@@ -397,7 +404,20 @@ def _respuesta_local_de_respaldo(consulta_humana: str, filas: List[Dict[str, Any
     return "\n".join(lineas).strip()
 
 
-# ============================ Proveedor Gemini ================================
+# ==============================================================================
+#  GeminiProvider — Cliente principal del LLM (Google GenAI)
+#
+#  NL→SQL: hedging paralelo de modelos + fallback secuencial + reparación JSON.
+#  Respuesta: síntesis analítica en lenguaje natural con perfil estadístico.
+#
+#  Modelos activos (configurar en .env):
+#    GEMINI_MODEL_CANDIDATES      → candidatos para NL→SQL  (ej: gemini-2.5-flash,gemini-2-flash)
+#    GEMINI_MODEL_ANSWER_CANDIDATES → candidatos para síntesis (ej: gemini-2.5-flash,gemini-2.5-pro)
+#
+#  Timeouts (configurar en .env para no superar el límite de 240s de Copilot Studio):
+#    LLM_PER_MODEL_TIMEOUT  (default: 45s) — timeout por cada modelo individual
+#    LLM_TOTAL_TIMEOUT      (default: 90s) — timeout total incluyendo hedge + fallback
+# ==============================================================================
 
 class GeminiProvider:
     """
@@ -1222,7 +1242,9 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
         lanzadas = 0
         errores: List[str] = []
         ganador: Optional[str] = None
-        modelos_503: set = set()  # modelos que retornaron 503 en esta request — se saltan en repair y fallback
+        # Modelos que retornaron 503/NOT_FOUND en este request — se saltan en repair y fallback secuencial
+        # para no malgastar tiempo en modelos ya confirmados como no disponibles.
+        modelos_503: set = set()
 
         async def _lanzar(m: str):
             res = await self._llamar_generar(m, contenidos, configuracion, timeout_por_modelo)

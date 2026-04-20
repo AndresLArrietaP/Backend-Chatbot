@@ -71,24 +71,33 @@ logging.basicConfig(level=logging.DEBUG if env("DEBUG", default=False, cast=bool
 
 router = APIRouter()
 
+# --- Dialecto y esquemas destino ---
 DB_DIALECT = (env("DB_DIALECT", default="postgresql") or "").strip().lower()
 TARGET_SCHEMAS = [s.strip() for s in (env("TARGET_SCHEMAS", default="public") or "").split(",") if s.strip()]
 
+# --- Límites de filas y timeouts ---
 MAX_ROWS_DEFAULT = env("MAX_ROWS_DEFAULT", default=100, cast=int)
 MAX_ROWS_HARD = env("MAX_ROWS_HARD", default=1000, cast=int)
 REQUEST_TIMEOUT = env("REQUEST_TIMEOUT", default=200, cast=int)
 DB_QUERY_TIMEOUT = env("DB_QUERY_TIMEOUT", default=60, cast=int)
-MAX_SQL_RETRIES_TOTAL = env("MAX_SQL_RETRIES_TOTAL", default=1, cast=int)
-RETRY_TIME_BUDGET = env("RETRY_TIME_BUDGET", default=150, cast=int)  # segundos; si se superan, no se dispara ningún reintento
 
+# Si se supera RETRY_TIME_BUDGET segundos desde el inicio del request, no se dispara ningún reintento
+MAX_SQL_RETRIES_TOTAL = env("MAX_SQL_RETRIES_TOTAL", default=1, cast=int)
+RETRY_TIME_BUDGET = env("RETRY_TIME_BUDGET", default=150, cast=int)
+
+# --- Límites de introspección de esquema ---
 MAX_SCHEMA_TABLES = env("MAX_SCHEMA_TABLES", default=50, cast=int)
 MAX_SCHEMA_COLUMNS = env("MAX_SCHEMA_COLUMNS", default=2000, cast=int)
 
 DECIMAL_PLACES = env("DECIMAL_PLACES", default=3, cast=int)
 
+# Cache local en memoria del esquema (además del cache en database.py)
 SCHEMA_CACHE_TTL = env("SQL_CACHE_TTL_SECONDS", default=300, cast=int)
 SCHEMA_CACHE_MAX = env("SQL_CACHE_MAX", default=256, cast=int)
 
+# --- Reintentos automáticos de SQL (activables individualmente) ---
+# Cada reintento genera una nueva llamada al LLM con instrucciones de reparación.
+# MAX_SQL_RETRIES_TOTAL limita el total de reintentos de cualquier tipo por request.
 SQL_EMPTY_RESULT_RETRY = env("SQL_EMPTY_RESULT_RETRY", default=True, cast=bool)
 SQL_EMPTY_RESULT_RETRY_MAX = env("SQL_EMPTY_RESULT_RETRY_MAX", default=1, cast=int)
 
@@ -101,15 +110,18 @@ SQL_NULL_PROJECTION_RETRY_MAX = env("SQL_NULL_PROJECTION_RETRY_MAX", default=1, 
 SQL_LATEST_WINDOW_RETRY = env("SQL_LATEST_WINDOW_RETRY", default=True, cast=bool)
 SQL_LATEST_WINDOW_RETRY_MAX = env("SQL_LATEST_WINDOW_RETRY_MAX", default=1, cast=int)
 
+# --- Esquema relevante: selección de tablas por similitud con la consulta ---
 ESQUEMA_RELEVANTE_ACTIVO = env("ESQUEMA_RELEVANTE_ACTIVO", default=True, cast=bool)
 ESQUEMA_RELEVANTE_MAX_TABLAS = env("ESQUEMA_RELEVANTE_MAX_TABLAS", default=18, cast=int)
 
+# --- Opciones de respuesta analítica ---
+# GENERAR_RESPUESTA_TEXTO=false en producción: Copilot tiene su propio LLM de síntesis
 GENERAR_RESPUESTA_TEXTO = env("GENERAR_RESPUESTA_TEXTO", default=False, cast=bool)
 INCLUIR_ANALISIS_RESULTADO = env("INCLUIR_ANALISIS_RESULTADO", default=True, cast=bool)
 INCLUIR_SUGERENCIAS_GRAFICO = env("INCLUIR_SUGERENCIAS_GRAFICO", default=True, cast=bool)
-# Deshabilitado por defecto — activar cuando se integre Copilot Studio con gráficos
-INCLUIR_CHART_URL = env("INCLUIR_CHART_URL", default=False, cast=bool)
+INCLUIR_CHART_URL = env("INCLUIR_CHART_URL", default=False, cast=bool)  # activar al integrar gráficos en Copilot
 
+# --- Contexto conversacional ---
 CONTEXTO_CHAT_TTL_MINUTOS = env("CONTEXTO_CHAT_TTL_MINUTOS", default=45, cast=int)
 CONTEXTO_CHAT_MAX_TURNOS = env("CONTEXTO_CHAT_MAX_TURNOS", default=8, cast=int)
 CONTEXTO_CHAT_MAX_CARACTERES = env("CONTEXTO_CHAT_MAX_CARACTERES", default=5000, cast=int)
@@ -1226,14 +1238,24 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     dialecto = payload.dialect or ("mssql" if es_mssql() else "postgresql")
 
     async def _generar_sql(consulta_humana: str) -> str:
-        # Tendencia directo: serie temporal mensual sin ROW_NUMBER/LP/LC — más fiable que LLM.
+        """
+        Genera el SQL para la consulta humana. Devuelve siempre una SQL string limpia.
+
+        Orden de prioridad (cortocircuito — el primero que aplique gana):
+          1. intentar_tendencia_directo() → serie mensual sin ROW_NUMBER ni filtros LP/LC
+          2. intentar_triage_directo()    → triage de observados con doble CTE Python
+          3. LLM (Gemini/OpenAI)         → caso general con refuerzo de heurísticas
+
+        Los paths 1 y 2 son determinísticos, no llaman al LLM y son más rápidos y confiables
+        para los casos de uso principales del producto.
+        """
+        # Tendencia directo: compartimiento detectado → serie mensual AVG sin LP/LC
         sql_tendencia = llm.intentar_tendencia_directo(consulta_humana)
         if sql_tendencia:
             log.info("[human_query] tendencia_directo activado — SQL generado en Python sin LLM")
             return sql_tendencia
 
-        # Triage directo: SQL generado en Python para el caso de uso principal.
-        # Solo activa cuando compartimiento + proyecto son detectables — más fiable que LLM.
+        # Triage directo: compartimiento + proyecto detectados → observados con límites reales de BD
         sql_triage = llm.intentar_triage_directo(consulta_humana)
         if sql_triage:
             log.info("[human_query] triage_directo activado — SQL generado en Python sin LLM")

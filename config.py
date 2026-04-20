@@ -88,8 +88,10 @@ class Config:
     OPENAI_MODEL: str          = env("OPENAI_MODEL", default="gpt-4o")
 
     # --- Conexiones dinámicas (DB_CONN_*) ---
+    # Carga automática de DSNs adicionales (ej: DB_CONN_REPORTES=mssql+pymssql://...)
     CONNECTIONS: dict[str, str] = cargar_conexiones_desde_entorno()
     DEFAULT_CONNECTION: str | None = env("DEFAULT_CONNECTION", default=None)
+    # Si no se definió DEFAULT_CONNECTION, usa la primera conexión dinámica cargada
     if not DEFAULT_CONNECTION and CONNECTIONS:
         DEFAULT_CONNECTION = next(iter(CONNECTIONS.keys()))
 

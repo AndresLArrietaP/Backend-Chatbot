@@ -25,7 +25,8 @@ from config import config as perfiles
 from src import init_app
 
 
-# Selecciona el perfil activo; cae a "development" si no existe el perfil indicado
+# Selecciona el perfil activo desde APP_PROFILE; cae a "development" si no existe el perfil.
+# Perfiles disponibles: "development" (ver config.py para añadir "production"/"staging").
 perfil_activo = env("APP_PROFILE", default="development").strip().lower()
 configuracion = perfiles.get(perfil_activo, perfiles["development"])
 
