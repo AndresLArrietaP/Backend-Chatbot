@@ -311,6 +311,16 @@ def _detectar_proyecto(q: str) -> Optional[str]:
     return None
 
 
+# Códigos de equipo: letras seguidas de dígitos (CA3198, WA600, PC4000, HD785…)
+_RE_EQUIPO_CODE = re.compile(r"\b([A-Z]{1,3}\d{3,5})\b")
+
+
+def _detectar_equipo_code(q: str) -> Optional[str]:
+    """Extrae el primer código de equipo mencionado en la consulta (ej: CA3198)."""
+    m = _RE_EQUIPO_CODE.search(q or "")
+    return m.group(1) if m else None
+
+
 # ==============================================================================
 #  Utilidades internas
 # ==============================================================================
@@ -564,6 +574,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     if not like_comp:
         return None  # sin compartimiento no hay SQL determinístico útil
 
+    equipo_code = _detectar_equipo_code(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
 
     base_metricas = (
@@ -582,7 +593,21 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE())"
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
 
-    if proyecto:
+    if equipo_code:
+        # Equipo específico: serie mensual de ese equipo únicamente, sin agregar por proyecto.
+        sql = (
+            f"SELECT TOP(300) "
+            f"ME.[Code] AS [Equipo],"
+            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+            f"LD.[Compartimiento],"
+            f"{base_metricas} "
+            f"{base_joins} "
+            f"WHERE {filtro_comp} AND ME.[Code]='{equipo_code}' AND {filtro_fecha} "
+            f"GROUP BY ME.[Code],EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
+            f"ORDER BY [Mes] ASC"
+        )
+    elif proyecto:
+        # Proyecto conocido: serie mensual del universo del proyecto.
         sql = (
             f"SELECT TOP(300) "
             f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
@@ -594,7 +619,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"ORDER BY [Mes] ASC"
         )
     else:
-        # Sin proyecto: agrupar también por proyecto para distinguir flotas
+        # Sin proyecto ni equipo: agrupar también por proyecto para distinguir flotas.
         sql = (
             f"SELECT TOP(300) "
             f"MP.[Name] AS [Proyecto],"
