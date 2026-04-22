@@ -563,6 +563,77 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     )
 
 
+_RE_VENTANA_MESES = re.compile(r"\b(\d+)\s+mes(?:es)?\b", re.IGNORECASE)
+_RE_VENTANA_ANIOS = re.compile(r"\b(\d+)\s+a[nñ]o[s]?\b", re.IGNORECASE)
+
+
+def _detectar_ventana_meses(q: str) -> int:
+    """Extrae la ventana temporal en meses desde la consulta. Default: 24 meses."""
+    m = _RE_VENTANA_MESES.search(q or "")
+    if m:
+        return int(m.group(1))
+    m = _RE_VENTANA_ANIOS.search(q or "")
+    if m:
+        return int(m.group(1)) * 12
+    return 24
+
+
+def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera SQL de registros individuales sin AVG ni GROUP BY, directamente en Python.
+
+    Activación: el usuario pide datos sin promediar (muestra por muestra, sin promediar,
+    todas las fechas…) con compartimiento + equipo o proyecto conocidos.
+
+    Por qué es necesario: el LLM, cuando el contexto conversacional incluye triage,
+    tiende a reutilizar el patrón CTE+ROW_NUMBER → rn=1 → devuelve solo 1 muestra.
+    Este bypass garantiza un SELECT plano sin ROW_NUMBER ni GROUP BY.
+
+    Devuelve None si no hay suficiente información (cae al LLM).
+    """
+    if not _es_intencion_muestras_individuales(consulta_humana):
+        return None
+    if _es_intencion_triage_observados(consulta_humana):
+        return None
+
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    equipo_code = _detectar_equipo_code(consulta_humana)
+    proyecto = _detectar_proyecto(consulta_humana)
+
+    # Sin compartimiento o sin filtro de equipo/proyecto no podemos generar SQL determinístico.
+    if not like_comp or (not equipo_code and not proyecto):
+        return None
+
+    ventana = _detectar_ventana_meses(consulta_humana)
+    filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())"
+    filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
+    base_cols = (
+        f"LD.[FechaMuestreo],ME.[Code] AS [Equipo],LD.[Compartimiento],"
+        f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN]"
+    )
+    base_joins = (
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
+    )
+
+    if equipo_code:
+        sql = (
+            f"SELECT TOP(500) {base_cols} "
+            f"{base_joins} "
+            f"WHERE {filtro_comp} AND ME.[Code]='{equipo_code}' AND {filtro_fecha} "
+            f"ORDER BY LD.[FechaMuestreo] DESC"
+        )
+    else:
+        sql = (
+            f"SELECT TOP(500) {base_cols} "
+            f"{base_joins} "
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha} "
+            f"ORDER BY LD.[FechaMuestreo] DESC"
+        )
+    return sql
+
+
 def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     """
     Genera el SQL de tendencia histórica mensual directamente en Python, sin llamar al LLM.

@@ -1242,13 +1242,21 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         Genera el SQL para la consulta humana. Devuelve siempre una SQL string limpia.
 
         Orden de prioridad (cortocircuito — el primero que aplique gana):
-          1. intentar_tendencia_directo() → serie mensual sin ROW_NUMBER ni filtros LP/LC
-          2. intentar_triage_directo()    → triage de observados con doble CTE Python
-          3. LLM (Gemini/OpenAI)         → caso general con refuerzo de heurísticas
+          1. intentar_historial_crudo_directo() → registros individuales sin AVG ni ROW_NUMBER
+          2. intentar_tendencia_directo()        → serie mensual AVG sin filtros LP/LC
+          3. intentar_triage_directo()           → triage de observados con doble CTE Python
+          4. LLM (Gemini/OpenAI)                → caso general con refuerzo de heurísticas
 
-        Los paths 1 y 2 son determinísticos, no llaman al LLM y son más rápidos y confiables
+        Los paths 1-3 son determinísticos, no llaman al LLM y son más rápidos y confiables
         para los casos de uso principales del producto.
         """
+        # Historial crudo: "sin promediar / muestra por muestra" + equipo/proyecto conocido
+        # → SELECT plano sin ROW_NUMBER. Previene que el LLM reutilice el patrón triage CTE.
+        sql_crudo = llm.intentar_historial_crudo_directo(consulta_humana)
+        if sql_crudo:
+            log.info("[human_query] historial_crudo_directo activado — SQL generado en Python sin LLM")
+            return sql_crudo
+
         # Tendencia directo: compartimiento detectado → serie mensual AVG sin LP/LC
         sql_tendencia = llm.intentar_tendencia_directo(consulta_humana)
         if sql_tendencia:
