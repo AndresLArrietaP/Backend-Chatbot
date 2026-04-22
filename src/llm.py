@@ -158,6 +158,8 @@ _RE_PISTA_MODELO_EQUIPO = re.compile(
 #  "evolución mes a mes", "histórico de los últimos 2 años".
 #  Co-exclusiva con triage_observados: si el usuario quiere tendencia de los
 #  observados, triage tiene prioridad (ve la última muestra, no serie temporal).
+#  Co-exclusiva con muestras_individuales: si el usuario quiere registros crudos
+#  sin promediar, el LLM genera el SELECT sin GROUP BY (tendencia_directo devuelve None).
 # ==============================================================================
 
 _RE_PISTA_TENDENCIA_HISTORICA = re.compile(
@@ -170,9 +172,26 @@ _RE_PISTA_TENDENCIA_HISTORICA = re.compile(
     re.IGNORECASE,
 )
 
+# Indica que el usuario quiere registros individuales sin agregar/promediar.
+# Cuando se detecta, intentar_tendencia_directo() cede al LLM para que genere
+# un SELECT sin GROUP BY/AVG que devuelva cada muestra real.
+_RE_MUESTRAS_INDIVIDUALES = re.compile(
+    r"\b(sin\s+promediar|muestra\s+[a-z]*\s*muestra|muestra\s+a\s+muestra|"
+    r"cada\s+muestra|muestra[s]?\s+individual(?:es)?|muestra[s]?\s+real(?:es)?|"
+    r"registro[s]?\s+individual(?:es)?|registro[s]?\s+crudo[s]?|"
+    r"sin\s+agrupar|dato[s]?\s+crudo[s]?|fecha[s]?\s+exacta[s]?|"
+    r"todas\s+las\s+fechas|todas\s+las\s+muestras)\b",
+    re.IGNORECASE,
+)
+
 
 def _es_intencion_tendencia_historica(texto: str) -> bool:
     return bool(_RE_PISTA_TENDENCIA_HISTORICA.search(texto or ""))
+
+
+def _es_intencion_muestras_individuales(texto: str) -> bool:
+    """Detecta cuando el usuario quiere registros crudos, no promedios mensuales."""
+    return bool(_RE_MUESTRAS_INDIVIDUALES.search(texto or ""))
 
 
 def _reforzar_tendencia_historica(q: str) -> str:
@@ -569,6 +588,9 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
         return None
     # Triage tiene prioridad: si la consulta busca observados, no redirigir a tendencia.
     if _es_intencion_triage_observados(consulta_humana):
+        return None
+    # Registros individuales: el LLM genera SELECT sin AVG/GROUP BY → más preciso que nosotros.
+    if _es_intencion_muestras_individuales(consulta_humana):
         return None
     like_comp = _detectar_like_compartimiento(consulta_humana)
     if not like_comp:
