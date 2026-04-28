@@ -133,6 +133,10 @@ def obtener_esquema_json(
     fq_name:
       - MSSQL: [schema].[table]
       - Postgres: schema."table"
+
+    La caché usa como clave la tupla (schemas_normalizados, tablas_normalizadas).
+    La inspección es costosa (~10s en Azure SQL con 80+ tablas) — la caché evita
+    que cada petición pague ese costo. Se invalida con invalidar_cache_esquema().
     """
     key = (_normalizar_secuencia(esquemas), _normalizar_secuencia(tablas))
     if key in _CACHE_ESQUEMA:
@@ -158,7 +162,9 @@ def obtener_esquema_json(
             for c in cols_meta:
                 tipo = str(c.get("type", ""))
 
-                # Normalización MSSQL: sysname ≈ NVARCHAR(128)
+                # sysname es un tipo nativo de SQL Server (alias de NVARCHAR(128)) que
+                # SQLAlchemy/pymssql no reconoce → lo normalizamos para que el esquema
+                # JSON sea legible y no cause warning en SAWarning.
                 if tipo.lower() == "sysname":
                     tipo = "NVARCHAR(128)"
 
@@ -177,6 +183,7 @@ def obtener_esquema_json(
             )
 
             total_columnas += len(cols)
+            # Cortar temprano para no saturar el prompt del LLM con metadatos de cientos de tablas
             if len(tablas_salida) >= max_tablas or total_columnas >= max_columnas:
                 break
 
@@ -398,10 +405,12 @@ def sanear_explain(sql: str) -> str:
 
 
 def _enmascarar_literales(sql: str) -> str:
-    """Reemplaza literales por placeholders para evitar falsos positivos al detectar palabras prohibidas."""
+    # Sin esto, una query como SELECT * WHERE descripcion = 'DROP TABLE test'
+    # dispararía el detector de palabras prohibidas aunque el DROP esté dentro de un literal.
+    # Se reemplazan los literales por cadenas vacías antes de buscar los patrones prohibidos.
     s = sql or ""
-    s = _RE_LITERAL_DOLAR.sub("$$''$$", s)
-    s = _RE_LITERAL_SIMPLE.sub("''", s)
+    s = _RE_LITERAL_DOLAR.sub("$$''$$", s)   # literales $$ ... $$ de Postgres
+    s = _RE_LITERAL_SIMPLE.sub("''", s)       # literales '...' estándar
     return s
 
 
@@ -568,7 +577,12 @@ def _normalizar_token(s: str) -> str:
 
 
 def _construir_mapa_tablas(permitidos_fqn: List[str]) -> Dict[str, str]:
-    """Mapa table_name -> fqn_formateado."""
+    """
+    Construye un mapa table_name_lowercase → fqn_formateado a partir de la allow-list.
+    Permite calificar referencias sin schema (FROM Equipment → FROM [dbo].[Equipment]).
+    First-wins: si dos schemas tienen tablas con el mismo nombre (raro pero posible),
+    gana el primero que aparece en la lista — no se sobreescribe.
+    """
     m: Dict[str, str] = {}
     for f in permitidos_fqn or []:
         if not f or "." not in f:
@@ -579,7 +593,7 @@ def _construir_mapa_tablas(permitidos_fqn: List[str]) -> Dict[str, str]:
         table_clean = table.replace('"', "").replace("[", "").replace("]", "").strip()
         key = table_clean.lower()
         if key in m:
-            continue
+            continue  # first-wins para evitar ambigüedad
         if es_mssql():
             m[key] = f"[{schema}].[{table_clean}]"
         else:
@@ -591,6 +605,10 @@ _RE_DEFINICION_CTE = re.compile(r'(?P<name>"[^"]+"|\w+)\s+AS\s*\(', re.IGNORECAS
 
 
 def _recopilar_nombres_cte(sql: str) -> List[str]:
+    # Los nombres de CTE (LatestSamples, LimitesLC, etc.) aparecen en FROM/JOIN dentro
+    # del SELECT principal pero NO son tablas reales de la BD.
+    # Si no los excluimos de la validación allow-list, la función restringir_a_tablas_permitidas()
+    # los rechazaría como "tabla no encontrada" aunque la query sea perfectamente válida.
     names: List[str] = []
     s = sql or ""
     if not re.search(r"^\s*with\b", s, re.IGNORECASE):
@@ -930,35 +948,40 @@ def _columnas_texto_tabla(esquema_json: Dict[str, Any], table_name: str) -> List
 
 def _puntuar_columna_texto_descriptiva(nombre_columna: str) -> int:
     """
-    Heurística genérica para preferir columnas descriptivas como fallback.
+    Heurística de scoring para elegir la mejor columna de texto como fallback en COALESCE.
+    Se usa en hacer_groupby_nullsafe_mssql() cuando el GROUP BY tiene una dimensión nullable:
+    en vez de agrupar en NULL, se usa COALESCE(dim_nullable, fallback1, fallback2).
+
+    Columnas descriptivas como Name/Nombre son las más útiles para el usuario final.
+    Columnas de tipo ID, fecha o métrica numérica son malas etiquetas de grupo y se penalizan.
     """
     n = (nombre_columna or "").strip().lower()
     score = 0
 
-    # muy buenas
+    # muy buenas — son las etiquetas naturales que el usuario espera ver
     if any(x in n for x in ["name", "nombre"]):
         score += 100
     if any(x in n for x in ["description", "descripcion", "desc"]):
         score += 80
 
-    # buenas
+    # buenas — dimensiones de dominio reconocibles
     if any(x in n for x in ["compart", "component", "equipment", "system", "sistema", "model", "modelo", "type", "tipo", "position", "project", "customer", "client", "cliente", "category", "categoria"]):
         score += 60
 
-    # útiles, pero menos
+    # útiles, pero menos legibles que Name
     if any(x in n for x in ["code", "codigo"]):
         score += 40
 
-    # malas para agrupar
+    # columnas con texto largo no apto para etiqueta de grupo
     if any(x in n for x in ["observ", "recommend", "detail", "path", "mail", "email", "phone", "telefono"]):
         score -= 20
 
-    # normalmente no deben usarse como etiqueta
+    # IDs, fechas y métricas numéricas son pésimas etiquetas de grupo para el usuario final
     if any(x in n for x in ["id", "date", "fecha", "time", "hora", "count", "total", "avg", "sum", "metric", "value", "flag"]):
         score -= 60
 
     if n.endswith("id"):
-        score -= 100
+        score -= 100  # penalización fuerte para campos tipo EquipmentId, ComponentId, etc.
 
     return score
 

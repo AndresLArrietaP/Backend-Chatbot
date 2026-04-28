@@ -142,6 +142,10 @@ _GESTOR_CONTEXTO = GestorContextoConversacional(
 
 _SCHEMA_CACHE: Dict[str, Tuple[float, Any]] = {}
 
+# Tablas del dominio de aceites/equipos que reciben un bonus de score fijo (+50)
+# en el algoritmo de selección de esquema relevante para el LLM.
+# Sin este boost, una consulta de "estado de los motores" podría excluir [Eqpcare].[lc]
+# (la tabla de límites LP/LC) porque sus columnas no tienen tokens obvios en el texto.
 _TABLAS_PRIORITARIAS_DOMINIO = {
     "dbo.oilanalysis",
     "oil.laboratorydata",
@@ -161,6 +165,9 @@ _TABLAS_PRIORITARIAS_DOMINIO = {
     "mine.equipmentfleet",
 }
 
+# Detecta intenciones de interpretación sobre el resultado anterior sin volver a consultar la BD.
+# Activa _puede_responder_desde_memoria() → respuesta analítica usando las filas ya en sesión.
+# Ejemplos: "explícame esto", "qué patrón de desgaste ves", "prioriza los más críticos".
 _RE_INTERPRETACION_MEMORIA = re.compile(
     r"\b("
     r"sin\s+volver\s+a\s+listar|sin\s+repetir|explica|explicame|explícame|"
@@ -172,6 +179,10 @@ _RE_INTERPRETACION_MEMORIA = re.compile(
     re.IGNORECASE,
 )
 
+# Detecta intenciones de refinar/filtrar el resultado previo sin nueva query SQL.
+# A diferencia de _RE_INTERPRETACION_MEMORIA, aquí el usuario quiere un subconjunto
+# reordenado del dataset ya en memoria: "quédate solo con los top 5", "ordena por Fe".
+# Activa _puede_refinar_desde_memoria() → _filtrar_y_ordenar_resultado_previo() en Python.
 _RE_REFINAR_MEMORIA = re.compile(
     r"\b("
     r"quedate|quédate|solo\s+con|mas\s+criticos|más\s+críticos|"
@@ -254,6 +265,10 @@ def _normalizar_token(s: str) -> str:
 
 
 def _a_jsonable(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # SQLAlchemy devuelve Decimal para columnas NUMERIC/DECIMAL de SQL Server y
+    # uuid.UUID para columnas uniqueidentifier — ambos tipos no son JSON-serializables por defecto.
+    # Decimal → float redondeado (evita ruido de coma flotante al serializar).
+    # UUID → str (formato "xxxxxxxx-xxxx-..." que Copilot Studio puede leer).
     out: List[Dict[str, Any]] = []
     for r in rows or []:
         nr: Dict[str, Any] = {}
@@ -290,6 +305,10 @@ def _parse_list_param(v: Optional[Union[List[str], str]]) -> Optional[List[str]]
 
 
 def _usuario_pide_estricto(human_query: str) -> bool:
+    # Cuando el usuario explicita que quiere solo registros completos (sin NULLs, coincidencias exactas),
+    # los reintentos null-safe no aplican — cambiarían la semántica de la consulta.
+    # Sin esta guarda, una query "solo los equipos que tengan TBN medido" dispararía retry
+    # null-projection porque hay filas con TBN=NULL, que es exactamente lo que el usuario quiso filtrar.
     q = (human_query or "").lower()
     pistas = [
         "solo coincidencias",
@@ -309,6 +328,12 @@ def _usuario_pide_estricto(human_query: str) -> bool:
 
 
 def _sql_sugiere_riesgo_de_cero_filas(sql: str) -> bool:
+    # Heurística conservadora: el retry de 0 filas solo se dispara si la SQL tiene patrones
+    # que habitualmente generan resultados vacíos por error de construcción, no por ausencia real de datos.
+    # JOIN + GROUP BY/HAVING → riesgo de agrupación vacía por INNER JOIN restrictivo.
+    # JOIN + IS NOT NULL → filtro que puede excluir todas las filas si la columna es opcional.
+    # JOIN + LIKE / compartimiento → el LLM puede generar LIKE '%MOTOR TRACCION%' cuando en la
+    # BD el valor real es 'MOTOR DE TRACCION RH' (tiene "DE" en medio) → 0 filas por mismatch.
     s = (sql or "").lower()
 
     if " join " in s and (" group by " in s or " having " in s):
@@ -328,6 +353,12 @@ def _sql_tiene_group_by(sql: str) -> bool:
 
 
 def _resultado_parece_grupo_nulo(rows: List[Dict[str, Any]], sql: str) -> bool:
+    # Heurística: si la query tiene GROUP BY y devolvió muy pocas filas (≤3) con columnas
+    # dimensionales todas en NULL, lo más probable es que el JOIN generó un grupo vacío
+    # que agrupa todo en una sola fila NULL. Ejemplo clásico: GROUP BY ComponentName donde
+    # ComponentName viene de un INNER JOIN que no matcheó ninguna fila → una fila con NULL.
+    # Las columnas de agregación (AVG, SUM, COUNT…) se excluyen del chequeo — solo miramos
+    # las dimensiones descriptivas (compartimiento, equipo, proyecto, etc.).
     if not rows:
         return False
     if not _sql_tiene_group_by(sql):
@@ -358,6 +389,13 @@ def _sql_parece_ultimo_por_entidad(sql: str) -> bool:
 
 
 def _resultado_parece_proyeccion_nula(rows: List[Dict[str, Any]], sql: str) -> bool:
+    # Detecta el caso en que la query usa LEFT JOIN + ROW_NUMBER/PARTITION BY y devuelve
+    # columnas descriptivas (nombre de proyecto, modelo, equipo) todas en NULL.
+    # Suele ocurrir cuando el LLM hace LEFT JOIN a tablas de referencia (dbo.Project,
+    # dbo.Equipment) sin el predicado de JOIN correcto, o con alias de columna que no matchea.
+    # Las métricas de aceite (ppm, TBN, fechas, smr) se excluyen: que salgan NULL es esperado
+    # si la muestra no tiene ese metal medido. Solo miramos columnas descriptivas.
+    # Umbral: ≥50% de las primeras 12 filas en NULL en esa columna → sospechosa.
     if not rows:
         return False
 
@@ -586,6 +624,26 @@ def _tokenizar_consulta(texto: str) -> List[str]:
 
 
 def _seleccionar_esquema_para_llm(esquema_json: Dict[str, Any], human_query: str) -> Dict[str, Any]:
+    """
+    Recorta el esquema completo a las ESQUEMA_RELEVANTE_MAX_TABLAS tablas más relevantes
+    para la consulta, usando un sistema de puntuación por tokens.
+
+    El contexto enviado al LLM incluye el esquema de cada tabla (nombre + columnas).
+    Pasar las 80+ tablas del esquema completo haría el prompt demasiado largo,
+    consumiría más tokens y confundiría al modelo con tablas irrelevantes.
+    Con 18 tablas seleccionadas el prompt cabe holgadamente en el presupuesto de Flash.
+
+    Algoritmo de scoring:
+      +50  tabla en el set prioritario del dominio (aceites/equipos/límites)
+      +12  token de la consulta aparece en nombre de schema+tabla
+      +4   token aparece en algún nombre de columna
+      +20  boost semántico: consulta habla de aceite/ppm/TBN y la tabla es de análisis
+      +20  boost semántico: consulta habla de equipo/proyecto y la tabla es de referencia
+      +25  boost específico: fallas, payload (sub-dominios menos frecuentes)
+
+    Tablas "puente" (dbo.equipment, dbo.project, etc.) se inyectan siempre que haya
+    alguna tabla de análisis seleccionada, porque los JOINs de identidad siempre las necesitan.
+    """
     tablas = esquema_json.get("tables", []) or []
     if not ESQUEMA_RELEVANTE_ACTIVO or len(tablas) <= ESQUEMA_RELEVANTE_MAX_TABLAS:
         return esquema_json
@@ -648,6 +706,8 @@ def _seleccionar_esquema_para_llm(esquema_json: Dict[str, Any], human_query: str
     seleccionadas = [t for _, t in tablas_puntuadas[:ESQUEMA_RELEVANTE_MAX_TABLAS]]
     fq_seleccion = {f"{t.get('schema')}.{t.get('table')}".lower() for t in seleccionadas}
 
+    # Si se incluyó alguna tabla de análisis, garantizar que las tablas de identidad estén presentes.
+    # Sin dbo.equipment o dbo.project el LLM no puede construir el JOIN para filtrar por proyecto/modelo.
     puentes = ["dbo.equipment", "dbo.equipmentcomponent", "dbo.component", "dbo.project"]
     if any(x in fq_seleccion for x in ["dbo.oilanalysis", "oil.laboratorydata"]):
         for t in tablas:
@@ -800,6 +860,14 @@ def _filtrar_y_ordenar_resultado_previo(
     rows: List[Dict[str, Any]],
     consulta_humana: str,
 ) -> Optional[Dict[str, Any]]:
+    """
+    Filtra y ordena en Python el dataset ya en memoria, sin nueva query SQL.
+
+    Devuelve None si el dataset no tiene columnas numéricas sobre las que ordenar
+    (por ejemplo, si el resultado previo era solo texto descriptivo).
+    rows_validas excluye filas con NULL en la columna métrica seleccionada,
+    para que el sort no falle con tipos incomparables.
+    """
     if not rows:
         return None
 
@@ -837,6 +905,15 @@ def _puede_refinar_desde_memoria(
     consulta_humana: str,
     ultimo_resultado: Dict[str, Any],
 ) -> bool:
+    """
+    Devuelve True si la consulta puede resolverse aplicando un filtro/orden en Python
+    sobre las filas que ya están en memoria de sesión, sin generar nueva SQL.
+
+    Caso típico: "quédate solo con los 5 con mayor Fe" después de un triage.
+    Esto evita una segunda llamada al LLM y una segunda query SQL cuando el dataset
+    ya está en memoria y solo se necesita un subconjunto ordenado.
+    Un triage de un componente distinto siempre requiere SQL nuevo — no se reutiliza.
+    """
     rows = ultimo_resultado.get("rows_resultado") or []
     if not rows:
         return False
@@ -859,6 +936,15 @@ def _puede_responder_desde_memoria(
     consulta_humana: str,
     ultimo_resultado: Dict[str, Any],
 ) -> bool:
+    """
+    Devuelve True si la consulta es puramente interpretativa sobre el resultado anterior
+    (explicar, resumir, diagnosticar) sin necesitar nuevos datos de BD.
+
+    A diferencia de _puede_refinar_desde_memoria(), aquí no se modifica el dataset:
+    se pasa íntegro al LLM o al renderizador analítico para obtener una narrativa.
+    Guarda: si el usuario pide listar/mostrar, es intención de datos nuevos, no análisis.
+    Un triage nuevo (incluso si pregunta "observados de otro compartimiento") requiere SQL.
+    """
     rows = ultimo_resultado.get("rows_resultado") or []
     if not rows:
         return False
@@ -972,6 +1058,9 @@ async def guardia_api_key(
     request: Request,
     x_api_key: Optional[str] = Header(default=None, alias="x-api-key"),
 ) -> None:
+    # Dependencia FastAPI inyectada con Depends(guardia_api_key) en todos los endpoints.
+    # Si API_KEY no está configurada en .env, la guardia no bloquea nada (modo abierto para dev).
+    # En producción (Render), API_KEY debe estar en las env vars del servicio.
     settings = getattr(request.app.state, "settings", None)
     requerido = (getattr(settings, "API_KEY", "") if settings else "") or ""
     if not requerido:
@@ -1069,6 +1158,10 @@ def schema_refresh(req: SchemaRequest) -> Dict[str, Any]:
 
 @router.post("/human_query", dependencies=[Depends(guardia_api_key)])
 async def human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
+    # El wrapper de asyncio.wait_for garantiza que el endpoint nunca exceda REQUEST_TIMEOUT=180s,
+    # lo que deja 60s de margen antes del hard-timeout de 240s de Copilot Studio.
+    # _procesar_human_query tiene sus propios timeouts internos para BD y LLM, pero
+    # este timeout externo actúa como seguro final si algún componente se cuelga sin lanzar excepción.
     try:
         return await asyncio.wait_for(
             _procesar_human_query(payload),
@@ -1225,6 +1318,10 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     esquemas = payload.schemas or TARGET_SCHEMAS
     tablas = payload.tables or None
 
+    # esquema_total: todas las tablas del schema → usado para la allow-list de validación y para
+    # los transformadores de database.py (calificar_tablas, hacer_groupby_nullsafe_mssql, etc.).
+    # esquema_llm: subconjunto relevante para la consulta → es lo que se envía al LLM en el prompt.
+    # La distinción evita que el LLM alucine tablas que no están en el prompt pero sí en la allow-list.
     esquema_total = database.obtener_esquema_json(
         esquemas=esquemas,
         tablas=tablas,
@@ -1323,27 +1420,47 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         return sql
 
     def _blindar_sql(sql: str) -> str:
-        sql2 = database.limpiar_sql(sql)
-        sql2 = database.sanear_explain(sql2)
-        sql2 = database.calificar_tablas(sql2, allowed_fqn)
-        sql2 = database.preferir_left_join_por_nullable(sql2, esquema_total)
+        # Pipeline de limpieza y validación aplicado a toda SQL antes de ejecutar.
+        # El orden importa: primero se limpia el texto crudo, luego se transforman
+        # las referencias de tabla, y por último se validan las invariantes de seguridad.
+
+        sql2 = database.limpiar_sql(sql)           # strip, elimina bloques ```sql, normaliza whitespace
+        sql2 = database.sanear_explain(sql2)        # elimina EXPLAIN/DESCRIBE si no está permitido en .env
+        sql2 = database.calificar_tablas(sql2, allowed_fqn)  # agrega schema prefix donde falta (ej. Equipment → dbo.Equipment)
+        sql2 = database.preferir_left_join_por_nullable(sql2, esquema_total)  # convierte INNER a LEFT en columnas nullable
 
         if (dialecto or "").lower() in ("mssql", "sqlserver"):
+            # Reescribe GROUP BY para que dimensiones nullable usen ISNULL(col, 'N/A')
+            # y no generen el grupo "NULL" que distorsiona los agregados.
             sql2 = database.hacer_groupby_nullsafe_mssql(
                 sql2,
                 esquema_json=esquema_total,
                 consulta_humana=human,
             )
 
+        # Barrera de seguridad: solo SELECT y CTEs están permitidos.
+        # Rechaza UPDATE, DELETE, INSERT, DROP, EXEC, etc.
         if not database.es_select_seguro(sql2):
             raise HTTPException(status_code=400, detail="SQL insegura (no es SELECT/CTE/EXPLAIN permitido).")
 
+        # Barrera de allowlist: verifica que todas las tablas referenciadas estén en el esquema conocido.
+        # Evita que el LLM "alucine" tablas o intente acceder a tablas fuera del scope autorizado.
         if not database.restringir_a_tablas_permitidas(sql2, allowed_fqn):
             raise HTTPException(status_code=400, detail="La consulta referencia tablas no permitidas según el esquema actual.")
 
         return sql2
 
     async def _generar_y_blindar(consulta_humana: str) -> str:
+        """
+        Genera SQL y la pasa por el pipeline de blindado. Si la validación rechaza la SQL
+        (status 400 — tabla no permitida, query insegura, etc.), reintenta hasta 3 veces
+        enviando al LLM el detalle del rechazo y la allow-list de tablas para que corrija.
+
+        Solo propaga errores distintos de 400: un 408 (timeout de BD) o 503 (LLM caído)
+        no tiene sentido reintentar — se propagan directamente.
+        El prompt de retry incluye la SQL anterior marcada como "NO la repitas igual"
+        para evitar que Flash devuelva la misma respuesta cacheada.
+        """
         prompt_actual = consulta_humana
         ultimo_sql = ""
         ultimo_detalle = ""
@@ -1354,7 +1471,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 return _blindar_sql(ultimo_sql)
             except HTTPException as e:
                 if e.status_code != 400:
-                    raise
+                    raise  # 408/503 no son recuperables retrying — propagar inmediatamente
 
                 ultimo_detalle = str(e.detail)
                 log.warning(
@@ -1436,8 +1553,15 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         return respuesta_dry
 
     warning_sql_retry: List[str] = []
-    _retries_total = 0  # presupuesto compartido entre todos los tipos de reintento
-    _t_inicio_sql = time.time()  # reloj para presupuesto de tiempo de retries
+    # _retries_total: contador global de reintentos consumidos en este request.
+    # Todos los tipos de retry (empty-result, null-group, null-projection, window) comparten
+    # este contador. MAX_SQL_RETRIES_TOTAL=1 en producción → un solo reintento de cualquier tipo,
+    # no uno por cada tipo. Esto evita cascadas de 4 reintentos seguidos en queries complejas.
+    _retries_total = 0
+    # _t_inicio_sql: marca de tiempo del primer intento de ejecución SQL.
+    # RETRY_TIME_BUDGET=150s → si ya se gastaron 150s en SQL/LLM, no se dispara ningún retry.
+    # Con REQUEST_TIMEOUT=180s, esto deja 30s de margen para construir y enviar la respuesta.
+    _t_inicio_sql = time.time()
 
     try:
         rows = await _ejecutar_sql_actual(sql_query)
@@ -1475,6 +1599,12 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             log.exception("Error ejecutando SQL en /human_query")
             raise HTTPException(status_code=500, detail=f"Error ejecutando SQL: {detalle_sql}")
 
+    # REINTENTO 1: resultado vacío (0 filas).
+    # Solo se dispara si hay indicios estructurales en la SQL de que el vacío es un falso negativo
+    # (JOINs con filtros restrictivos, IS NOT NULL, LIKE sobre compartimiento), no cuando el
+    # usuario pidió algo que legítimamente no existe.
+    # La guarda `_es_consulta_triage_observados` es crítica: en triage, 0 filas significa
+    # "ningún componente fuera de límite" → respuesta VÁLIDA que no debe disparar retry.
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
         and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
@@ -1514,6 +1644,10 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 log.exception("Reintento semántico (0 filas) falló.")
                 break
 
+    # REINTENTO 2: agrupación nula (GROUP BY con dimensión NULL).
+    # Ocurre cuando el INNER JOIN que alimenta la dimensión del GROUP BY no matcheó ninguna fila
+    # y el resultado es una sola fila con todas las dimensiones en NULL + un agregado.
+    # El retry pide al LLM usar LEFT JOIN + COALESCE para que el grupo siempre tenga etiqueta.
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
         and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
@@ -1551,6 +1685,11 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 log.exception("Reintento null-safe (grupo NULL) falló.")
                 break
 
+    # REINTENTO 3: proyección nula (columnas descriptivas todas en NULL).
+    # Ocurre en queries de "última muestra por equipo" con LEFT JOIN a tablas de referencia:
+    # el LLM hace el JOIN pero no mapea bien las columnas del lado derecho (modelo, proyecto),
+    # y el resultado tiene las métricas correctas pero sin nombre de equipo ni proyecto.
+    # El retry pide usar COALESCE con fallbacks sobre las columnas descriptivas del LEFT JOIN.
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
         and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
@@ -1588,6 +1727,10 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
                 log.exception("Reintento null-safe (proyección nula) falló.")
                 break
 
+    # REINTENTO 4: window query sobre-restringida (ROW_NUMBER con IS NOT NULL excesivo).
+    # El LLM a veces agrega IS NOT NULL sobre métricas de aceite (Fe_ppm IS NOT NULL)
+    # antes del ROW_NUMBER, lo que excluye muestras sin ese metal → muy pocas filas (<10% del límite).
+    # El retry pide eliminar esos filtros pre-ROW_NUMBER y aplicar el límite solo en el SELECT externo.
     if (
         _retries_total < MAX_SQL_RETRIES_TOTAL
         and (time.time() - _t_inicio_sql) < RETRY_TIME_BUDGET
@@ -1648,8 +1791,12 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             log.exception("No se pudo construir la respuesta textual con el proveedor. Se usa fallback determinístico.")
             respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
     elif rows:
+        # GENERAR_RESPUESTA_TEXTO=false en producción → Copilot Studio usa su propio LLM de síntesis.
+        # En ese caso se usa el renderizador analítico determinístico como answer_text de fallback.
         respuesta_textual = renderizar_resumen_analitico(analisis_resultado)
     else:
+        # 0 filas: se distingue si es triage (resultado válido) o query genérica (posiblemente sin datos).
+        # En triage, la respuesta "ninguno observado" es información útil para el usuario.
         if _es_consulta_triage_observados(human):
             respuesta_textual = (
                 "Ningún componente fuera de límite en el universo consultado. "

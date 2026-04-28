@@ -181,9 +181,15 @@ class GestorContextoConversacional:
         self.ttl = timedelta(minutes=max(1, ttl_minutos))
         self.max_turnos = max(1, max_turnos)
         self.max_caracteres = max(500, max_caracteres)
+        # max_filas_resultado limita cuántas filas se guardan en memoria/disco por turno.
+        # Un triage de 54 motores = 54 filas → fine. Sin límite, queries amplias (500+ filas)
+        # podrían saturar la RAM del worker de Render con el historial acumulado.
         self.max_filas_resultado = max(1, max_filas_resultado)
         self.persistir_archivo = bool(persistir_archivo)
         self.ruta_archivo = Path(ruta_archivo)
+        # threading.Lock (no asyncio.Lock): el gestor se llama desde coroutines FastAPI pero
+        # también desde threads síncronos de SQLAlchemy via run_in_threadpool.
+        # asyncio.Lock no es seguro fuera del event loop → threading.Lock protege ambos.
         self._lock = Lock()
         self._conversaciones: Dict[str, ConversacionActiva] = {}
 
@@ -230,7 +236,9 @@ class GestorContextoConversacional:
         tmp.replace(self.ruta_archivo)
 
     def _sincronizar_desde_disco(self) -> None:
-        """Recarga desde disco si la persistencia está activada."""
+        # Llamado dentro de cada operación con el lock adquirido para mantener coherencia
+        # en entornos donde múltiples workers de uvicorn comparten el mismo archivo JSON
+        # (útil en desarrollo con --reload, no en producción con un solo worker en Render).
         if self.persistir_archivo:
             self._cargar_desde_disco()
 
@@ -363,7 +371,7 @@ class GestorContextoConversacional:
             "respuesta_textual": ultimo.respuesta_textual,
             "row_count": ultimo.row_count,
             "rows": filas,
-            "rows_resultado": filas,
+            "rows_resultado": filas,   # alias — main.py usa rows_resultado para las guardas de memoria
             "analisis": dict(ultimo.analisis_resultado or {}),
             "origen_respuesta": ultimo.origen_respuesta,
         }

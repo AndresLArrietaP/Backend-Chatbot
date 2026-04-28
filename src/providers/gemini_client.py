@@ -466,11 +466,13 @@ class GeminiProvider:
 
     def _cadena_fallback(self, primario_full: str, clave_env: str) -> List[str]:
         """
-        Construye cadena de fallback a partir de:
-        - Modelo primario
-        - Candidatos en .env
-        - Defaults
-        Filtra por modelos realmente visibles cuando es posible.
+        Construye la cadena de modelos a usar en hedge + fallback secuencial.
+
+        Orden de candidatos: primario → lista en .env → defaults internos.
+        Si la API respondió al listar modelos, se filtra por los que están realmente visibles
+        en la clave de proyecto actual (evita 404/NOT_FOUND en el hedge).
+        Si la API no respondió (cold start o fallo de red), se usa la cadena completa sin filtro
+        para no bloquear el arranque por un error de listado de modelos.
         """
         cruda = env(clave_env, default="")
         en_lista = [s.strip() for s in cruda.split(",") if s.strip()]
@@ -684,6 +686,14 @@ class GeminiProvider:
     # -------------------------- Validación de JSON SQL ------------------------
 
     def _sql_parece_incompleto(self, sql: str) -> bool:
+        # Detecta SQL truncada antes de intentar ejecutarla — ahorra un round-trip a la BD.
+        # Flash a veces entrega la respuesta cortada cuando el prompt es largo y se acercan
+        # al límite de tokens de salida (SQL_MAX_OUTPUT_TOKENS). Señales de truncado:
+        # - termina en keyword SQL sin continuar (FROM sin tabla, JOIN sin ON...)
+        # - paréntesis desbalanceados (CTE sin cerrar)
+        # - corchetes desbalanceados (alias sin cerrar)
+        # - comillas impares (literal sin cerrar)
+        # - alias vacíos: AS [] — Flash a veces genera esto cuando se queda sin tokens
         s = (sql or "").strip()
         if not s:
             return True
@@ -1243,8 +1253,15 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
         errores: List[str] = []
         ganador: Optional[str] = None
         # Modelos que retornaron 503/NOT_FOUND en este request — se saltan en repair y fallback secuencial
-        # para no malgastar tiempo en modelos ya confirmados como no disponibles.
+        # para no malgastar tiempo en modelos ya confirmados como no disponibles en este momento.
+        # Es per-request (no global) para no bloquear modelos que recuperen disponibilidad entre requests.
         modelos_503: set = set()
+
+        # FASE 1: HEDGE PARALELO
+        # Se lanzan hasta LLM_HEDGE_PARALLEL tareas concurrentes con escalonado de LLM_HEDGE_STAGGER seg.
+        # El primero en responder correctamente cancela las demás → reduce latencia P50 sin aumentar costo
+        # en P95 (solo paga el modelo que gana si los demás son cancelados a tiempo).
+        # Si el ganador devuelve JSON malformado → reparación automática antes del fallback secuencial.
 
         async def _lanzar(m: str):
             res = await self._llamar_generar(m, contenidos, configuracion, timeout_por_modelo)
@@ -1528,6 +1545,12 @@ non_text_columns={json.dumps(columnas_no_texto, ensure_ascii=False)}
                 return json.dumps(obj_ganador, ensure_ascii=False)
             errores.append("winner_sql_incompleta: SQL truncada/incompleta después del posproceso.")
 
+        # FASE 2: FALLBACK SECUENCIAL
+        # Si el hedge no produjo un SQL válido (todos fallaron o el ganador tenía JSON irrecuperable),
+        # se intenta cada modelo de la cadena de forma secuencial.
+        # Se usan LLM_PER_MODEL_TIMEOUT * 1.4 de timeout para dar más margen al primer candidato
+        # (a veces Flash responde en 30-40s en prompts largos de triage).
+        # Los modelos con 503 en este request se saltan para no perder tiempo.
         for mdl in modelos:
             if mdl in modelos_503:
                 log.debug("[gemini.consulta_humana_a_sql] fallback: saltando %s (503 previo en este request)", mdl)

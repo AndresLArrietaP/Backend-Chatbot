@@ -9,3 +9,6 @@ __pycache__/
 
 .claude/
 CLAUDE.md
+
+DocumentacionTecnica_BackendChatbot.docx
+generar_documentacion.py

@@ -5,22 +5,26 @@ Módulo: llm
 -----------
 Capa orquestadora entre la API y el proveedor LLM activo (Gemini / OpenAI).
 
-Responsabilidades:
-  1. Detectar la intención de la consulta mediante heurísticas regex livianas
-     (compartimiento de aceite, ventana CTE, comparativa, continuidad, criticidad…).
-  2. Reforzar el prompt con instrucciones adicionales según la intención detectada,
-     mejorando la precisión del SQL generado sin modificar la consulta del usuario.
-  3. Delegar la generación de SQL al proveedor activo (GeminiProvider u OpenAIProvider).
-  4. Construir la respuesta analítica final (build_answer / construir_respuesta).
-  5. Exponer aliases en inglés para compatibilidad con código anterior.
+Antes de delegar al modelo de lenguaje, este módulo analiza la consulta del usuario
+con heurísticas livianas (regex) para detectar la intención y enriquecer el prompt
+con instrucciones SQL específicas del dominio. Esto compensa las limitaciones de los
+modelos al generar SQL para una base de datos con quirks propios (duplicados por fecha,
+columnas con guión, UUIDs como PK, esquemas separados por área, etc.).
 
-Flujo principal:
-  consulta_humana_a_sql()
-    → detección de heurísticas
-    → refuerzo del prompt
-    → proveedor.consulta_humana_a_sql()
-    → validación del JSON de salida
-    → enriquecimiento (original_query, heuristicas_aplicadas)
+Responsabilidades principales:
+  1. Detectar la intención de la consulta (triage, tendencia, historial crudo, etc.).
+  2. Intentar generar SQL directamente en Python para los casos bien definidos,
+     sin pasar por el LLM (más rápido, más confiable, sin alucinaciones).
+  3. Reforzar el prompt con instrucciones adicionales para los casos que sí van al LLM.
+  4. Delegar la generación de SQL al proveedor activo (GeminiProvider u OpenAIProvider).
+  5. Construir la respuesta analítica final en lenguaje natural (cuando se activa).
+
+Flujo de despacho para /human_query:
+  main.py
+    → intentar_historial_crudo_directo()   # muestra a muestra, sin promediar
+    → intentar_tendencia_directo()         # serie mensual AVG, sin LLM
+    → intentar_triage_directo()            # triage con límites LP/LC reales
+    → consulta_humana_a_sql()              # LLM + refuerzos de heurística
 """
 
 from __future__ import annotations
@@ -35,29 +39,43 @@ from .providers.factory import obtener_proveedor as _obtener_proveedor
 
 log = logging.getLogger(__name__)
 
+# Proveedor LLM activo, instanciado una sola vez al importar el módulo.
+# Se selecciona en función de la variable de entorno LLM_PROVIDER (.env).
 _proveedor = _obtener_proveedor()
 
 
 # ==============================================================================
-#  Patrones regex de detección de intención (heurísticas livianas)
-#  Se evalúan sobre la consulta del usuario + contexto conversacional.
+#  PATRONES REGEX DE DETECCIÓN DE INTENCIÓN
+#
+#  Cada patrón identifica un tipo de consulta o intención del usuario.
+#  Se evalúan sobre la consulta actual + el contexto conversacional acumulado,
+#  lo que permite capturar referencias como "de esos resultados" o "el mismo equipo".
+#
+#  Criterio de diseño: preferir falsos positivos (activar un refuerzo innecesario)
+#  sobre falsos negativos (no activar el refuerzo cuando se necesita).
+#  Un refuerzo de más rara vez rompe; un refuerzo de menos sí puede dar SQL incorrecto.
 # ==============================================================================
 
+# Consultas que comparan dos valores, métricas o entidades entre sí.
 _RE_PISTA_COMPARACION = re.compile(
     r"\b(supera|mayor\s+que|menor\s+que|más\s+que|menos\s+que|compar|vs\.?|versus|diferenc|pendien|despach)\b",
     re.IGNORECASE,
 )
 
+# Consultas que piden la última muestra, el registro más reciente o usan ventanas analíticas.
 _RE_PISTA_ULTIMO_VENTANA = re.compile(
     r"\b(ultimo|último|mas\s+reciente|más\s+reciente|row_number|rank|dense_rank|over\s*\(|partition\s+by|cte|ventana)\b",
     re.IGNORECASE,
 )
 
+# Exclusión explícita de nulos — el usuario lo pide directamente.
 _RE_PISTA_EXCLUSION_NULOS = re.compile(
     r"\b(sin\s+nulos|sin\s+null|no\s+nulo|no\s+null|excluir\s+nulos|excluir\s+null|solo\s+con\s+valor|solo\s+con\s+datos|solo\s+disponibles)\b",
     re.IGNORECASE,
 )
 
+# Referencias deícticas que indican que la consulta depende del contexto previo.
+# "eso", "de esos resultados", "quédate solo con", "los mismos", etc.
 _RE_PISTA_CONTINUIDAD = re.compile(
     r"\b("
     r"ahora|luego|después|despues|de\s+esos\s+resultados|de\s+ese\s+resultado|"
@@ -70,6 +88,7 @@ _RE_PISTA_CONTINUIDAD = re.compile(
     re.IGNORECASE,
 )
 
+# Peticiones de interpretación, resumen o diagnóstico sobre datos ya obtenidos.
 _RE_PISTA_SINTESIS_INTERPRETACION = re.compile(
     r"\b(explica|explícame|explicame|interpreta|interpretación|interpretacion|"
     r"resume|resumen|concluye|conclusión|conclusion|diagnostica|diagnóstico|diagnostico|"
@@ -78,6 +97,7 @@ _RE_PISTA_SINTESIS_INTERPRETACION = re.compile(
     re.IGNORECASE,
 )
 
+# Peticiones de priorización o filtro por severidad: "los más críticos", "peores", etc.
 _RE_PISTA_CRITICIDAD = re.compile(
     r"\b(crítico|critico|críticos|criticos|severo|severa|severos|severas|"
     r"alarma|riesgo|urgente|peor|peores|más\s+alto|mas\s+alto|"
@@ -85,11 +105,14 @@ _RE_PISTA_CRITICIDAD = re.compile(
     re.IGNORECASE,
 )
 
+# Mención de un compartimiento o sistema mecánico (motor, hidráulico, etc.)
+# dentro del contexto de análisis de aceite.
 _RE_PISTA_COMPARTIMIENTO_ACEITE = re.compile(
     r"\b(motor|transmision|transmisión|hidraulico|hidráulico|diferencial|mando\s+final|reductor|convertidor)\b",
     re.IGNORECASE,
 )
 
+# Mención de métricas o conceptos de análisis de aceite (ppm, TBN, viscosidad, metales, etc.)
 _RE_PISTA_ANALISIS_ACEITE = re.compile(
     r"\b(aceite|ppm|tbn|tan|viscos|muestra|muestreo|horas\s+de\s+aceite|horometro|horómetro|"
     r"fe_ppm|cu_ppm|si_ppm|al_ppm|cr_ppm|pb_ppm|sn_ppm|ni_ppm|ag_ppm|mn_ppm|"
@@ -100,6 +123,7 @@ _RE_PISTA_ANALISIS_ACEITE = re.compile(
     re.IGNORECASE,
 )
 
+# Consultas orientadas a datos de laboratorio: muestras, análisis, condición del aceite.
 _RE_PISTA_LABORATORIO_ACEITE = re.compile(
     r"\b(muestra[s]?|muestreo|analisis\s+de\s+aceite|análisis\s+de\s+aceite|laboratorio|"
     r"aceite.*reciente|reciente.*aceite|aceite.*ultimo|ultimo.*aceite|aceite.*último|último.*aceite|"
@@ -109,6 +133,7 @@ _RE_PISTA_LABORATORIO_ACEITE = re.compile(
     re.IGNORECASE,
 )
 
+# Consultas que piden los compartimientos o componentes de un modelo/equipo/proyecto.
 _RE_PISTA_COMPONENTES_MODELO = re.compile(
     r"\b(componente[s]?|compartimiento[s]?)\b.{0,80}\b(modelo|equipo|maquina|máquina|proyecto)\b"
     r"|\b(modelo|equipo|maquina|máquina|proyecto)\b.{0,80}\b(componente[s]?|compartimiento[s]?)\b"
@@ -120,46 +145,49 @@ _RE_PISTA_COMPONENTES_MODELO = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# Detecta consultas de listado/catálogo de entidades dimensionales del negocio
+# Consultas que piden catálogos o dimensiones del negocio: proyectos, modelos, flotas, tipos de equipo.
 _RE_PISTA_DIMENSIONAL = re.compile(
-    # "lista/enlista/enumera + entidad"
+    # "lista/enlista/enumera + entidad dimensional"
     r"\b(?:listar?|enlistar?|enl[ií]sta(?:me|te|r)?|enumerar?)\b"
     r".{0,80}"
     r"\b(proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|flota[s]?|incidente[s]?|falla[s]?|aver[ií]a[s]?)\b"
     r"|"
-    # "dame los/las/todos los X" dimensional — requiere artículo directo para evitar falsos positivos
+    # "dame los/todas los X" con artículo directo — evita capturar frases genéricas
     r"\bdame\b\s+(?:los?|las?|todos?\s+los?|todas?\s+las?|un\s+listado\s+de|el\s+listado\s+de)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?\s+de\s+equipo[s]?|flota[s]?|incidente[s]?|falla[s]?)\b"
     r"|"
     # "todos los X" dimensional
     r"\btodo[s]?\s+(?:los?|las?)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|incidente[s]?|falla[s]?)\b"
     r"|"
-    # "qué/cuáles/cuántos X (de Y)? hay/existen/tienen" — permite "tipos de equipo hay", "cuántos modelos hay"
+    # "qué/cuáles/cuántos X hay" — cubre "tipos de equipo hay", "cuántos modelos existen"
     r"\b(?:qu[eé]|cu[aá]les?|cu[aá]ntos?)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|incidente[s]?|falla[s]?).{0,30}(?:hay|existen?|tiene[n]?|present[e]?[s]?)\b",
     re.IGNORECASE | re.DOTALL,
 )
 
-# Detecta menciones de proyecto minero (por nombre o genérico)
+# Mención explícita de proyecto minero por nombre propio.
 _RE_PISTA_PROYECTO_MINERO = re.compile(
     r"\b(proyecto|antapaccay|las\s+bambas|antamina|cerro\s+verde|quellaveco|toromocho|"
     r"cuajone|toquepala|marcona|lagunas\s+norte|bayovar)\b",
     re.IGNORECASE,
 )
 
-# Detecta menciones de modelo de equipo (nombres Komatsu / Caterpillar / etc.)
+# Mención de modelo de equipo (nomenclaturas Komatsu, Caterpillar, etc.)
 _RE_PISTA_MODELO_EQUIPO = re.compile(
     r"\b(modelo|980e|d475|d375|d155|wa[0-9]+|hd[0-9]+|ht[0-9]+|pc[0-9]+|730e|830e|"
     r"wd[0-9]+|bw[0-9]+|pv[0-9]+|gd[0-9]+|vqc?[0-9]+|wb[0-9]+)\b",
     re.IGNORECASE,
 )
 
+
 # ==============================================================================
 #  TENDENCIAS HISTÓRICAS
-#  Detecta consultas del tipo "cómo ha variado el Fe", "tendencia del TBN",
-#  "evolución mes a mes", "histórico de los últimos 2 años".
-#  Co-exclusiva con triage_observados: si el usuario quiere tendencia de los
-#  observados, triage tiene prioridad (ve la última muestra, no serie temporal).
-#  Co-exclusiva con muestras_individuales: si el usuario quiere registros crudos
-#  sin promediar, el LLM genera el SELECT sin GROUP BY (tendencia_directo devuelve None).
+#
+#  Detecta consultas del tipo "cómo ha variado el Fe en los últimos 2 años",
+#  "tendencia mensual del TBN", "evolución mes a mes", "histórico de X".
+#
+#  Exclusión mutua con triage: si el usuario pide tendencia de los "observados",
+#  triage tiene prioridad (interesa la última muestra con límites, no la serie).
+#  Exclusión mutua con muestras_individuales: si el usuario pide datos sin promediar,
+#  el LLM genera SELECT plano sin GROUP BY (tendencia_directo retorna None).
 # ==============================================================================
 
 _RE_PISTA_TENDENCIA_HISTORICA = re.compile(
@@ -172,9 +200,10 @@ _RE_PISTA_TENDENCIA_HISTORICA = re.compile(
     re.IGNORECASE,
 )
 
-# Indica que el usuario quiere registros individuales sin agregar/promediar.
-# Cuando se detecta, intentar_tendencia_directo() cede al LLM para que genere
-# un SELECT sin GROUP BY/AVG que devuelva cada muestra real.
+# Cuando el usuario pide registros individuales sin agregar ("muestra por muestra",
+# "sin promediar", "todas las fechas"), tendencia_directo cede al LLM.
+# Esto evita que el LLM reutilice el patrón CTE+ROW_NUMBER del contexto de triage
+# y devuelva solo 1 muestra en lugar del historial completo.
 _RE_MUESTRAS_INDIVIDUALES = re.compile(
     r"\b(sin\s+promediar|muestra\s+[a-z]*\s*muestra|muestra\s+a\s+muestra|"
     r"cada\s+muestra|muestra[s]?\s+individual(?:es)?|muestra[s]?\s+real(?:es)?|"
@@ -196,18 +225,18 @@ def _es_intencion_muestras_individuales(texto: str) -> bool:
 
 def _reforzar_tendencia_historica(q: str) -> str:
     """
-    Refuerzo de prompt para consultas de tendencia histórica mensual.
-    Se aplica cuando intentar_tendencia_directo() devuelve None
-    (sin compartimiento detectado → el LLM debe inferirlo).
+    Refuerzo de prompt para tendencia histórica cuando intentar_tendencia_directo()
+    devuelve None (sin compartimiento detectado → el LLM debe inferirlo).
 
-    Claves:
-    - EOMONTH() devuelve tipo date → compatible con _a_fecha() en analitica.py.
-    - AVG por mes suaviza outliers puntuales y reduce filas al LLM.
-    - NUNCA ROW_NUMBER/rn: la tendencia necesita TODAS las muestras, no solo la última.
+    Notas importantes que el LLM debe respetar:
+    - EOMONTH() en SQL Server devuelve tipo 'date', no datetime. Compatible con _a_fecha().
+    - AVG mensual suaviza picos puntuales y reduce el número de filas al LLM.
+    - NUNCA ROW_NUMBER/rn=1: para tendencia se necesitan todas las muestras, no solo la última.
     """
     like_compartimiento = _detectar_like_compartimiento(q)
     proyecto = _detectar_proyecto(q)
 
+    # Construir filtros y JOINs según lo que se detectó en la consulta.
     filtros = ["LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE())"]
     joins = "JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId]"
     group_prefix = "LD.[Compartimiento]"
@@ -215,6 +244,7 @@ def _reforzar_tendencia_historica(q: str) -> str:
     if like_compartimiento:
         filtros.append(f"LD.[Compartimiento] LIKE '{like_compartimiento}'")
     if proyecto:
+        # Si hay proyecto, añadir el JOIN a MiningProject y agrupar también por proyecto.
         joins += (
             " JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         )
@@ -242,24 +272,29 @@ def _reforzar_tendencia_historica(q: str) -> str:
 
 # ==============================================================================
 #  CASO DE USO PRINCIPAL: Triage masivo de componentes observados
-#  "estado de los 54 motores de tracción → solo los observados"
 #
-#  Flujo de despacho (en main.py/_generar_sql):
-#    1. intentar_tendencia_directo()  → si es tendencia → SQL mensual directo
-#    2. intentar_triage_directo()     → si compartimiento+proyecto → SQL triage directo
-#    3. LLM con _reforzar_triage_observados() → caso general (sin proyecto o sin compartimiento)
+#  El escenario más frecuente del producto: el usuario pregunta por el estado
+#  del universo completo de un tipo de componente (ej: "54 motores de tracción
+#  de Antapaccay") y el sistema devuelve SOLO los que están fuera de límites LP/LC.
 #
-#  0 filas = respuesta válida ("ningún motor fuera de límites"). No es un error.
+#  0 filas es una respuesta válida ("ningún componente observado en este momento").
+#  Nunca debe tratarse como error ni disparar el retry de resultado vacío.
+#
+#  Flujo de despacho (en main.py):
+#    1. intentar_historial_crudo_directo()  → muestra a muestra, sin promediar
+#    2. intentar_tendencia_directo()        → serie mensual AVG, bypasa LLM
+#    3. intentar_triage_directo()           → doble CTE con LP/LC reales
+#    4. LLM + _reforzar_triage_observados() → caso general sin proyecto o compartimiento conocido
 # ==============================================================================
 
 _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
-    # Estado explícito de observación / anomalía
+    # Estado explícito de observación / anomalía operativa
     r"\b(observado[s]?|con\s+observaci[oó]n|en\s+observaci[oó]n|"
     r"fuera\s+de\s+l[ií]mite[s]?|fuera\s+de\s+rango|fuera\s+de\s+norma|"
     r"con\s+anomal[ií]a[s]?|con\s+alerta[s]?|con\s+problema[s]?|"
     r"necesitan?\s+atenci[oó]n|requieren?\s+atenci[oó]n|"
     r"prestar(?:le)?\s+atenci[oó]n|a\s+(?:los?\s+)?que\s+prestarle\s+atenci[oó]n|"
-    # Patrón "estado de los N [componente]"
+    # Patrón "estado de los N [componente]" — captura "estado de los 54 motores"
     r"estado\s+de\s+(?:los?|las?|todos?\s+los?|todas?\s+las?)?\s*\d*\s*"
     r"(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?|compartimiento[s]?|"
     r"mando[s]?\s+final(?:es)?|diferencial(?:es)?|hidr[aá]ulico[s]?|rueda[s]?)|"
@@ -268,13 +303,13 @@ _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
     r"(?:est[aá][ns]?|tienen?|presentan?)\s+(?:observaci[oó]n|anomal[ií]a|problema|alerta|fuera)|"
     r"qu[eé]\s+(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?)\s+"
     r"(?:est[aá][ns]?|tiene[n]?)\s+(?:observaci[oó]n|anomal[ií]a|problema)|"
-    # "cuáles están observados / tienen problemas"
+    # "cuáles están observados / tienen problemas" (forma corta)
     r"cu[aá]les?\s+(?:est[aá][ns]?|tienen?|presentan?)\s+(?:observaci[oó]n|anomal[ií]a|problema|fuera)|"
-    # Acción directa de filtrado
+    # Verbos de acción directa sobre el subconjunto observado
     r"filtrar?\s+(?:los?|las?)\s+observados?|"
     r"solo\s+(?:los?|las?)\s+observados?|"
     r"dame\s+(?:los?|las?)\s+observados?|"
-    # Masa crítica de componentes sin nombre de metal específico
+    # Masa crítica de componentes sin metal específico mencionado
     r"(?:54|todos?\s+los?)\s+(?:motor(?:es)?\s+de\s+tracci[oó]n|transmisi[oó]n(?:es)?)|"
     r"masa\s+de\s+componentes?|universo\s+de\s+(?:componentes?|equipos?)"
     r")\b",
@@ -283,12 +318,20 @@ _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
 
 
 # ==============================================================================
-#  Mapeo determinístico: keyword del usuario → filtro LIKE en Compartimiento
-#  Se usa en triage_observados para garantizar el filtro en la CTE.
+#  MAPEO DETERMINÍSTICO: keyword → filtro LIKE en Compartimiento
+#
+#  Los valores reales del campo [Oil].[LaboratoryData].[Compartimiento] son:
+#    'MOTOR DE TRACCION RH', 'MOTOR DE TRACCION LH'
+#    'RUEDA DELANTERA RH', 'RUEDA DELANTERA LH'
+#    'SISTEMA HIDRAULICO', 'MOTOR'
+#
+#  Usar keyword único en el LIKE, no frase compuesta:
+#    ✅ '%TRACCION%'  (captura RH y LH con un solo patrón)
+#    ❌ '%MOTOR TRACCION%'  (falla porque el valor real tiene "DE" en medio)
 # ==============================================================================
 
 _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
-    # (regex de detección, patrón LIKE para SQL)
+    # (patrón de detección en la consulta, filtro LIKE para el WHERE en SQL)
     (re.compile(r"\btracci[oó]n\b", re.IGNORECASE), "%TRACCION%"),
     (re.compile(r"\bhidr[aá]ulic[ao]\b", re.IGNORECASE), "%HIDRAUL%"),
     (re.compile(r"\brueda[s]?\s+delantera[s]?\b", re.IGNORECASE), "%RUEDA%"),
@@ -297,7 +340,8 @@ _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
     (re.compile(r"\btransmisi[oó]n\b", re.IGNORECASE), "%TRANSMISION%"),
 ]
 
-# Proyectos mineros conocidos: (keyword lowercase, nombre para LIKE)
+# Proyectos mineros conocidos mapeados a su nombre real en BD.
+# Se usa en filtros LIKE sobre [Mine].[MiningProject].[Name].
 _PROYECTOS_CONOCIDOS: List[tuple] = [
     ("antapaccay", "Antapaccay"),
     ("las bambas", "Las Bambas"),
@@ -313,8 +357,15 @@ _PROYECTOS_CONOCIDOS: List[tuple] = [
 ]
 
 
+# ==============================================================================
+#  FUNCIONES DE DETECCIÓN
+# ==============================================================================
+
 def _detectar_like_compartimiento(q: str) -> Optional[str]:
-    """Detecta el patrón LIKE de compartimiento desde keywords en la consulta."""
+    """
+    Recorre _COMPARTIMIENTO_KEYWORD_MAP y retorna el primer patrón LIKE que aplica.
+    Retorna None si ningún keyword de compartimiento está en la consulta.
+    """
     for patron, like in _COMPARTIMIENTO_KEYWORD_MAP:
         if patron.search(q or ""):
             return like
@@ -322,7 +373,10 @@ def _detectar_like_compartimiento(q: str) -> Optional[str]:
 
 
 def _detectar_proyecto(q: str) -> Optional[str]:
-    """Detecta el nombre del proyecto minero desde la consulta."""
+    """
+    Retorna el nombre del proyecto minero (tal como está en BD) si se menciona en la consulta.
+    Usa coincidencia de substring en minúsculas para evitar falsos negativos por mayúsculas.
+    """
     q_lower = (q or "").lower()
     for keyword, nombre in _PROYECTOS_CONOCIDOS:
         if keyword in q_lower:
@@ -330,21 +384,48 @@ def _detectar_proyecto(q: str) -> Optional[str]:
     return None
 
 
-# Códigos de equipo: letras seguidas de dígitos (CA3198, WA600, PC4000, HD785…)
+# Regex para códigos de equipo individuales: letras cortas + dígitos (CA3198, WA600, PC4000…)
 _RE_EQUIPO_CODE = re.compile(r"\b([A-Z]{1,3}\d{3,5})\b")
 
 
 def _detectar_equipo_code(q: str) -> Optional[str]:
-    """Extrae el primer código de equipo mencionado en la consulta (ej: CA3198)."""
+    """
+    Extrae el primer código de equipo que aparece en la consulta.
+    Útil para filtrar historial o tendencia de un equipo específico.
+    """
     m = _RE_EQUIPO_CODE.search(q or "")
     return m.group(1) if m else None
 
 
+# Regex para extraer ventana temporal expresada en meses o años.
+_RE_VENTANA_MESES = re.compile(r"\b(\d+)\s+mes(?:es)?\b", re.IGNORECASE)
+_RE_VENTANA_ANIOS = re.compile(r"\b(\d+)\s+a[nñ]o[s]?\b", re.IGNORECASE)
+
+
+def _detectar_ventana_meses(q: str) -> int:
+    """
+    Extrae la ventana temporal de la consulta y la expresa siempre en meses.
+    Si el usuario dice "2 años" → retorna 24. Si no menciona período → retorna 24 (default).
+    """
+    m = _RE_VENTANA_MESES.search(q or "")
+    if m:
+        return int(m.group(1))
+    m = _RE_VENTANA_ANIOS.search(q or "")
+    if m:
+        # Convertir años a meses para usar en DATEADD(MONTH, -N, GETDATE())
+        return int(m.group(1)) * 12
+    return 24  # ventana default: 24 meses hacia atrás
+
+
 # ==============================================================================
-#  Utilidades internas
+#  UTILIDADES INTERNAS
 # ==============================================================================
 
 def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
+    """
+    Intenta parsear un string como JSON. Retorna el dict si es válido, None si falla.
+    Se usa para procesar la salida del LLM que debería venir como JSON.
+    """
     try:
         obj = json.loads(s or "")
         return obj if isinstance(obj, dict) else None
@@ -362,6 +443,8 @@ def _es_intencion_componentes_modelo(texto: str) -> bool:
 
 
 def _es_intencion_compartimiento_aceite(texto: str) -> bool:
+    # Requiere AMBAS condiciones: mención de compartimiento Y mención de análisis de aceite.
+    # Evita activar el refuerzo en consultas genéricas sobre motores sin contexto de aceite.
     t = texto or ""
     return bool(_RE_PISTA_COMPARTIMIENTO_ACEITE.search(t)) and bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
 
@@ -375,7 +458,10 @@ def _es_intencion_dimensional(texto: str) -> bool:
 
 
 def _es_intencion_join_proyecto_modelo(texto: str) -> bool:
-    """Detecta consultas que cruzan análisis de aceite con proyecto y/o modelo de equipo."""
+    """
+    Detecta consultas que cruzan datos de aceite con proyecto y/o modelo de equipo.
+    Requiere mención de aceite Y al menos proyecto O modelo. No aplica a triage puro.
+    """
     t = texto or ""
     tiene_aceite = bool(_RE_PISTA_LABORATORIO_ACEITE.search(t)) or bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
     tiene_proyecto = bool(_RE_PISTA_PROYECTO_MINERO.search(t))
@@ -396,6 +482,7 @@ def _es_intencion_comparativa(texto: str) -> bool:
 
 
 def _es_intencion_continuidad(texto: str, contexto: str) -> bool:
+    # La continuidad solo aplica si HAY contexto previo. Sin contexto, no hay referencia posible.
     t = texto or ""
     c = contexto or ""
     return bool(c.strip()) and bool(_RE_PISTA_CONTINUIDAD.search(t))
@@ -410,10 +497,18 @@ def _es_intencion_criticidad(texto: str) -> bool:
 
 
 # ==============================================================================
-#  Funciones de refuerzo de prompt (inyectadas según heurística detectada)
+#  FUNCIONES DE REFUERZO DE PROMPT
+#
+#  Cada función toma la consulta del usuario y le agrega instrucciones SQL
+#  específicas del dominio, para que el LLM genere consultas correctas desde
+#  el primer intento sin necesidad de reintentos.
+#
+#  Convención de nombre: _reforzar_*
+#  Prefijo en el prompt: " | NOMBRE-HEURISTICA: ..."
 # ==============================================================================
 
 def _reforzar_consulta_dimensional(q: str) -> str:
+    """Indica al LLM qué tablas y columnas usar para consultas de catálogo/dimensiones."""
     return (
         q.strip()
         + " | IMPORTANTE — TABLAS DIMENSIONALES / CATÁLOGO: "
@@ -430,6 +525,11 @@ def _reforzar_consulta_dimensional(q: str) -> str:
 
 
 def _reforzar_join_proyecto_modelo_aceite(q: str) -> str:
+    """
+    Inyecta la cadena de JOINs correcta para cruzar datos de aceite con proyecto y modelo.
+    Incluye ROW_NUMBER para última muestra — GROUP BY+MAX no es suficiente porque
+    LaboratoryData tiene múltiples filas para la misma fecha (duplicados confirmados en BD).
+    """
     return (
         q.strip()
         + " | JOIN-ACEITE: base=[Oil].[LaboratoryData] AS LD. "
@@ -443,6 +543,10 @@ def _reforzar_join_proyecto_modelo_aceite(q: str) -> str:
 
 
 def _reforzar_tabla_laboratorio_aceite(q: str) -> str:
+    """
+    Fuerza el uso de [Oil].[LaboratoryData] en lugar de [dbo].[OilAnalysis].
+    LaboratoryData es la tabla con datos en tiempo real; OilAnalysis es legacy.
+    """
     return (
         q.strip()
         + " | IMPORTANTE: para consultas sobre muestras de aceite, análisis de aceite o datos de laboratorio, "
@@ -456,6 +560,10 @@ def _reforzar_tabla_laboratorio_aceite(q: str) -> str:
 
 
 def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
+    """
+    Orienta al LLM a filtrar por el campo Compartimiento en LaboratoryData,
+    no por tablas de catálogo de componentes. Evita confusión con dbo.Component.
+    """
     return (
         q.strip()
         + " | IMPORTANTE: si el usuario menciona motor, transmisión, hidráulico, diferencial, mando final, "
@@ -470,6 +578,12 @@ def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
 
 
 def _reforzar_componentes_modelo(q: str) -> str:
+    """
+    Instrucciones para consultas sobre compartimientos de un modelo o equipo.
+    Incluye dos errores frecuentes de SQL Server que el LLM tiende a cometer:
+      - Error 8127: ORDER BY con alias que no está directamente en el SELECT (GROUP BY).
+      - Error 156: TOP antes de DISTINCT → sintaxis inválida en SQL Server.
+    """
     return (
         q.strip()
         + " | IMPORTANTE: cuando el usuario pida 'componentes' o 'compartimientos' de un equipo o modelo, "
@@ -496,8 +610,14 @@ def _reforzar_componentes_modelo(q: str) -> str:
 
 
 def _reforzar_consulta_ultimo_ventana(q: str) -> str:
+    """
+    Instrucciones para consultas de "último/más reciente registro".
+    La clave: no filtrar IS NOT NULL sobre métricas de salida antes de ROW_NUMBER,
+    porque eso eliminaría equipos completos que sí tienen registro pero con métrica nula.
+    """
     extra_nulos = ""
     if not _usuario_pide_excluir_nulos(q):
+        # Solo añadir esta advertencia si el usuario NO pidió explícitamente excluir nulos.
         extra_nulos = (
             " IMPORTANTE: si buscas el último o más reciente registro por entidad con CTE/ROW_NUMBER, "
             "NO agregues por defecto filtros IS NOT NULL sobre métricas pedidas en la salida "
@@ -521,6 +641,7 @@ def _reforzar_consulta_ultimo_ventana(q: str) -> str:
 
 
 def _reforzar_consulta_comparativa(q: str) -> str:
+    """Asegura que las consultas comparativas incluyan ambas métricas y la diferencia calculada."""
     return (
         q.strip()
         + " | IMPORTANTE: si la consulta implica comparar 2 campos (A vs B), el SELECT DEBE incluir "
@@ -530,6 +651,10 @@ def _reforzar_consulta_comparativa(q: str) -> str:
 
 
 def _reforzar_consulta_continuidad(q: str) -> str:
+    """
+    Indica al LLM que resuelva referencias deícticas usando el contexto conversacional.
+    Sin este refuerzo, Flash tiende a ignorar el contexto y consultar el universo completo.
+    """
     return (
         q.strip()
         + " | IMPORTANTE: la consulta actual depende del contexto conversacional previo. "
@@ -544,6 +669,7 @@ def _reforzar_consulta_continuidad(q: str) -> str:
 
 
 def _reforzar_consulta_sintesis_interpretacion(q: str) -> str:
+    """Evita que Flash amplíe columnas o cambie de tabla cuando el usuario pide interpretación."""
     return (
         q.strip()
         + " | IMPORTANTE: si el usuario pide explicar, resumir, interpretar, concluir o diagnosticar, "
@@ -554,6 +680,7 @@ def _reforzar_consulta_sintesis_interpretacion(q: str) -> str:
 
 
 def _reforzar_consulta_criticidad(q: str) -> str:
+    """Instrucción para ordenar por severidad sin inventar umbrales que no existen en BD."""
     return (
         q.strip()
         + " | IMPORTANTE: si el usuario pide los casos más críticos y no define una regla exacta, "
@@ -563,36 +690,39 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     )
 
 
-_RE_VENTANA_MESES = re.compile(r"\b(\d+)\s+mes(?:es)?\b", re.IGNORECASE)
-_RE_VENTANA_ANIOS = re.compile(r"\b(\d+)\s+a[nñ]o[s]?\b", re.IGNORECASE)
-
-
-def _detectar_ventana_meses(q: str) -> int:
-    """Extrae la ventana temporal en meses desde la consulta. Default: 24 meses."""
-    m = _RE_VENTANA_MESES.search(q or "")
-    if m:
-        return int(m.group(1))
-    m = _RE_VENTANA_ANIOS.search(q or "")
-    if m:
-        return int(m.group(1)) * 12
-    return 24
-
+# ==============================================================================
+#  GENERADORES DE SQL DIRECTO (sin LLM)
+#
+#  Para los casos de uso más frecuentes y bien definidos, el SQL se genera
+#  directamente en Python. Esto garantiza consistencia, evita alucinaciones
+#  del modelo y es significativamente más rápido que una llamada al LLM.
+#
+#  Orden de prioridad en main.py/_generar_sql():
+#    1. intentar_historial_crudo_directo()  — muestra a muestra, sin promediar
+#    2. intentar_tendencia_directo()        — AVG mensual, serie temporal
+#    3. intentar_triage_directo()           — doble CTE con LP/LC reales de BD
+#    4. LLM                                 — caso general
+# ==============================================================================
 
 def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     """
-    Genera SQL de registros individuales sin AVG ni GROUP BY, directamente en Python.
+    Genera SQL de registros individuales (sin AVG ni GROUP BY) directamente en Python.
 
-    Activación: el usuario pide datos sin promediar (muestra por muestra, sin promediar,
-    todas las fechas…) con compartimiento + equipo o proyecto conocidos.
+    Problema que resuelve: cuando el contexto conversacional incluye triage,
+    el LLM tiende a reutilizar el patrón CTE+ROW_NUMBER → rn=1, lo que devuelve
+    solo 1 muestra (la más reciente) en lugar del historial completo solicitado.
+    Este bypass garantiza un SELECT plano con todas las filas del período.
 
-    Por qué es necesario: el LLM, cuando el contexto conversacional incluye triage,
-    tiende a reutilizar el patrón CTE+ROW_NUMBER → rn=1 → devuelve solo 1 muestra.
-    Este bypass garantiza un SELECT plano sin ROW_NUMBER ni GROUP BY.
+    Se activa cuando:
+      - El usuario pide datos "sin promediar", "muestra por muestra", etc.
+      - Se detecta un compartimiento conocido.
+      - Se detecta un equipo específico (CA3198) O un proyecto (Antapaccay).
 
-    Devuelve None si no hay suficiente información (cae al LLM).
+    Retorna None si no hay suficiente información → cae al LLM.
     """
     if not _es_intencion_muestras_individuales(consulta_humana):
         return None
+    # Triage tiene prioridad absoluta, incluso sobre registros crudos.
     if _es_intencion_triage_observados(consulta_humana):
         return None
 
@@ -600,13 +730,16 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     equipo_code = _detectar_equipo_code(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
 
-    # Sin compartimiento o sin filtro de equipo/proyecto no podemos generar SQL determinístico.
+    # Sin compartimiento o sin al menos un filtro de equipo/proyecto,
+    # el SELECT devolvería toda la tabla → no es determinístico ni útil.
     if not like_comp or (not equipo_code and not proyecto):
         return None
 
     ventana = _detectar_ventana_meses(consulta_humana)
     filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())"
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
+
+    # Columnas base: fecha + código de equipo + compartimiento + métricas principales.
     base_cols = (
         f"LD.[FechaMuestreo],ME.[Code] AS [Equipo],LD.[Compartimiento],"
         f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN]"
@@ -618,6 +751,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     )
 
     if equipo_code:
+        # Equipo específico: filtrar directamente por código. Más preciso que filtrar por proyecto.
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins} "
@@ -625,6 +759,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
     else:
+        # Sin equipo específico: filtrar por proyecto para acotar el universo.
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins} "
@@ -636,47 +771,45 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
 
 def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     """
-    Genera el SQL de tendencia histórica mensual directamente en Python, sin llamar al LLM.
+    Genera SQL de tendencia histórica mensual directamente en Python, sin LLM.
 
     SQL producido:
-      - AVG de métricas agrupado por EOMONTH(FechaMuestreo) + Compartimiento [+ Proyecto]
-      - Sin ROW_NUMBER / sin rn=1: devuelve TODAS las muestras (no solo la última)
-      - Sin filtro LP/LC: la tendencia es indiferente a si el valor supera o no el límite
-      - ORDER BY [Mes] ASC → serie cronológica ascendente
+      - AVG de métricas agrupado por EOMONTH(FechaMuestreo) + Compartimiento [+ Proyecto o Equipo]
+      - Sin ROW_NUMBER ni rn=1: devuelve TODAS las muestras del período (no solo la última)
+      - Sin filtro LP/LC: la tendencia muestra la evolución real, independiente de límites
+      - ORDER BY [Mes] ASC → serie cronológica para facilitar visualización temporal
 
-    Condiciones de activación:
-      - Intención tendencia detectada por _RE_PISTA_TENDENCIA_HISTORICA
-      - Compartimiento detectado (al menos un keyword en _COMPARTIMIENTO_KEYWORD_MAP)
-      - NO es intención triage_observados (triage tiene prioridad)
+    Tres variantes de agrupación según contexto:
+      - Con equipo específico (CA3198) → filtra por ME.[Code], agrupa por Equipo + Mes
+      - Con proyecto (Antapaccay)      → filtra por MP.[Name], agrupa solo por Mes
+      - Sin proyecto ni equipo         → agrupa también por MP.[Name] para distinguir flotas
 
-    Proyecto:
-      - Con proyecto → filtra por proyecto, agrupa solo por mes + compartimiento
-      - Sin proyecto → agrupa también por MP.[Name] para distinguir flotas
-
-    Devuelve None si no aplica (el llamador cae al LLM).
+    Retorna None si no aplica → el llamador cae al LLM con refuerzo de prompt.
     """
     if not _es_intencion_tendencia_historica(consulta_humana):
         return None
-    # Triage tiene prioridad: si la consulta busca observados, no redirigir a tendencia.
+    # Triage tiene prioridad: "tendencia de los observados" debe ir a triage, no a tendencia.
     if _es_intencion_triage_observados(consulta_humana):
         return None
-    # Registros individuales: el LLM genera SELECT sin AVG/GROUP BY → más preciso que nosotros.
+    # Si el usuario pide registros individuales, historial_crudo_directo tiene prioridad.
     if _es_intencion_muestras_individuales(consulta_humana):
         return None
+    # Sin compartimiento conocido no podemos generar SQL determinístico.
     like_comp = _detectar_like_compartimiento(consulta_humana)
     if not like_comp:
-        return None  # sin compartimiento no hay SQL determinístico útil
+        return None
 
     equipo_code = _detectar_equipo_code(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
 
+    # Métricas agregadas por mes: AVG suaviza outliers puntuales.
     base_metricas = (
         f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],"
         f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
         f"AVG(LD.[Si_ppm]) AS [Si_ppm],"
         f"AVG(LD.[Al_ppm]) AS [Al_ppm],"
         f"AVG(LD.[TBN]) AS [TBN],"
-        f"COUNT(*) AS [Muestras]"
+        f"COUNT(*) AS [Muestras]"  # COUNT permite ver cuántas muestras hay por mes
     )
     base_joins = (
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -687,7 +820,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
 
     if equipo_code:
-        # Equipo específico: serie mensual de ese equipo únicamente, sin agregar por proyecto.
+        # Equipo específico: muestra la evolución temporal de ESE equipo únicamente.
         sql = (
             f"SELECT TOP(300) "
             f"ME.[Code] AS [Equipo],"
@@ -700,7 +833,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"ORDER BY [Mes] ASC"
         )
     elif proyecto:
-        # Proyecto conocido: serie mensual del universo del proyecto.
+        # Proyecto específico: promedio mensual del universo completo del proyecto.
         sql = (
             f"SELECT TOP(300) "
             f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
@@ -712,7 +845,8 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"ORDER BY [Mes] ASC"
         )
     else:
-        # Sin proyecto ni equipo: agrupar también por proyecto para distinguir flotas.
+        # Sin filtro de proyecto: incluir MP.[Name] en SELECT y GROUP BY para que
+        # Copilot Studio / el usuario pueda distinguir qué proyecto es cada serie.
         sql = (
             f"SELECT TOP(300) "
             f"MP.[Name] AS [Proyecto],"
@@ -730,34 +864,37 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
 def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     """
     Genera el SQL de triage directamente en Python cuando compartimiento + proyecto son conocidos.
-    Bypass total del LLM para el caso de uso principal → máxima confiabilidad.
+    Es el bypass más crítico del sistema: garantiza SQL correcto para el caso de uso principal.
 
     SQL producido (doble CTE):
-      LatestSamples — última muestra por equipo+compartimiento (ROW_NUMBER DESC)
-      LimitesLC     — límites reales de [Eqpcare].[lc] colapsados por MIN/MAX (por modelo)
+      LatestSamples — última muestra real por equipo+compartimiento usando ROW_NUMBER DESC.
+        Importante: GROUP BY+MAX(FechaMuestreo) NO es suficiente porque LaboratoryData
+        tiene múltiples filas por la misma fecha (duplicados confirmados en BD).
+        ROW_NUMBER garantiza exactamente 1 fila por (equipo, compartimiento).
+
+      LimitesLC — límites LP y LC reales de [Eqpcare].[lc], colapsados por MIN/MAX:
+        MIN para metales ppm (límite más restrictivo entre modelos del mismo componente).
+        MAX para TBN (invertido: el TBN bajo dispara alerta, MAX es el más permisivo = menos falsos positivos).
 
     Filtro de observados:
-      WHERE Fe > ISNULL(LP,9999) OR Al > ISNULL(LP,9999) OR ...
-      ISNULL(LC.col, 9999) como fallback conservador: si no hay fila en lc,
-      el umbral es 9999 → nunca dispara falso positivo.
+      WHERE Fe > ISNULL(LP, 9999) OR Al > ISNULL(LP, 9999) OR ...
+      ISNULL(col, 9999) es el fallback conservador: si no hay fila en [Eqpcare].[lc]
+      para ese componente/proyecto, el umbral queda en 9999 → nunca dispara falso positivo.
 
-    Condiciones de activación:
-      - Intención triage detectada
-      - Compartimiento detectado en _COMPARTIMIENTO_KEYWORD_MAP
-      - Proyecto detectado en _PROYECTOS_CONOCIDOS
-
-    Devuelve None si no aplica (el llamador usará el LLM con refuerzo de prompt).
+    Retorna None si no hay compartimiento O no hay proyecto → cae al LLM con refuerzo.
     """
     if not _es_intencion_triage_observados(consulta_humana):
         return None
     like_comp = _detectar_like_compartimiento(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
+    # Sin ambos datos no podemos construir la doble CTE determinística.
     if not like_comp or not proyecto:
         return None
 
-    # LimitesLC colapsa múltiples filas por modelo en [Eqpcare].[lc]
-    # usando MIN para ppm (límite más restrictivo) y MAX para TBN (invertido).
     sql = (
+        # ── CTE 1: LatestSamples ────────────────────────────────────────────────
+        # ROW_NUMBER ordena por fecha DESC dentro de cada (equipo, compartimiento).
+        # El SELECT externo filtra rn=1 para quedarse solo con la muestra más reciente.
         f"WITH LatestSamples AS ("
         f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],"
         f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN],LD.[FechaMuestreo],"
@@ -768,8 +905,12 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
         f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
         f"AND MP.[Name] LIKE '%{proyecto}%' "
-        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"
+        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"  # ventana 2 años para no perder equipos con muestras antiguas
         f"), "
+        # ── CTE 2: LimitesLC ─────────────────────────────────────────────────────
+        # Colapsa los límites reales de la tabla [Eqpcare].[lc] (límites por proyecto + componente).
+        # MIN para ppm: toma el límite más restrictivo si hay varios modelos en el mismo proyecto.
+        # MAX para TBN: TBN bajo = problema, así que usamos el límite más alto como referencia.
         f"LimitesLC AS ("
         f"SELECT [COMPONENTE],"
         f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
@@ -781,6 +922,9 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}' "
         f"GROUP BY [COMPONENTE]"
         f") "
+        # ── SELECT final ─────────────────────────────────────────────────────────
+        # LEFT JOIN con LimitesLC: si no hay límites en BD → LC.col = NULL → ISNULL → 9999 → no dispara alerta.
+        # Se filtran solo los registros que superan al menos UN límite LP de cualquier metal.
         f"SELECT TOP(200) "
         f"LS.[EquipmentCode],LS.[Compartimiento],"
         f"LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],"
@@ -791,31 +935,34 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"LC.[TBN - LP],LC.[TBN - LC] "
         f"FROM LatestSamples LS "
         f"LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
-        f"WHERE LS.rn=1 "
+        f"WHERE LS.rn=1 "  # solo la muestra más reciente de cada equipo+compartimiento
         f"AND ("
         f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
         f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
         f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
         f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
-        f"LS.[TBN]<ISNULL(LC.[TBN - LP],0)"
+        f"LS.[TBN]<ISNULL(LC.[TBN - LP],0)"  # TBN < LP → por debajo del mínimo aceptable
         f") "
-        f"ORDER BY LS.[Fe_ppm] DESC"
+        f"ORDER BY LS.[Fe_ppm] DESC"  # los más críticos por hierro primero
     )
     return sql
 
 
 def _reforzar_triage_observados(q: str) -> str:
     """
-    Refuerzo de prompt para el caso de uso PRINCIPAL:
-    consulta masiva del estado de N componentes → devolver SOLO los observados.
-    Genera SQL eficiente (ROW_NUMBER, WITH NOLOCK, filtro LP/LC) desde el primer intento.
-    Si se detecta el tipo de compartimiento en la consulta, inyecta el LIKE como obligatorio
-    para evitar escaneos completos de [Oil].[LaboratoryData] que causan timeouts.
+    Refuerzo de prompt para el caso de uso PRINCIPAL cuando el triage directo no aplica
+    (sin compartimiento o sin proyecto detectado → el LLM debe inferirlos).
+
+    Inyecta instrucciones detalladas sobre:
+    - Estructura de la doble CTE (LatestSamples + LimitesLC).
+    - Por qué ROW_NUMBER y no GROUP BY+MAX (duplicados por fecha en LaboratoryData).
+    - Fallback ISNULL(col, 9999) para evitar falsos positivos cuando falta fila en lc.
+    - Valores reales del campo Compartimiento (evita patrones LIKE incorrectos).
     """
     like_compartimiento = _detectar_like_compartimiento(q)
     proyecto = _detectar_proyecto(q)
 
-    # Columnas con espacio/guión en [Eqpcare].[lc] — siempre con corchetes en SQL Server
+    # Columnas de límites en [Eqpcare].[lc] — nombres con espacios y guión, requieren corchetes.
     _lc_cols = (
         "LC.[FIERRO - LP],LC.[FIERRO - LC],"
         "LC.[ALUMINIO - LP],LC.[ALUMINIO - LC],"
@@ -823,7 +970,8 @@ def _reforzar_triage_observados(q: str) -> str:
         "LC.[SILICIO - LP],LC.[SILICIO - LC],"
         "LC.[TBN - LP],LC.[TBN - LC]"
     )
-    # Umbral con ISNULL: si LC no tiene fila o columna es NULL → fallback conservador
+
+    # Condición de observado: supera al menos UN límite LP usando fallback conservador.
     _umbral_lc = (
         "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
         "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
@@ -832,7 +980,8 @@ def _reforzar_triage_observados(q: str) -> str:
         "LS.[TBN]<ISNULL(LC.[TBN - LP],0)"
     )
 
-    # CTE de límites: colapsa múltiples filas por modelo con MIN (ppm) y MAX (TBN invertido)
+    # CTE de límites: se construye con o sin filtro de proyecto según lo detectado.
+    # MIN para ppm (más restrictivo), MAX para TBN (más permisivo = menos falsos positivos).
     _limites_cte_con_proyecto = (
         f"LimitesLC AS ("
         f"SELECT [COMPONENTE],"
@@ -856,6 +1005,7 @@ def _reforzar_triage_observados(q: str) -> str:
         f"WHERE [COMPONENTE] LIKE '{like_compartimiento}' "
         f"GROUP BY [COMPONENTE])"
     ) if like_compartimiento else (
+        # Sin compartimiento detectado: LimitesLC sin filtro (el LLM debe inferir el WHERE).
         "LimitesLC AS ("
         "SELECT [COMPONENTE],"
         "MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
@@ -866,6 +1016,7 @@ def _reforzar_triage_observados(q: str) -> str:
         "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [COMPONENTE])"
     )
 
+    # Construir la instrucción de CTE según qué información se detectó.
     if like_compartimiento and proyecto:
         instruccion_cte = (
             f"2 CTEs: LatestSamples y LimitesLC. "
@@ -891,6 +1042,7 @@ def _reforzar_triage_observados(q: str) -> str:
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     else:
+        # Sin compartimiento: instrucción genérica, el LLM debe inferir el filtro LIKE.
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%', '%HIDRAUL%'). "
             "2 CTEs: LatestSamples y LimitesLC. LatestSamples: JOIN a ME. "
@@ -901,6 +1053,7 @@ def _reforzar_triage_observados(q: str) -> str:
             "FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
+
     return (
         q.strip()
         + " | TRIAGE-OBSERVADOS: "
@@ -916,16 +1069,18 @@ def _reforzar_triage_observados(q: str) -> str:
 
 
 # ==============================================================================
-#  API pública del módulo
+#  API PÚBLICA DEL MÓDULO
 # ==============================================================================
 
 def listar_modelos() -> Dict[str, Any]:
+    """Delega al proveedor activo para listar los modelos disponibles."""
     if hasattr(_proveedor, "listar_modelos"):
         return _proveedor.listar_modelos()
     return _proveedor.list_models()  # type: ignore[attr-defined]
 
 
 async def ping(modelo: Optional[str] = None) -> str:
+    """Verifica que el proveedor LLM activo responde. Soporta firma en español e inglés."""
     if "modelo" in _proveedor.ping.__code__.co_varnames:
         return await _proveedor.ping(modelo=modelo)  # type: ignore[misc]
     if "model" in _proveedor.ping.__code__.co_varnames:
@@ -941,46 +1096,59 @@ async def consulta_humana_a_sql(
     modelo: Optional[str] = None,
     conversation_context: Optional[str] = None,
 ) -> str:
+    """
+    Función principal de orquestación: convierte una consulta en lenguaje natural a SQL.
+
+    Proceso interno:
+      1. Evalúa la consulta + contexto contra todas las heurísticas de detección.
+      2. Encadena los refuerzos de prompt que correspondan según las intenciones detectadas.
+      3. Delega al proveedor LLM activo con el prompt enriquecido.
+      4. Valida la respuesta JSON del LLM y añade metadatos (original_query, heuristicas_aplicadas).
+
+    Retorna siempre un string: JSON con sql_query si el LLM responde bien,
+    o el texto crudo si la respuesta no es JSON válido (se registra warning en logs).
+    """
     q = (consulta_humana or "").strip()
     if not q:
         raise ValueError("consulta_humana vacía")
 
     contexto = (conversation_context or "").strip()
+    # base_heuristica combina contexto + consulta actual para evaluar heurísticas.
+    # Así las referencias deícticas como "los mismos equipos" se resuelven correctamente.
     base_heuristica = f"{contexto} {q}".strip()
-    q_reforzada = q
+    q_reforzada = q  # el prompt que se enviará al LLM, enriquecido progresivamente
 
     heuristicas_aplicadas: List[str] = []
 
-    # Detectar proyecto y compartimiento al inicio — usados en triage y para suprimir
-    # heurísticas redundantes que añaden EquipmentFleet (puede no estar en allowed_fqn).
+    # Detectar compartimiento y proyecto al inicio para saber si el triage CTE estará completo.
+    # Si ambos se detectan, _triage_cte_completo=True indica que el prompt triage ya incluye
+    # todos los JOINs necesarios → no añadir join_proyecto_modelo después (causaría EquipmentFleet
+    # en el SQL, que puede no estar en allowed_fqn y dispararía el blindaje → 400 innecesario).
     _triage_like_comp = _detectar_like_compartimiento(base_heuristica)
     _triage_proyecto = _detectar_proyecto(base_heuristica)
     _triage_cte_completo = bool(_triage_like_comp and _triage_proyecto)
 
-    # ── PRIORIDAD MÁXIMA: caso de uso principal del producto ──────────────────
-    # "estado de los N motores → solo los observados"
-    # Se evalúa primero para que el prompt triage domine sobre heurísticas generales.
+    # ── Prioridad máxima: triage de componentes observados ───────────────────
+    # Se evalúa primero para que sus instrucciones dominen sobre heurísticas generales.
     if _es_intencion_triage_observados(base_heuristica):
         q_reforzada = _reforzar_triage_observados(q_reforzada)
         heuristicas_aplicadas.append("triage_observados")
-        # Forzar join_proyecto_modelo SOLO si el triage no inyectó JOINs específicos.
-        # Cuando _triage_cte_completo=True, el prompt ya tiene MiningEquipment+MiningProject
-        # sin EquipmentFleet — agregar join_proyecto_modelo causaría SQL con EquipmentFleet
-        # que puede no estar en allowed_fqn → blindar 400 → segunda llamada LLM innecesaria.
+        # join_proyecto_modelo solo si el triage no inyectó JOINs propios.
         if not _triage_cte_completo and not _es_intencion_join_proyecto_modelo(base_heuristica):
             q_reforzada = _reforzar_join_proyecto_modelo_aceite(q_reforzada)
             heuristicas_aplicadas.append("join_proyecto_modelo")
 
+    # Catálogos y dimensiones del negocio (proyectos, modelos, flotas).
     if _es_intencion_dimensional(base_heuristica):
         q_reforzada = _reforzar_consulta_dimensional(q_reforzada)
         heuristicas_aplicadas.append("dimensional")
 
+    # Asegurar que las consultas de aceite usen [Oil].[LaboratoryData] como tabla base.
     if _es_intencion_laboratorio_aceite(base_heuristica):
         q_reforzada = _reforzar_tabla_laboratorio_aceite(q_reforzada)
         heuristicas_aplicadas.append("laboratorio_aceite")
 
-    # join_proyecto_modelo: suprimir cuando triage ya especificó los JOINs completos
-    # (evita que Flash incluya EquipmentFleet y provoque rechazo en blindar_sql).
+    # JOIN aceite + proyecto/modelo: suprimir si triage ya definió los JOINs completos.
     if not _triage_cte_completo and _es_intencion_join_proyecto_modelo(base_heuristica):
         q_reforzada = _reforzar_join_proyecto_modelo_aceite(q_reforzada)
         heuristicas_aplicadas.append("join_proyecto_modelo")
@@ -1001,6 +1169,7 @@ async def consulta_humana_a_sql(
         q_reforzada = _reforzar_consulta_ultimo_ventana(q_reforzada)
         heuristicas_aplicadas.append("ultimo_ventana")
 
+    # Continuidad: solo aplica si hay contexto previo Y hay referencias deícticas.
     if _es_intencion_continuidad(q, contexto):
         q_reforzada = _reforzar_consulta_continuidad(q_reforzada)
         heuristicas_aplicadas.append("continuidad")
@@ -1013,7 +1182,8 @@ async def consulta_humana_a_sql(
         q_reforzada = _reforzar_consulta_criticidad(q_reforzada)
         heuristicas_aplicadas.append("criticidad")
 
-    # Tendencia histórica: solo si NO es triage (triage devuelve última muestra, no serie temporal)
+    # Tendencia histórica: solo si NO es triage.
+    # Triage necesita la última muestra; tendencia necesita la serie completa. Son opuestos.
     if (
         _es_intencion_tendencia_historica(base_heuristica)
         and "triage_observados" not in heuristicas_aplicadas
@@ -1021,6 +1191,7 @@ async def consulta_humana_a_sql(
         q_reforzada = _reforzar_tendencia_historica(q_reforzada)
         heuristicas_aplicadas.append("tendencia_historica")
 
+    # Recordar al LLM que debe resolver referencias al contexto conversacional.
     if contexto:
         q_reforzada = (
             q_reforzada.strip()
@@ -1036,6 +1207,8 @@ async def consulta_humana_a_sql(
             q[:300],
         )
 
+    # Delegar al proveedor activo. Se intenta con conversation_context primero;
+    # si el proveedor no lo soporta (TypeError), se reintenta sin ese parámetro.
     if hasattr(_proveedor, "consulta_humana_a_sql"):
         try:
             salida = await _proveedor.consulta_humana_a_sql(
@@ -1055,6 +1228,7 @@ async def consulta_humana_a_sql(
                 modelo=modelo,
             )
     else:
+        # Alias en inglés para compatibilidad con implementaciones antiguas del proveedor.
         salida = await _proveedor.human_query_to_sql(  # type: ignore[attr-defined]
             human_query=q_reforzada,
             schema_json=esquema_json,
@@ -1063,16 +1237,20 @@ async def consulta_humana_a_sql(
             model=modelo,
         )
 
+    # Intentar parsear la respuesta del LLM como JSON.
     obj = _json_cauto_loads(salida)
     if not obj or "sql_query" not in obj:
+        # El LLM no devolvió JSON válido — se registra y se retorna el texto crudo.
+        # database.py intentará extraer el SQL de todas formas.
         log.warning("[llm.consulta_humana_a_sql] salida no-JSON o sin sql_query (len=%s)", len(salida or ""))
         return salida
 
+    # Enriquecer el JSON con metadatos para trazabilidad y debugging.
     if not obj.get("original_query"):
-        obj["original_query"] = q
+        obj["original_query"] = q  # preservar la consulta original sin refuerzos
 
     if heuristicas_aplicadas and not obj.get("heuristicas_aplicadas"):
-        obj["heuristicas_aplicadas"] = heuristicas_aplicadas
+        obj["heuristicas_aplicadas"] = heuristicas_aplicadas  # qué heurísticas se dispararon
 
     return json.dumps(obj, ensure_ascii=False)
 
@@ -1082,12 +1260,17 @@ async def construir_respuesta(
     consulta_humana: str,
     modelo: Optional[str] = None,
 ) -> str:
+    """
+    Construye la respuesta analítica en lenguaje natural a partir de los resultados SQL.
+    Solo se usa cuando GENERAR_RESPUESTA_TEXTO=true (deshabilitado en producción con Copilot Studio).
+    """
     if hasattr(_proveedor, "construir_respuesta"):
         return await _proveedor.construir_respuesta(
             filas=filas,
             consulta_humana=consulta_humana,
             modelo=modelo,
         )
+    # Alias en inglés para compatibilidad.
     return await _proveedor.build_answer(  # type: ignore[attr-defined]
         rows=filas,
         human_query=consulta_humana,
@@ -1100,9 +1283,11 @@ def run_sync_construir_respuesta(
     consulta_humana: str,
     modelo: Optional[str] = None,
 ) -> str:
+    """Versión síncrona de construir_respuesta para contextos sin event loop activo."""
     return asyncio.run(construir_respuesta(filas, consulta_humana, modelo=modelo))
 
 
+# Alias en inglés mantenido por compatibilidad con código externo que usa human_query_to_sql.
 async def human_query_to_sql(
     human_query: str,
     schema_json: Dict[str, Any],
@@ -1119,14 +1304,3 @@ async def human_query_to_sql(
         modelo=model,
         conversation_context=conversation_context,
     )
-
-
-# ==============================================================================
-#  Helpers de extracción
-# ==============================================================================
-
-def extraer_sql_de_json(sql_json: str) -> Optional[str]:
-    obj = _json_cauto_loads(sql_json)
-    if obj and "sql_query" in obj:
-        return str(obj["sql_query"])
-    return None

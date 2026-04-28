@@ -188,6 +188,10 @@ def _buscar_columna_tiempo(filas: List[Dict[str, Any]]) -> Optional[str]:
 
 
 def _buscar_columnas_numericas(filas: List[Dict[str, Any]]) -> List[str]:
+    # Umbral 45%: una columna con el 45% de valores parseables como float se considera numérica.
+    # Evita que columnas mixtas (código de equipo que a veces tiene números) sean tratadas como métricas.
+    # Score extra (+20) para columnas del dominio de aceites (ppm, TBN, viscosidad, horometro).
+    # Score penalización (-20) para IDs y códigos: son numéricos pero no tienen sentido estadístico.
     if not filas:
         return []
     columnas = list(filas[0].keys())
@@ -456,6 +460,11 @@ def generar_chart_url(
     Toma la primera sugerencia de graficos_sugeridos y los datos de filas,
     construye un Chart.js config, y hace POST a QuickChart para obtener
     una URL corta permanente.
+
+    Estrategia de dos pasos:
+      1. POST a QuickChart /chart/create → URL corta permanente (preferida para Copilot Studio)
+      2. Fallback: GET URL con config codificada → funciona solo para datasets pequeños
+         (la URL se vuelve demasiado larga para más de ~20 filas)
 
     Devuelve None si no hay sugerencias, si los datos son insuficientes,
     o si la llamada HTTP falla — nunca lanza excepciones.
