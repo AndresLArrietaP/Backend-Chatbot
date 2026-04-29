@@ -285,3 +285,5 @@ python generar_documentacion.py
 | `python-decouple` | Variables de entorno |
 | `anyio` | Cancelación verdadera de threads de BD |
 | `pydantic` | Validación de modelos |
+
+> - Andrés A. 
