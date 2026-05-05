@@ -979,7 +979,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
         f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
         f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
-        f"LS.[TBN]<ISNULL(LC.[TBN - LP],3)"  # TBN < LP → por debajo del mínimo aceptable
+        f"(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"  # TBN solo si hay límite real en BD y TBN fue medido (>0)
         f") "
         f"ORDER BY LS.[Fe_ppm] DESC"  # los más críticos por hierro primero
     )
@@ -1017,7 +1017,7 @@ def _reforzar_triage_observados(q: str) -> str:
         "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
         "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
         "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
-        "LS.[TBN]<ISNULL(LC.[TBN - LP],3)"
+        "(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"
     )
     fecha_corte = _detectar_fecha_corte(q)
     filtro_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
