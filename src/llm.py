@@ -30,6 +30,7 @@ Flujo de despacho para /human_query:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import re
@@ -415,6 +416,39 @@ def _detectar_ventana_meses(q: str) -> int:
         # Convertir años a meses para usar en DATEADD(MONTH, -N, GETDATE())
         return int(m.group(1)) * 12
     return 24  # ventana default: 24 meses hacia atrás
+
+_MESES_ES: dict[str, int] = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+    "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+    "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+}
+
+_RE_FECHA_CORTE = re.compile(
+    r"\bhasta\s+(?:el\s+)?(?:\d{1,2}\s+de\s+)?"
+    r"(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)"
+    r"(?:\s+(?:de\s+)?(\d{4}))?",
+    re.IGNORECASE,
+)
+
+
+def _detectar_fecha_corte(q: str) -> Optional[str]:
+    """
+    Detecta frases como "hasta abril", "hasta abril 2026", "hasta el 30 de abril".
+    Retorna el último día del mes en formato 'YYYY-MM-DD' para usar como filtro superior
+    en la cláusula WHERE (LD.[FechaMuestreo] <= 'YYYY-MM-DD').
+    """
+    m = _RE_FECHA_CORTE.search(q or "")
+    if not m:
+        return None
+    mes_num = _MESES_ES.get(m.group(1).lower())
+    if not mes_num:
+        return None
+    anio = int(m.group(2)) if m.group(2) else datetime.date.today().year
+    if mes_num == 12:
+        ultimo_dia = datetime.date(anio + 1, 1, 1) - datetime.timedelta(days=1)
+    else:
+        ultimo_dia = datetime.date(anio, mes_num + 1, 1) - datetime.timedelta(days=1)
+    return ultimo_dia.strftime("%Y-%m-%d")
 
 
 # ==============================================================================
@@ -877,9 +911,10 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         MAX para TBN (invertido: el TBN bajo dispara alerta, MAX es el más permisivo = menos falsos positivos).
 
     Filtro de observados:
-      WHERE Fe > ISNULL(LP, 9999) OR Al > ISNULL(LP, 9999) OR ...
-      ISNULL(col, 9999) es el fallback conservador: si no hay fila en [Eqpcare].[lc]
-      para ese componente/proyecto, el umbral queda en 9999 → nunca dispara falso positivo.
+      WHERE Fe > ISNULL(LP, 60) OR Al > ISNULL(LP, 25) OR ...
+      ISNULL usa límites referenciales del dominio como fallback: si no hay fila en [Eqpcare].[lc]
+      para ese componente/proyecto, se aplican umbrales genéricos en lugar de 9999
+      (que devolvería 0 resultados silenciosamente cuando el JOIN no matchea).
 
     Retorna None si no hay compartimiento O no hay proyecto → cae al LLM con refuerzo.
     """
@@ -890,6 +925,9 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     # Sin ambos datos no podemos construir la doble CTE determinística.
     if not like_comp or not proyecto:
         return None
+    
+    fecha_corte = _detectar_fecha_corte(consulta_humana)  # ej: "hasta abril" → '2026-04-30'
+    _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
     sql = (
         # ── CTE 1: LatestSamples ────────────────────────────────────────────────
@@ -905,7 +943,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
         f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
         f"AND MP.[Name] LIKE '%{proyecto}%' "
-        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"  # ventana 2 años para no perder equipos con muestras antiguas
+        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"  # ventana 2 años; fecha_corte si el usuario acota el período
         f"), "
         # ── CTE 2: LimitesLC ─────────────────────────────────────────────────────
         # Colapsa los límites reales de la tabla [Eqpcare].[lc] (límites por proyecto + componente).
@@ -937,11 +975,11 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
         f"WHERE LS.rn=1 "  # solo la muestra más reciente de cada equipo+compartimiento
         f"AND ("
-        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
-        f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
-        f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
-        f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
-        f"LS.[TBN]<ISNULL(LC.[TBN - LP],0)"  # TBN < LP → por debajo del mínimo aceptable
+        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],60) OR "
+        f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
+        f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
+        f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
+        f"LS.[TBN]<ISNULL(LC.[TBN - LP],3)"  # TBN < LP → por debajo del mínimo aceptable
         f") "
         f"ORDER BY LS.[Fe_ppm] DESC"  # los más críticos por hierro primero
     )
@@ -971,14 +1009,18 @@ def _reforzar_triage_observados(q: str) -> str:
         "LC.[TBN - LP],LC.[TBN - LC]"
     )
 
-    # Condición de observado: supera al menos UN límite LP usando fallback conservador.
+    # Condición de observado: supera al menos UN límite LP.
+    # Fallbacks referenciales del dominio (no 9999) para que el resultado sea válido
+    # incluso si el JOIN con Eqpcare.lc no encuentra fila para ese componente/proyecto.
     _umbral_lc = (
-        "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
-        "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
-        "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
-        "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
-        "LS.[TBN]<ISNULL(LC.[TBN - LP],0)"
+        "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],60) OR "
+        "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
+        "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
+        "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
+        "LS.[TBN]<ISNULL(LC.[TBN - LP],3)"
     )
+    fecha_corte = _detectar_fecha_corte(q)
+    filtro_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
     # CTE de límites: se construye con o sin filtro de proyecto según lo detectado.
     # MIN para ppm (más restrictivo), MAX para TBN (más permisivo = menos falsos positivos).
@@ -1023,7 +1065,7 @@ def _reforzar_triage_observados(q: str) -> str:
             f"LatestSamples: JOINs a ME y MP WITH (NOLOCK). "
             f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){filtro_fecha_corte}. "
             f"{_limites_cte_con_proyecto}. "
             f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
             f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
@@ -1035,7 +1077,7 @@ def _reforzar_triage_observados(q: str) -> str:
             f"LatestSamples: JOIN a ME WITH (NOLOCK). "
             f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
-            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()). "
+            f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){filtro_fecha_corte}. "
             f"{_limites_cte_con_proyecto}. "
             f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
             f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "

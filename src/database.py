@@ -40,7 +40,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple, Set
 import logging
 import re
-import threading
 import warnings
 
 from sqlalchemy.exc import SAWarning
@@ -133,10 +132,6 @@ def obtener_esquema_json(
     fq_name:
       - MSSQL: [schema].[table]
       - Postgres: schema."table"
-
-    La caché usa como clave la tupla (schemas_normalizados, tablas_normalizadas).
-    La inspección es costosa (~10s en Azure SQL con 80+ tablas) — la caché evita
-    que cada petición pague ese costo. Se invalida con invalidar_cache_esquema().
     """
     key = (_normalizar_secuencia(esquemas), _normalizar_secuencia(tablas))
     if key in _CACHE_ESQUEMA:
@@ -162,9 +157,7 @@ def obtener_esquema_json(
             for c in cols_meta:
                 tipo = str(c.get("type", ""))
 
-                # sysname es un tipo nativo de SQL Server (alias de NVARCHAR(128)) que
-                # SQLAlchemy/pymssql no reconoce → lo normalizamos para que el esquema
-                # JSON sea legible y no cause warning en SAWarning.
+                # Normalización MSSQL: sysname ≈ NVARCHAR(128)
                 if tipo.lower() == "sysname":
                     tipo = "NVARCHAR(128)"
 
@@ -183,7 +176,6 @@ def obtener_esquema_json(
             )
 
             total_columnas += len(cols)
-            # Cortar temprano para no saturar el prompt del LLM con metadatos de cientos de tablas
             if len(tablas_salida) >= max_tablas or total_columnas >= max_columnas:
                 break
 
@@ -230,24 +222,6 @@ def _quitar_comentarios_sql(s: str) -> str:
 _RE_ESPACIOS = re.compile(r"\s+")
 
 
-def _fix_cte_alias_prefixes(sql: str) -> str:
-    """
-    Elimina alias fugados (LD., ME., MP., LS.) en el SELECT externo de CTEs LatestSamples.
-
-    Problema recurrente: Flash genera SELECT LS.EquipmentCode, LD.[Fe_ppm] en el SELECT
-    externo, pero LD/ME/MP solo existen dentro del CTE LatestSamples. Fuera del CTE,
-    las columnas se acceden directamente por nombre (LS.[Fe_ppm] o solo [Fe_ppm]).
-    Esta función elimina esos prefijos en la porción FROM LatestSamples en adelante.
-    """
-    m = re.search(r"\bFROM\s+LatestSamples\b", sql, re.IGNORECASE)
-    if not m:
-        return sql
-    prefix = sql[: m.start()]
-    suffix = sql[m.start() :]
-    suffix = re.sub(r"\b(?:LD|ME|MP|LS)\.\[", "[", suffix, flags=re.IGNORECASE)
-    return prefix + suffix
-
-
 def limpiar_sql(sql: str) -> str:
     """
     Limpia SQL de entrada:
@@ -255,7 +229,6 @@ def limpiar_sql(sql: str) -> str:
     - Quita prefijos 'sql:' o 'query:'.
     - Quita ';' final.
     - Colapsa espacios.
-    - Elimina prefijos de alias (LD./ME./MP.) en SELECT externo de CTEs.
     """
     s = sql or ""
     s = _quitar_bloques_codigo(s)
@@ -265,7 +238,6 @@ def limpiar_sql(sql: str) -> str:
     if s.endswith(";"):
         s = s[:-1].strip()
     s = _RE_ESPACIOS.sub(" ", s)
-    s = _fix_cte_alias_prefixes(s)
     log.debug("[database.limpiar_sql] IN=%r OUT=%r", (sql or "")[:300], s[:300])
     return s
 
@@ -405,12 +377,10 @@ def sanear_explain(sql: str) -> str:
 
 
 def _enmascarar_literales(sql: str) -> str:
-    # Sin esto, una query como SELECT * WHERE descripcion = 'DROP TABLE test'
-    # dispararía el detector de palabras prohibidas aunque el DROP esté dentro de un literal.
-    # Se reemplazan los literales por cadenas vacías antes de buscar los patrones prohibidos.
+    """Reemplaza literales por placeholders para evitar falsos positivos al detectar palabras prohibidas."""
     s = sql or ""
-    s = _RE_LITERAL_DOLAR.sub("$$''$$", s)   # literales $$ ... $$ de Postgres
-    s = _RE_LITERAL_SIMPLE.sub("''", s)       # literales '...' estándar
+    s = _RE_LITERAL_DOLAR.sub("$$''$$", s)
+    s = _RE_LITERAL_SIMPLE.sub("''", s)
     return s
 
 
@@ -462,14 +432,7 @@ def es_select_seguro(sql: str) -> bool:
 # =============================================================================
 
 def _forzar_top_mssql(sql: str, n: int) -> str:
-    """
-    Inserta TOP(n) en SQL Server o recorta un TOP existente si supera n.
-
-    Regla crítica: si la query empieza con WITH (CTE), NO se inserta TOP automáticamente.
-    Insertar TOP dentro de un CTE con ROW_NUMBER/PARTITION BY cambia la semántica
-    y puede romper la ventana de ranking antes de filtrar rn=1.
-    El TOP en ese caso debe estar en el SELECT externo al CTE, no aquí.
-    """
+    """Inserta/recorta TOP(n) en SQL Server sin romper CTEs/ventanas."""
     s = (sql or "").strip()
 
     # Si ya existe TOP al inicio del SELECT principal simple, recortar si excede
@@ -577,12 +540,7 @@ def _normalizar_token(s: str) -> str:
 
 
 def _construir_mapa_tablas(permitidos_fqn: List[str]) -> Dict[str, str]:
-    """
-    Construye un mapa table_name_lowercase → fqn_formateado a partir de la allow-list.
-    Permite calificar referencias sin schema (FROM Equipment → FROM [dbo].[Equipment]).
-    First-wins: si dos schemas tienen tablas con el mismo nombre (raro pero posible),
-    gana el primero que aparece en la lista — no se sobreescribe.
-    """
+    """Mapa table_name -> fqn_formateado."""
     m: Dict[str, str] = {}
     for f in permitidos_fqn or []:
         if not f or "." not in f:
@@ -593,7 +551,7 @@ def _construir_mapa_tablas(permitidos_fqn: List[str]) -> Dict[str, str]:
         table_clean = table.replace('"', "").replace("[", "").replace("]", "").strip()
         key = table_clean.lower()
         if key in m:
-            continue  # first-wins para evitar ambigüedad
+            continue
         if es_mssql():
             m[key] = f"[{schema}].[{table_clean}]"
         else:
@@ -605,10 +563,6 @@ _RE_DEFINICION_CTE = re.compile(r'(?P<name>"[^"]+"|\w+)\s+AS\s*\(', re.IGNORECAS
 
 
 def _recopilar_nombres_cte(sql: str) -> List[str]:
-    # Los nombres de CTE (LatestSamples, LimitesLC, etc.) aparecen en FROM/JOIN dentro
-    # del SELECT principal pero NO son tablas reales de la BD.
-    # Si no los excluimos de la validación allow-list, la función restringir_a_tablas_permitidas()
-    # los rechazaría como "tabla no encontrada" aunque la query sea perfectamente válida.
     names: List[str] = []
     s = sql or ""
     if not re.search(r"^\s*with\b", s, re.IGNORECASE):
@@ -948,40 +902,35 @@ def _columnas_texto_tabla(esquema_json: Dict[str, Any], table_name: str) -> List
 
 def _puntuar_columna_texto_descriptiva(nombre_columna: str) -> int:
     """
-    Heurística de scoring para elegir la mejor columna de texto como fallback en COALESCE.
-    Se usa en hacer_groupby_nullsafe_mssql() cuando el GROUP BY tiene una dimensión nullable:
-    en vez de agrupar en NULL, se usa COALESCE(dim_nullable, fallback1, fallback2).
-
-    Columnas descriptivas como Name/Nombre son las más útiles para el usuario final.
-    Columnas de tipo ID, fecha o métrica numérica son malas etiquetas de grupo y se penalizan.
+    Heurística genérica para preferir columnas descriptivas como fallback.
     """
     n = (nombre_columna or "").strip().lower()
     score = 0
 
-    # muy buenas — son las etiquetas naturales que el usuario espera ver
+    # muy buenas
     if any(x in n for x in ["name", "nombre"]):
         score += 100
     if any(x in n for x in ["description", "descripcion", "desc"]):
         score += 80
 
-    # buenas — dimensiones de dominio reconocibles
+    # buenas
     if any(x in n for x in ["compart", "component", "equipment", "system", "sistema", "model", "modelo", "type", "tipo", "position", "project", "customer", "client", "cliente", "category", "categoria"]):
         score += 60
 
-    # útiles, pero menos legibles que Name
+    # útiles, pero menos
     if any(x in n for x in ["code", "codigo"]):
         score += 40
 
-    # columnas con texto largo no apto para etiqueta de grupo
+    # malas para agrupar
     if any(x in n for x in ["observ", "recommend", "detail", "path", "mail", "email", "phone", "telefono"]):
         score -= 20
 
-    # IDs, fechas y métricas numéricas son pésimas etiquetas de grupo para el usuario final
+    # normalmente no deben usarse como etiqueta
     if any(x in n for x in ["id", "date", "fecha", "time", "hora", "count", "total", "avg", "sum", "metric", "value", "flag"]):
         score -= 60
 
     if n.endswith("id"):
-        score -= 100  # penalización fuerte para campos tipo EquipmentId, ComponentId, etc.
+        score -= 100
 
     return score
 
@@ -1111,21 +1060,18 @@ def hacer_groupby_nullsafe_mssql(
     consulta_humana: str = "",
 ) -> str:
     """
-    Reescritura determinística para MSSQL cuando LEFT JOIN + GROUP BY producen grupos NULL.
+    Reescritura determinística para MSSQL:
 
     Caso objetivo:
-      - LEFT JOIN a una dimensión nullable/opcional
-      - GROUP BY sobre un campo del lado derecho (puede ser NULL cuando no hay match)
-      - El grupo NULL distorsiona la agregación o confunde al usuario final
+    - LEFT JOIN a una dimensión nullable/opcional
+    - GROUP BY sobre campo del lado derecho
+    - Resultado termina en grupo NULL o puede perder semántica
 
-    Estrategia:
-      - Usuario pidió "estricto" / "sin null"  → añade WHERE dim IS NOT NULL
-      - Caso normal (usuario no técnico)        → COALESCE(dim, fallback1, fallback2)
-                                                  + WHERE COALESCE(...) <> ''
-                                                  + GROUP BY la misma expresión COALESCE
-
-    Nota: esta función NO se aplica a CTEs (re-escritura desde gemini_client.py).
-    Solo actúa sobre SELECT planos con GROUP BY y LEFT JOIN visible en el nivel raíz.
+    Regla:
+    - Si el usuario pidió estricto -> WHERE dim IS NOT NULL
+    - Si no -> COALESCE(dim, fallback1, fallback2)
+             + WHERE COALESCE(...) <> ''
+             + GROUP BY la misma expresión
     """
     s = (sql or "").strip()
     if not s or not es_mssql():
@@ -1319,62 +1265,15 @@ def consultar(
         sql_final = sql_query
 
     log.debug("[database.consultar] final=%r", sql_final[:800])
-    # Log INFO en producción para diagnóstico de queries lentas en Render
-    log.info("[DB] SQL ejecutando (%.400s...)", sql_final.replace("\n", " "))
 
-    _result: List[Dict[str, Any]] = []
-    _error: List[BaseException] = []
-
-    def _run_query() -> None:
-        try:
-            with Session() as session:
-                result = session.execute(text(sql_final))
-                _result.extend([dict(r) for r in result.mappings().all()])
-        except Exception as exc:
-            _error.append(exc)
-
-    # Timeout Python-level: garantizado independiente de pymssql / driver.
-    # connect_args={"timeout": N} en pymssql puede ser solo el login timeout;
-    # este mecanismo corta la espera en DB_QUERY_TIMEOUT segundos sin importar el driver.
-    # El thread de BD sigue corriendo en background (daemon) hasta que Azure SQL responda,
-    # pero la función retorna error inmediatamente, evitando el bloqueo de 240s en Copilot.
-    t = threading.Thread(target=_run_query, daemon=True)
-    t.start()
-    t.join(timeout=DB_QUERY_TIMEOUT)
-
-    if t.is_alive():
-        log.warning(
-            "[DB] TIMEOUT: query superó %ds — sigue en background. SQL=%.300s",
-            DB_QUERY_TIMEOUT,
-            sql_final.replace("\n", " "),
-        )
-        raise TimeoutError(
-            f"La consulta SQL superó el límite de {DB_QUERY_TIMEOUT}s. "
-            "Intenta ser más específico o usar un rango de fechas menor."
-        )
-
-    if _error:
-        raise _error[0]
-
-    return _result
+    with Session() as session:
+        result = session.execute(text(sql_final))
+        rows = result.mappings().all()
+        return [dict(r) for r in rows]
 
 
 # Alias legacy
 query = consultar
-
-
-def warmup_connection() -> None:
-    """
-    Pre-calienta el pool de conexiones ejecutando una query mínima.
-    Llamar al arrancar el servidor para evitar cold-start en la primera petición real.
-    Toca [Oil].[LaboratoryData] para que Azure SQL compile y cachee el plan de esa tabla.
-    """
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT TOP 1 1 AS ping FROM [Oil].[LaboratoryData] WITH (NOLOCK)"))
-        log.info("[DB] warmup completado — pool y plan de Azure SQL calientes.")
-    except Exception as exc:
-        log.warning("[DB] warmup falló (ignorado, se reintentará en la primera petición): %s", exc)
 
 
 def limpiar_recursos() -> None:
