@@ -1249,6 +1249,7 @@ def consultar(
     sql_query = expandir_macros(sql_query)
     sql_query = sanear_explain(sql_query)
     sql_query = calificar_tablas(sql_query, permitidos_fqn)
+    sql_query = bracketear_columnas_con_espacios(sql_query)
 
     if not es_select_seguro(sql_query):
         raise ValueError("Solo se permiten consultas de lectura (SELECT/CTE, EXPLAIN permitido, VALUES).")
@@ -1274,6 +1275,60 @@ def consultar(
 
 # Alias legacy
 query = consultar
+
+
+# =============================================================================
+# Bracketeo automático de columnas con espacios (MSSQL)
+# =============================================================================
+
+def _columnas_con_espacios_desde_cache() -> List[str]:
+    """Extrae nombres de columna que contienen espacios del caché de esquema."""
+    nombres: Set[str] = set()
+    for cached in _CACHE_ESQUEMA.values():
+        for tbl in cached.get("tables", []):
+            for col in tbl.get("columns", []):
+                name = col.get("name", "")
+                if " " in name:
+                    nombres.add(name)
+    return sorted(nombres, key=len, reverse=True)  # más largas primero
+
+
+def bracketear_columnas_con_espacios(sql: str) -> str:
+    """Envuelve en corchetes columnas con espacios que el LLM dejó sin bracketear.
+
+    Ejemplo:
+      T1.DESCRIPCION DEL COMPONENTE  →  T1.[DESCRIPCION DEL COMPONENTE]
+
+    Solo aplica en MSSQL y si el caché de esquema ya está cargado.
+    """
+    if not es_mssql() or not _CACHE_ESQUEMA:
+        return sql
+
+    columnas = _columnas_con_espacios_desde_cache()
+    if not columnas:
+        return sql
+
+    modificado = sql
+    for col in columnas:
+        # Ya está bracketeada → saltar
+        bracketeada = f"[{col}]"
+        if bracketeada in modificado:
+            continue
+
+        # Patrón: el nombre de columna sin corchetes, precedido opcionalmente por alias.
+        # Usa word boundary al inicio y lookahead negativo para no atrapar si ya tiene [
+        patron = re.compile(
+            r"(?<!\[)"                          # no precedido por [
+            r"\b(" + re.escape(col) + r")"      # el nombre exacto
+            r"(?!\])",                           # no seguido por ]
+            re.IGNORECASE,
+        )
+        modificado = patron.sub(bracketeada, modificado)
+
+    if modificado != sql:
+        log.debug("[database.bracketear_columnas] columnas auto-bracketeadas en SQL")
+
+    return modificado
 
 
 def warmup_connection() -> None:
