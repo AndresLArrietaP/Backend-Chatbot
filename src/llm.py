@@ -366,13 +366,40 @@ _PROYECTOS_CONOCIDOS: List[tuple] = [
 #  FUNCIONES DE DETECCIÓN
 # ==============================================================================
 
+# Patrón para detectar negaciones que preceden a un compartimiento.
+# Busca en el texto inmediatamente antes del match: "no me incluyas los de [tracción]",
+# "sin [tracción]", "excepto [tracción]", "menos los de [tracción]", etc.
+# El ancla $ asegura que la negación está justo antes del compartimiento, no en otra parte.
+_RE_NEGACION_CERCA = re.compile(
+    r"(?:no\s+(?:me\s+)?inclu\w*"
+    r"|sin\b"
+    r"|excepto\b"
+    r"|salvo\b"
+    r"|menos\b"
+    r"|exclu\w+)"
+    r"(?:\s+(?:los|las|el|la)\b)?"
+    r"(?:\s+(?:de|del)\b)?"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
 def _detectar_like_compartimiento(q: str) -> Optional[str]:
     """
     Recorre _COMPARTIMIENTO_KEYWORD_MAP y retorna el primer patrón LIKE que aplica.
     Retorna None si ningún keyword de compartimiento está en la consulta.
+
+    Si un compartimiento está negado ("no incluyas tracción", "sin tracción"),
+    lo salta y busca el siguiente match. Esto evita que "motores sin tracción"
+    genere triage DE tracción en vez de motores excluyendo tracción.
     """
     for patron, like in _COMPARTIMIENTO_KEYWORD_MAP:
-        if patron.search(q or ""):
+        m = patron.search(q or "")
+        if m:
+            # Verificar si el match está precedido por una negación
+            texto_antes = (q or "")[:m.start()]
+            if _RE_NEGACION_CERCA.search(texto_antes):
+                continue  # saltar: este compartimiento está negado
             return like
     return None
 
