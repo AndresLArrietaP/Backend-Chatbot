@@ -186,9 +186,16 @@ _RE_INTERPRETACION_MEMORIA = re.compile(
 _RE_REFINAR_MEMORIA = re.compile(
     r"\b("
     r"quedate|quédate|solo\s+con|mas\s+criticos|más\s+críticos|"
-    r"mas\s+altos|más\s+altos|top\s+\d+|ordena|ordenalos|ordénalos|"
+    r"mas\s+altos|más\s+altos|ordena|ordenalos|ordénalos|"
     r"prioriza|priorizalos|priorízalos"
     r")\b",
+    re.IGNORECASE,
+)
+# "top N" solo refina desde memoria si hay marcador de continuidad explícito ("de esos", "del grupo", etc.)
+# Sin él, "top 10 equipos con mayor Si" es una petición de datos nuevos cross-compartimento.
+_RE_TOP_CONTEXTUAL = re.compile(r"\btop\s+\d+\b", re.IGNORECASE)
+_RE_CONTINUIDAD_MARKER = re.compile(
+    r"\b(de\s+esos|de\s+estos|de\s+ese|del\s+grupo|que\s+mencionaste|ya\s+mencionados?|anteriores?|de\s+los\s+anteriores?)\b",
     re.IGNORECASE,
 )
 
@@ -919,6 +926,12 @@ def _puede_refinar_desde_memoria(
         return False
 
     q = consulta_humana or ""
+
+    # "top N" sin marcador de continuidad explícito → siempre SQL nuevo (evita
+    # que "top 10 equipos con mayor Si" se responda con datos parciales de sesión).
+    if _RE_TOP_CONTEXTUAL.search(q) and not _RE_CONTINUIDAD_MARKER.search(q):
+        return False
+
     if not _RE_REFINAR_MEMORIA.search(q):
         return False
 
@@ -1366,6 +1379,12 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             log.info("[human_query] triage_directo activado — SQL generado en Python sin LLM")
             return sql_triage
 
+        # Ranking directo: top-N por metal (Fe/Si/Cu/Al/TBN) con dedup ROW_NUMBER por equipo
+        sql_ranking = llm.intentar_ranking_directo(consulta_humana)
+        if sql_ranking:
+            log.info("[human_query] ranking_directo activado — SQL generado en Python sin LLM")
+            return sql_ranking
+
         try:
             sql_json = await llm.consulta_humana_a_sql(
                 consulta_humana=consulta_humana,
@@ -1696,6 +1715,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         and SQL_NULL_PROJECTION_RETRY
         and SQL_NULL_PROJECTION_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
+        and "latestsamples" not in sql_query.lower()  # triage CTE: NULLs en LP/LC son esperados (LEFT JOIN a Eqpcare.lc sin match), no un error de proyección
         and _resultado_parece_proyeccion_nula(rows, sql_query)
     ):
         for _ in range(int(SQL_NULL_PROJECTION_RETRY_MAX)):

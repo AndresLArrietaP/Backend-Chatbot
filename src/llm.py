@@ -333,12 +333,16 @@ _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
 
 _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
     # (patrón de detección en la consulta, filtro LIKE para el WHERE en SQL)
+    # Orden crítico: primero los patrones específicos, el catch-all de "motor" al final.
     (re.compile(r"\btracci[oó]n\b", re.IGNORECASE), "%TRACCION%"),
     (re.compile(r"\bhidr[aá]ulic[ao]\b", re.IGNORECASE), "%HIDRAUL%"),
-    (re.compile(r"\brueda[s]?\s+delantera[s]?\b", re.IGNORECASE), "%RUEDA%"),
+    (re.compile(r"\brueda[s]?\b", re.IGNORECASE), "%RUEDA%"),
     (re.compile(r"\bmando\s+final\b", re.IGNORECASE), "%MANDO%"),
     (re.compile(r"\bdiferencial\b", re.IGNORECASE), "%DIFERENCIAL%"),
     (re.compile(r"\btransmisi[oó]n\b", re.IGNORECASE), "%TRANSMISION%"),
+    (re.compile(r"\bcaja\s+(?:de\s+)?giro\b|\bcg\s+(?:rear|front|trasero|delantero)\b", re.IGNORECASE), "%GIRO%"),
+    (re.compile(r"\bpto\b|toma\s+de\s+fuerza|power\s+take[\s\-]off", re.IGNORECASE), "%PTO%"),
+    (re.compile(r"\bmotores?\b", re.IGNORECASE), "MOTOR"),  # último: catch-all; "motor de tracción" ya matcheó tracción antes
 ]
 
 # Proyectos mineros conocidos mapeados a su nombre real en BD.
@@ -449,6 +453,22 @@ def _detectar_fecha_corte(q: str) -> Optional[str]:
     else:
         ultimo_dia = datetime.date(anio, mes_num + 1, 1) - datetime.timedelta(days=1)
     return ultimo_dia.strftime("%Y-%m-%d")
+
+
+_RE_MES_ACTUAL = re.compile(
+    r"\b(mes\s+actual|hasta\s+hoy|al\s+d[ií]a|este\s+mes|del\s+mes\s+actual|incluye?\s+(?:el\s+)?mes)\b",
+    re.IGNORECASE,
+)
+
+
+def _usuario_pide_mes_actual(q: str) -> bool:
+    return bool(_RE_MES_ACTUAL.search(q or ""))
+
+
+def _fecha_corte_defecto() -> str:
+    """Último día del mes anterior. Usado como upper bound por defecto en triage."""
+    hoy = datetime.date.today()
+    return (hoy.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 # ==============================================================================
@@ -720,7 +740,11 @@ def _reforzar_consulta_criticidad(q: str) -> str:
         + " | IMPORTANTE: si el usuario pide los casos más críticos y no define una regla exacta, "
           "prioriza el orden descendente por las métricas de desgaste o contaminación explícitamente mencionadas "
           "en la consulta actual o presentes en el contexto conversacional inmediato. "
-          "Evita inventar umbrales operativos que no existan en la base."
+          "Evita inventar umbrales operativos que no existan en la base. "
+          "Para encontrar 'el más alto/mayor/top N' por un metal en un compartimiento: "
+          "usa CTE con ROW_NUMBER() OVER (PARTITION BY MiningEquipmentId,Compartimiento ORDER BY FechaMuestreo DESC) "
+          "para obtener la última muestra por equipo, luego selecciona el TOP con ORDER BY metal DESC. "
+          "NUNCA ordenes solo por fecha ni uses MAX() sin deduplicar por equipo primero."
     )
 
 
@@ -927,6 +951,8 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         return None
     
     fecha_corte = _detectar_fecha_corte(consulta_humana)  # ej: "hasta abril" → '2026-04-30'
+    if not fecha_corte and not _usuario_pide_mes_actual(consulta_humana):
+        fecha_corte = _fecha_corte_defecto()  # corta en fin del mes anterior → evita muestras incompletas del mes en curso
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
     sql = (
@@ -986,6 +1012,102 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     return sql
 
 
+# ==============================================================================
+# RANKING DIRECTO — top N por metal sin LLM
+# Detecta "top N por metal" o superlativos ("mayor Fe", "el más alto en Si").
+# Usa ROW_NUMBER CTE para deduplicar la última muestra por equipo+compartimiento.
+# Requiere metal + (compartimiento o proyecto). Sin ambos → cae al LLM.
+# ==============================================================================
+
+_RE_RANKING_TOPN = re.compile(
+    r"\btop\s*(\d+)\b|los\s+(\d+)\s+(?:m[áa]s|(?:con\s+)?mayor(?:es)?|peores?)",
+    re.IGNORECASE,
+)
+_RE_RANKING_EL_MAYOR = re.compile(
+    r"\b(?:el\s+)?(?:m[áa]s\s+(?:alto|elevado|cr[ií]tico|contaminado)|m[áa]ximo|peor)\b",
+    re.IGNORECASE,
+)
+_METAL_RANKING_MAP: List[tuple] = [
+    # (regex de detección, columna en LaboratoryData, orden SQL)
+    (re.compile(r"\b(?:fe(?:_ppm)?|fierro|hierro)\b", re.IGNORECASE), "Fe_ppm", "DESC"),
+    (re.compile(r"\b(?:si(?:_ppm)?|silicio|s[ií]lice)\b", re.IGNORECASE), "Si_ppm", "DESC"),
+    (re.compile(r"\b(?:cu(?:_ppm)?|cobre)\b", re.IGNORECASE), "Cu_ppm", "DESC"),
+    (re.compile(r"\b(?:al(?:_ppm)?|aluminio)\b", re.IGNORECASE), "Al_ppm", "DESC"),
+    (re.compile(r"\bTBN\b", re.IGNORECASE), "TBN", "ASC"),
+]
+
+
+def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera SQL de ranking Top-N directamente en Python sin LLM.
+    Activa cuando la consulta pide los N equipos con más/menos de un metal concreto
+    y hay compartimiento o proyecto detectado.
+
+    SQL producido: CTE LatestSamples con ROW_NUMBER para deduplicar la última muestra
+    por (equipo, compartimiento), luego SELECT TOP(N) ordenado por el metal objetivo.
+    """
+    if _es_intencion_triage_observados(consulta_humana):
+        return None
+    if _es_intencion_tendencia_historica(consulta_humana):
+        return None
+
+    m_topn = _RE_RANKING_TOPN.search(consulta_humana)
+    m_mayor = _RE_RANKING_EL_MAYOR.search(consulta_humana)
+    if not m_topn and not m_mayor:
+        return None
+
+    metal_col: Optional[str] = None
+    metal_order = "DESC"
+    for pat, col, order in _METAL_RANKING_MAP:
+        if pat.search(consulta_humana):
+            metal_col = col
+            metal_order = order
+            break
+    if not metal_col:
+        return None
+
+    n_val = 10
+    if m_topn:
+        g = m_topn.group(1) or m_topn.group(2)
+        if g:
+            n_val = int(g)
+    elif m_mayor:
+        n_val = 1
+
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    proyecto = _detectar_proyecto(consulta_humana)
+    if not like_comp and not proyecto:
+        return None
+
+    _where_comp = f" AND LD.[Compartimiento] LIKE '{like_comp}'" if like_comp else ""
+    _where_proy = f" AND MP.[Name] LIKE '%{proyecto}%'" if proyecto else ""
+
+    fecha_corte = _detectar_fecha_corte(consulta_humana)
+    if not fecha_corte and not _usuario_pide_mes_actual(consulta_humana):
+        fecha_corte = _fecha_corte_defecto()
+    _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
+
+    sql = (
+        f"WITH LatestSamples AS ("
+        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],"
+        f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN],LD.[FechaMuestreo],"
+        f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+        f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+        f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
+        f"{_where_comp}{_where_proy}"
+        f") "
+        f"SELECT TOP({n_val}) [EquipmentCode],[Compartimiento],"
+        f"[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] "
+        f"FROM LatestSamples "
+        f"WHERE rn=1 AND [{metal_col}] IS NOT NULL "
+        f"ORDER BY [{metal_col}] {metal_order}"
+    )
+    return sql
+
+
 def _reforzar_triage_observados(q: str) -> str:
     """
     Refuerzo de prompt para el caso de uso PRINCIPAL cuando el triage directo no aplica
@@ -1020,6 +1142,8 @@ def _reforzar_triage_observados(q: str) -> str:
         "(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"
     )
     fecha_corte = _detectar_fecha_corte(q)
+    if not fecha_corte and not _usuario_pide_mes_actual(q):
+        fecha_corte = _fecha_corte_defecto()
     filtro_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
     # CTE de límites: se construye con o sin filtro de proyecto según lo detectado.
