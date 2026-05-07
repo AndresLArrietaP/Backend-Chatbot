@@ -192,6 +192,7 @@ POST /human_query
   │     → historial crudo directo  (sin LLM)
   │     → tendencia mensual directa (sin LLM)
   │     → triage observados directo (sin LLM, con límites LP/LC reales)
+  │     → ranking top-N por metal   (sin LLM, ROW_NUMBER dedup por equipo)
   │     → LLM (Gemini con hedge paralelo + fallback secuencial)
   │
   ├─ Validar y ejecutar SQL [timeout 80s]
