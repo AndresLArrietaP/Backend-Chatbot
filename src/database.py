@@ -1276,6 +1276,17 @@ def consultar(
 query = consultar
 
 
+def warmup_connection() -> None:
+    """Calienta el pool ejecutando una query mínima (SELECT 1).
+
+    Se llama desde __init__.py al startup para que la primera query real
+    del usuario no pague el cold-start de Azure SQL (~3-8 s).
+    """
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    log.info("[warmup] Pool de conexiones calentado.")
+
+
 def limpiar_recursos() -> None:
     """Libera conexiones del pool."""
     engine.dispose()
