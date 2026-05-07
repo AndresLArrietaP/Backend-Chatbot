@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Módulo: contexto_chat
----------------------
+----------------------
 Memoria conversacional por sesión con TTL, límite de turnos y persistencia
 opcional a disco (archivo JSON).
 
