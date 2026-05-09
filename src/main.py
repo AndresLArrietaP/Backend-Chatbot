@@ -1203,7 +1203,6 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
     ultimo_resultado = _GESTOR_CONTEXTO.obtener_ultimo_resultado(session_id) if session_id else {}
     contexto_externo = _normalizar_str(payload.conversation_context or "")
     contexto_conversacional = _combinar_contextos(contexto_externo, contexto_memoria)
-    ultimo_resultado = _GESTOR_CONTEXTO.obtener_ultimo_resultado(session_id) if session_id else {}
 
     usa_contexto_memoria = bool(contexto_memoria.strip())
     usa_contexto_externo = bool(contexto_externo.strip())
@@ -1352,12 +1351,14 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         Genera el SQL para la consulta humana. Devuelve siempre una SQL string limpia.
 
         Orden de prioridad (cortocircuito — el primero que aplique gana):
-          1. intentar_historial_crudo_directo() → registros individuales sin AVG ni ROW_NUMBER
-          2. intentar_tendencia_directo()        → serie mensual AVG sin filtros LP/LC
-          3. intentar_triage_directo()           → triage de observados con doble CTE Python
-          4. LLM (Gemini/OpenAI)                → caso general con refuerzo de heurísticas
+          1. intentar_historial_crudo_directo()         → registros individuales sin AVG
+          2. intentar_ultimo_analisis_flota_directo()   → última muestra por equipo, sin filtro LP/LC
+          3. intentar_tendencia_directo()               → serie mensual AVG sin filtros LP/LC
+          4. intentar_triage_directo()                  → triage de observados con doble CTE Python
+          5. intentar_ranking_directo()                 → top-N por metal con ROW_NUMBER
+          6. LLM (Gemini/OpenAI)                        → caso general con refuerzo de heurísticas
 
-        Los paths 1-3 son determinísticos, no llaman al LLM y son más rápidos y confiables
+        Los paths 1-5 son determinísticos, no llaman al LLM y son más rápidos y confiables
         para los casos de uso principales del producto.
         """
         # Historial crudo: "sin promediar / muestra por muestra" + equipo/proyecto conocido
@@ -1366,6 +1367,13 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         if sql_crudo:
             log.info("[human_query] historial_crudo_directo activado — SQL generado en Python sin LLM")
             return sql_crudo
+
+        # Último análisis de flota: última muestra de cada equipo sin filtro LP/LC.
+        # "dame el último análisis de los 27 equipos" → 1 fila por equipo+compartimiento.
+        sql_ultimo = llm.intentar_ultimo_analisis_flota_directo(consulta_humana)
+        if sql_ultimo:
+            log.info("[human_query] ultimo_analisis_flota_directo activado — SQL generado en Python sin LLM")
+            return sql_ultimo
 
         # Tendencia directo: compartimiento detectado → serie mensual AVG sin LP/LC
         sql_tendencia = llm.intentar_tendencia_directo(consulta_humana)
@@ -1715,7 +1723,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         and SQL_NULL_PROJECTION_RETRY
         and SQL_NULL_PROJECTION_RETRY_MAX > 0
         and (not _usuario_pide_estricto(human))
-        and "latestsamples" not in sql_query.lower()  # triage CTE: NULLs en LP/LC son esperados (LEFT JOIN a Eqpcare.lc sin match), no un error de proyección
+        and "limiteslc" not in sql_query.lower()  # triage CTE: NULLs en LP/LC son esperados (LEFT JOIN a Eqpcare.lc sin match), no un error de proyección
         and _resultado_parece_proyeccion_nula(rows, sql_query)
     ):
         for _ in range(int(SQL_NULL_PROJECTION_RETRY_MAX)):

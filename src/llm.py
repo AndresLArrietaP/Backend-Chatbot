@@ -173,7 +173,7 @@ _RE_PISTA_PROYECTO_MINERO = re.compile(
 
 # Mención de modelo de equipo (nomenclaturas Komatsu, Caterpillar, etc.)
 _RE_PISTA_MODELO_EQUIPO = re.compile(
-    r"\b(modelo|980e|d475|d375|d155|wa[0-9]+|hd[0-9]+|ht[0-9]+|pc[0-9]+|730e|830e|"
+    r"\b(modelo|980e|930e|d475|d375|d155|wa[0-9]+|hd[0-9]+|ht[0-9]+|pc[0-9]+|730e|830e|"
     r"wd[0-9]+|bw[0-9]+|pv[0-9]+|gd[0-9]+|vqc?[0-9]+|wb[0-9]+)\b",
     re.IGNORECASE,
 )
@@ -256,14 +256,17 @@ def _reforzar_tendencia_historica(q: str) -> str:
 
     instruccion = (
         f"SELECT TOP(300) {group_prefix},EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-        "AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
+        "AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+        "AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],"
+        "AVG(LD.[Sn_ppm]) AS [Sn_ppm],AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
         "AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
-        "AVG(LD.[TBN]) AS [TBN],COUNT(*) AS [Muestras] "
+        "AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+        "COUNT(*) AS [Muestras] "
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) {joins} "
         f"WHERE {where_clause} "
         f"GROUP BY {group_prefix},EOMONTH(LD.[FechaMuestreo]) "
-        f"ORDER BY {group_prefix},[Mes]. "
-        "EOMONTH() devuelve tipo date — úsalo tal cual, sin CAST. "
+        f"ORDER BY {group_prefix},[Mes] "
+        "— EOMONTH() devuelve tipo date, úsalo sin CAST. "
         "NUNCA usar ROW_NUMBER/rn para este tipo de consulta. "
         "Si el usuario pide un metal específico, incluirlo como primera métrica AVG."
     )
@@ -419,14 +422,61 @@ def _detectar_proyecto(q: str) -> Optional[str]:
 # Regex para códigos de equipo individuales: letras cortas + dígitos (CA3198, WA600, PC4000…)
 _RE_EQUIPO_CODE = re.compile(r"\b([A-Z]{1,3}\d{3,5})\b")
 
+# Referencia coloquial: "el 3196", "equipo 3196", "camión 3196" — sin prefijo de letras.
+# Solo captura 4-5 dígitos precedidos por una palabra de referencia directa.
+_RE_EQUIPO_COLOQUIAL = re.compile(
+    r"\b(?:el|del|la|equipo|camión|camion|unidad|maquina|máquina)\s+(\d{4,5})\b",
+    re.IGNORECASE,
+)
+
 
 def _detectar_equipo_code(q: str) -> Optional[str]:
     """
-    Extrae el primer código de equipo que aparece en la consulta.
-    Útil para filtrar historial o tendencia de un equipo específico.
+    Extrae código de equipo de la consulta.
+    - Código completo (CA3196, WA600) → retorna el código exacto para WHERE =
+    - Referencia coloquial ("el 3196", "equipo 3196") → retorna '%3196' para WHERE LIKE
     """
     m = _RE_EQUIPO_CODE.search(q or "")
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    m_col = _RE_EQUIPO_COLOQUIAL.search(q or "")
+    if m_col:
+        num = m_col.group(1)
+        if not (2000 <= int(num) <= 2030):  # excluir años
+            return f"%{num}"
+    return None
+
+
+# Marca/tipo de aceite: Shell, Mobil, Castrol, etc. → filtra LD.[Grado]
+_GRADO_ACEITE_MAP: List[tuple] = [
+    (re.compile(r"\bshell\b", re.IGNORECASE), "Shell"),
+    (re.compile(r"\bmobil\b", re.IGNORECASE), "Mobil"),
+    (re.compile(r"\bcastrol\b", re.IGNORECASE), "Castrol"),
+    (re.compile(r"\btotal\b", re.IGNORECASE), "Total"),
+]
+
+
+def _detectar_grado_aceite(q: str) -> Optional[str]:
+    """
+    Detecta marca o tipo de aceite en la consulta.
+    Retorna el nombre de la marca para pasarlo a _grado_where_clause().
+    Retorna None si no hay mención explícita de marca.
+    """
+    for pat, nombre in _GRADO_ACEITE_MAP:
+        if pat.search(q or ""):
+            return nombre
+    return None
+
+
+def _grado_where_clause(grado: str) -> str:
+    """
+    Genera la cláusula WHERE SQL para filtrar por marca de aceite.
+    Mobil: captura también 'MOBILGEAR SHC 680' y 'M-SHC GEAR 680'
+    — variantes reales en BD (M-SHC = Mobil SHC abreviado, no contiene 'MOBIL').
+    """
+    if grado == "Mobil":
+        return "(LD.[Grado] LIKE '%MOBIL%' OR LD.[Grado] LIKE '%M-SHC%')"
+    return f"LD.[Grado] LIKE '%{grado}%'"
 
 
 # Regex para extraer ventana temporal expresada en meses o años.
@@ -783,11 +833,27 @@ def _reforzar_consulta_criticidad(q: str) -> str:
 #  del modelo y es significativamente más rápido que una llamada al LLM.
 #
 #  Orden de prioridad en main.py/_generar_sql():
-#    1. intentar_historial_crudo_directo()  — muestra a muestra, sin promediar
-#    2. intentar_tendencia_directo()        — AVG mensual, serie temporal
-#    3. intentar_triage_directo()           — doble CTE con LP/LC reales de BD
-#    4. LLM                                 — caso general
+#    1. intentar_historial_crudo_directo()          — muestra a muestra, sin promediar
+#    2. intentar_ultimo_analisis_flota_directo()    — última muestra por equipo, SIN filtro LP/LC
+#    3. intentar_tendencia_directo()                — AVG mensual, serie temporal
+#    4. intentar_triage_directo()                   — doble CTE con LP/LC reales de BD
+#    5. intentar_ranking_directo()                  — top-N por metal con ROW_NUMBER
+#    6. LLM                                         — caso general
 # ==============================================================================
+
+# Regex de intención: "último análisis", "última muestra", "últimos resultados" de flota.
+# NO aplica si hay lenguaje de triage (eso se guarda por la guardia _es_intencion_triage_observados).
+_RE_PISTA_ULTIMO_ANALISIS_FLOTA = re.compile(
+    r"\b(?:"
+    r"últi(?:mo|ma)\s+(?:an[aá]lisis|resultado|reporte|muestreo|muestra|toma)"
+    r"|últimos?\s+(?:resultados?|an[aá]lisis)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_ultimo_analisis_flota(texto: str) -> bool:
+    return bool(_RE_PISTA_ULTIMO_ANALISIS_FLOTA.search(texto or ""))
 
 def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     """
@@ -824,10 +890,15 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())"
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
 
-    # Columnas base: fecha + código de equipo + compartimiento + métricas principales.
+    grado = _detectar_grado_aceite(consulta_humana)
+    _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+
+    # Columnas base: fecha + código de equipo + compartimiento + métricas MT completas.
     base_cols = (
-        f"LD.[FechaMuestreo],ME.[Code] AS [Equipo],LD.[Compartimiento],"
-        f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN]"
+        f"LD.[FechaMuestreo],ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+        f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],"
+        f"LD.[B_ppm],LD.[P_ppm],LD.[V100],LD.[TBN],LD.[HorasDeAceite]"
     )
     base_joins = (
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -836,11 +907,16 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     )
 
     if equipo_code:
-        # Equipo específico: filtrar directamente por código. Más preciso que filtrar por proyecto.
+        # Código exacto (CA3196) → igualdad; referencia coloquial (%3196) → LIKE.
+        where_equipo = (
+            f"ME.[Code] LIKE '{equipo_code}'"
+            if equipo_code.startswith("%")
+            else f"ME.[Code]='{equipo_code}'"
+        )
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins} "
-            f"WHERE {filtro_comp} AND ME.[Code]='{equipo_code}' AND {filtro_fecha} "
+            f"WHERE {filtro_comp} AND {where_equipo} AND {filtro_fecha}{_where_grado} "
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
     else:
@@ -848,9 +924,73 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins} "
-            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha} "
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_grado} "
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
+    return sql
+
+
+def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera SQL del último análisis por equipo+compartimiento directamente en Python.
+
+    Diferencia clave con triage_directo:
+      - NO filtra por LP/LC — devuelve TODOS los equipos con su muestra más reciente,
+        independientemente de si están observados o dentro de límites.
+      - Columnas base confirmadas (Fe, Cu, Si, Al, TBN). Se expandirán a PQ/Cr/Ni/etc.
+        tras verificar las columnas reales de [Oil].[LaboratoryData] en SSMS.
+
+    Caso de uso principal: "dame el último análisis de los 27 equipos de Antapaccay"
+    → 1 fila por (equipo, compartimiento), última fecha registrada de cada uno.
+    El formato es independiente del mes — cada equipo puede tener distinta última fecha.
+
+    Requiere: al menos compartimiento O proyecto detectado.
+    """
+    if _es_intencion_triage_observados(consulta_humana):
+        return None
+    if _es_intencion_tendencia_historica(consulta_humana):
+        return None
+    if not _es_intencion_ultimo_analisis_flota(consulta_humana):
+        return None
+
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    proyecto = _detectar_proyecto(consulta_humana)
+    if not like_comp and not proyecto:
+        return None
+
+    fecha_corte = _detectar_fecha_corte(consulta_humana)
+    if not fecha_corte and not _usuario_pide_mes_actual(consulta_humana):
+        fecha_corte = _fecha_corte_defecto()
+    _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
+
+    _where_comp = f" AND LD.[Compartimiento] LIKE '{like_comp}'" if like_comp else ""
+    _where_proy = f" AND MP.[Name] LIKE '%{proyecto}%'" if proyecto else ""
+
+    grado = _detectar_grado_aceite(consulta_humana)
+    _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+
+    sql = (
+        f"WITH LatestSamples AS ("
+        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+        f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],"
+        f"LD.[B_ppm],LD.[P_ppm],LD.[V100],LD.[TBN],LD.[HorasDeAceite],LD.[FechaMuestreo],"
+        f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+        f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+        f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
+        f"{_where_comp}{_where_proy}{_where_grado}"
+        f") "
+        f"SELECT TOP(200) [EquipmentCode],[Compartimiento],[Grado],"
+        f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
+        f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],"
+        f"[B_ppm],[P_ppm],[V100],[TBN],[HorasDeAceite],[FechaMuestreo] "
+        f"FROM LatestSamples "
+        f"WHERE rn=1 "
+        f"ORDER BY [EquipmentCode]"
+    )
     return sql
 
 
@@ -887,14 +1027,22 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     equipo_code = _detectar_equipo_code(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
 
-    # Métricas agregadas por mes: AVG suaviza outliers puntuales.
+    grado = _detectar_grado_aceite(consulta_humana)
+    _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+
+    # Métricas agregadas por mes: AVG suaviza outliers puntuales. Cubre set completo MT.
     base_metricas = (
         f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],"
+        f"AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+        f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],"
+        f"AVG(LD.[Pb_ppm]) AS [Pb_ppm],"
+        f"AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
         f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
         f"AVG(LD.[Si_ppm]) AS [Si_ppm],"
         f"AVG(LD.[Al_ppm]) AS [Al_ppm],"
+        f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],"
         f"AVG(LD.[TBN]) AS [TBN],"
-        f"COUNT(*) AS [Muestras]"  # COUNT permite ver cuántas muestras hay por mes
+        f"COUNT(*) AS [Muestras]"
     )
     base_joins = (
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -905,7 +1053,12 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
 
     if equipo_code:
-        # Equipo específico: muestra la evolución temporal de ESE equipo únicamente.
+        # Código exacto → igualdad; coloquial (%3196) → LIKE (misma lógica que historial_crudo).
+        where_equipo_t = (
+            f"ME.[Code] LIKE '{equipo_code}'"
+            if equipo_code.startswith("%")
+            else f"ME.[Code]='{equipo_code}'"
+        )
         sql = (
             f"SELECT TOP(300) "
             f"ME.[Code] AS [Equipo],"
@@ -913,7 +1066,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"LD.[Compartimiento],"
             f"{base_metricas} "
             f"{base_joins} "
-            f"WHERE {filtro_comp} AND ME.[Code]='{equipo_code}' AND {filtro_fecha} "
+            f"WHERE {filtro_comp} AND {where_equipo_t} AND {filtro_fecha}{_where_grado} "
             f"GROUP BY ME.[Code],EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
             f"ORDER BY [Mes] ASC"
         )
@@ -925,7 +1078,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"LD.[Compartimiento],"
             f"{base_metricas} "
             f"{base_joins} "
-            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha} "
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_grado} "
             f"GROUP BY EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
             f"ORDER BY [Mes] ASC"
         )
@@ -939,7 +1092,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"LD.[Compartimiento],"
             f"{base_metricas} "
             f"{base_joins} "
-            f"WHERE {filtro_comp} AND {filtro_fecha} "
+            f"WHERE {filtro_comp} AND {filtro_fecha}{_where_grado} "
             f"GROUP BY MP.[Name],EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
             f"ORDER BY MP.[Name],[Mes] ASC"
         )
@@ -982,13 +1135,15 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         fecha_corte = _fecha_corte_defecto()  # corta en fin del mes anterior → evita muestras incompletas del mes en curso
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
+    grado = _detectar_grado_aceite(consulta_humana)
+    _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+
     sql = (
         # ── CTE 1: LatestSamples ────────────────────────────────────────────────
-        # ROW_NUMBER ordena por fecha DESC dentro de cada (equipo, compartimiento).
-        # El SELECT externo filtra rn=1 para quedarse solo con la muestra más reciente.
         f"WITH LatestSamples AS ("
-        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],"
-        f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN],LD.[FechaMuestreo],"
+        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+        f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo],"
         f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
         f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -996,45 +1151,59 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
         f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
         f"AND MP.[Name] LIKE '%{proyecto}%' "
-        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"  # ventana 2 años; fecha_corte si el usuario acota el período
+        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}{_where_grado}"
         f"), "
         # ── CTE 2: LimitesLC ─────────────────────────────────────────────────────
-        # Colapsa los límites reales de la tabla [Eqpcare].[lc] (límites por proyecto + componente).
-        # MIN para ppm: toma el límite más restrictivo si hay varios modelos en el mismo proyecto.
-        # MAX para TBN: TBN bajo = problema, así que usamos el límite más alto como referencia.
+        # MIN para metales ppm: límite más restrictivo entre modelos del mismo componente.
+        # MAX para TBN: TBN bajo = alerta → referencia más alta = menos falsos positivos.
+        # Metales nuevos (Cr/Ni/Pb/Sn/PQ): fallback 9999 → solo disparan si lc tiene datos reales.
         f"LimitesLC AS ("
         f"SELECT [COMPONENTE],"
         f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
         f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
         f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
         f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        f"MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
+        f"MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
+        f"MIN([PLOMO - LP]) AS [PLOMO - LP],MIN([PLOMO - LC]) AS [PLOMO - LC],"
+        f"MIN([ESTAÑO - LP]) AS [ESTAÑO - LP],MIN([ESTAÑO - LC]) AS [ESTAÑO - LC],"
+        f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
         f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
         f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
         f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}' "
         f"GROUP BY [COMPONENTE]"
         f") "
         # ── SELECT final ─────────────────────────────────────────────────────────
-        # LEFT JOIN con LimitesLC: si no hay límites en BD → LC.col = NULL → ISNULL → 9999 → no dispara alerta.
-        # Se filtran solo los registros que superan al menos UN límite LP de cualquier metal.
         f"SELECT TOP(200) "
-        f"LS.[EquipmentCode],LS.[Compartimiento],"
-        f"LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],"
+        f"LS.[EquipmentCode],LS.[Compartimiento],LS.[Grado],"
+        f"LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],"
+        f"LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],"
         f"LC.[FIERRO - LP],LC.[FIERRO - LC],"
         f"LC.[ALUMINIO - LP],LC.[ALUMINIO - LC],"
         f"LC.[COBRE - LP],LC.[COBRE - LC],"
         f"LC.[SILICIO - LP],LC.[SILICIO - LC],"
+        f"LC.[CROMO - LP],LC.[CROMO - LC],"
+        f"LC.[NIQUEL - LP],LC.[NIQUEL - LC],"
+        f"LC.[PLOMO - LP],LC.[PLOMO - LC],"
+        f"LC.[ESTAÑO - LP],LC.[ESTAÑO - LC],"
+        f"LC.[PQ - LP],LC.[PQ - LC],"
         f"LC.[TBN - LP],LC.[TBN - LC] "
         f"FROM LatestSamples LS "
         f"LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
-        f"WHERE LS.rn=1 "  # solo la muestra más reciente de cada equipo+compartimiento
+        f"WHERE LS.rn=1 "
         f"AND ("
         f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],60) OR "
         f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
         f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
         f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
-        f"(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"  # TBN solo si hay límite real en BD y TBN fue medido (>0)
+        f"LS.[Cr_ppm]>ISNULL(LC.[CROMO - LP],9999) OR "
+        f"LS.[Ni_ppm]>ISNULL(LC.[NIQUEL - LP],9999) OR "
+        f"LS.[Pb_ppm]>ISNULL(LC.[PLOMO - LP],9999) OR "
+        f"LS.[Sn_ppm]>ISNULL(LC.[ESTAÑO - LP],9999) OR "
+        f"LS.[Indice_PQ]>ISNULL(LC.[PQ - LP],9999) OR "
+        f"(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"
         f") "
-        f"ORDER BY LS.[Fe_ppm] DESC"  # los más críticos por hierro primero
+        f"ORDER BY LS.[Fe_ppm] DESC"
     )
     return sql
 
@@ -1060,6 +1229,11 @@ _METAL_RANKING_MAP: List[tuple] = [
     (re.compile(r"\b(?:si(?:_ppm)?|silicio|s[ií]lice)\b", re.IGNORECASE), "Si_ppm", "DESC"),
     (re.compile(r"\b(?:cu(?:_ppm)?|cobre)\b", re.IGNORECASE), "Cu_ppm", "DESC"),
     (re.compile(r"\b(?:al(?:_ppm)?|aluminio)\b", re.IGNORECASE), "Al_ppm", "DESC"),
+    (re.compile(r"\b(?:cr(?:_ppm)?|cromo)\b", re.IGNORECASE), "Cr_ppm", "DESC"),
+    (re.compile(r"\b(?:ni(?:_ppm)?|n[ií]quel)\b", re.IGNORECASE), "Ni_ppm", "DESC"),
+    (re.compile(r"\b(?:pb(?:_ppm)?|plomo)\b", re.IGNORECASE), "Pb_ppm", "DESC"),
+    (re.compile(r"\b(?:sn(?:_ppm)?|esta[ñn]o)\b", re.IGNORECASE), "Sn_ppm", "DESC"),
+    (re.compile(r"\b(?:pq|[íi]ndice\s+pq)\b", re.IGNORECASE), "Indice_PQ", "DESC"),
     (re.compile(r"\bTBN\b", re.IGNORECASE), "TBN", "ASC"),
 ]
 
@@ -1114,20 +1288,25 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
         fecha_corte = _fecha_corte_defecto()
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
+    grado = _detectar_grado_aceite(consulta_humana)
+    _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+
     sql = (
         f"WITH LatestSamples AS ("
-        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],"
-        f"LD.[Fe_ppm],LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[TBN],LD.[FechaMuestreo],"
+        f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+        f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo],"
         f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
         f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
         f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
         f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
-        f"{_where_comp}{_where_proy}"
+        f"{_where_comp}{_where_proy}{_where_grado}"
         f") "
-        f"SELECT TOP({n_val}) [EquipmentCode],[Compartimiento],"
-        f"[Fe_ppm],[Cu_ppm],[Si_ppm],[Al_ppm],[TBN],[FechaMuestreo] "
+        f"SELECT TOP({n_val}) [EquipmentCode],[Compartimiento],[Grado],"
+        f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
+        f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],[FechaMuestreo] "
         f"FROM LatestSamples "
         f"WHERE rn=1 AND [{metal_col}] IS NOT NULL "
         f"ORDER BY [{metal_col}] {metal_order}"
@@ -1150,22 +1329,33 @@ def _reforzar_triage_observados(q: str) -> str:
     proyecto = _detectar_proyecto(q)
 
     # Columnas de límites en [Eqpcare].[lc] — nombres con espacios y guión, requieren corchetes.
+    # Incluye set completo MT: FIERRO, ALUMINIO, COBRE, SILICIO, CROMO, NIQUEL, PLOMO, ESTAÑO, PQ, TBN.
     _lc_cols = (
         "LC.[FIERRO - LP],LC.[FIERRO - LC],"
         "LC.[ALUMINIO - LP],LC.[ALUMINIO - LC],"
         "LC.[COBRE - LP],LC.[COBRE - LC],"
         "LC.[SILICIO - LP],LC.[SILICIO - LC],"
+        "LC.[CROMO - LP],LC.[CROMO - LC],"
+        "LC.[NIQUEL - LP],LC.[NIQUEL - LC],"
+        "LC.[PLOMO - LP],LC.[PLOMO - LC],"
+        "LC.[ESTAÑO - LP],LC.[ESTAÑO - LC],"
+        "LC.[PQ - LP],LC.[PQ - LC],"
         "LC.[TBN - LP],LC.[TBN - LC]"
     )
 
     # Condición de observado: supera al menos UN límite LP.
-    # Fallbacks referenciales del dominio (no 9999) para que el resultado sea válido
-    # incluso si el JOIN con Eqpcare.lc no encuentra fila para ese componente/proyecto.
+    # Fallbacks referenciales del dominio para Fe/Al/Cu/Si (no 9999) → resultado válido aunque
+    # el JOIN con Eqpcare.lc no matchee. Cr/Ni/Pb/Sn/PQ usan 9999 → solo disparan si hay datos reales en lc.
     _umbral_lc = (
         "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],60) OR "
         "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
         "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
         "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
+        "LS.[Cr_ppm]>ISNULL(LC.[CROMO - LP],9999) OR "
+        "LS.[Ni_ppm]>ISNULL(LC.[NIQUEL - LP],9999) OR "
+        "LS.[Pb_ppm]>ISNULL(LC.[PLOMO - LP],9999) OR "
+        "LS.[Sn_ppm]>ISNULL(LC.[ESTAÑO - LP],9999) OR "
+        "LS.[Indice_PQ]>ISNULL(LC.[PQ - LP],9999) OR "
         "(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"
     )
     fecha_corte = _detectar_fecha_corte(q)
@@ -1175,37 +1365,33 @@ def _reforzar_triage_observados(q: str) -> str:
 
     # CTE de límites: se construye con o sin filtro de proyecto según lo detectado.
     # MIN para ppm (más restrictivo), MAX para TBN (más permisivo = menos falsos positivos).
+    _lc_mins = (
+        "MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+        "MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+        "MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+        "MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        "MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
+        "MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
+        "MIN([PLOMO - LP]) AS [PLOMO - LP],MIN([PLOMO - LC]) AS [PLOMO - LC],"
+        "MIN([ESTAÑO - LP]) AS [ESTAÑO - LP],MIN([ESTAÑO - LC]) AS [ESTAÑO - LC],"
+        "MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
+        "MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC]"
+    )
     _limites_cte_con_proyecto = (
         f"LimitesLC AS ("
-        f"SELECT [COMPONENTE],"
-        f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
-        f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
-        f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
-        f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
-        f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        f"SELECT [COMPONENTE],{_lc_mins} "
         f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
         f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_compartimiento}' "
         f"GROUP BY [COMPONENTE])"
     ) if proyecto else (
         f"LimitesLC AS ("
-        f"SELECT [COMPONENTE],"
-        f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
-        f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
-        f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
-        f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
-        f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        f"SELECT [COMPONENTE],{_lc_mins} "
         f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
         f"WHERE [COMPONENTE] LIKE '{like_compartimiento}' "
         f"GROUP BY [COMPONENTE])"
     ) if like_compartimiento else (
         # Sin compartimiento detectado: LimitesLC sin filtro (el LLM debe inferir el WHERE).
-        "LimitesLC AS ("
-        "SELECT [COMPONENTE],"
-        "MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
-        "MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
-        "MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
-        "MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
-        "MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+        f"LimitesLC AS (SELECT [COMPONENTE],{_lc_mins} "
         "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [COMPONENTE])"
     )
 
@@ -1383,6 +1569,29 @@ async def consulta_humana_a_sql(
     ):
         q_reforzada = _reforzar_tendencia_historica(q_reforzada)
         heuristicas_aplicadas.append("tendencia_historica")
+
+    # Código coloquial ("el 3196", "equipo 3196") → hint para usar LIKE '%3196' en ME.[Code].
+    m_col = _RE_EQUIPO_COLOQUIAL.search(q or "")
+    if m_col:
+        num = m_col.group(1)
+        if not (2000 <= int(num) <= 2030):
+            q_reforzada = (
+                q_reforzada.strip()
+                + f" | IMPORTANTE: '{num}' es un código de equipo incompleto — "
+                  f"usa ME.[Code] LIKE '%{num}' (sin importar el prefijo) para encontrarlo."
+            )
+            heuristicas_aplicadas.append("equipo_coloquial")
+
+    # Marca/tipo de aceite (Shell, Mobil…) → columna LD.[Grado] LIKE '%Shell%'.
+    grado_hint = _detectar_grado_aceite(q)
+    if grado_hint:
+        q_reforzada = (
+            q_reforzada.strip()
+            + f" | IMPORTANTE: la marca/tipo de aceite '{grado_hint}' se almacena en "
+              f"LD.[Grado] de [Oil].[LaboratoryData]. Filtra con LD.[Grado] LIKE '%{grado_hint}%'. "
+              f"Para comparar Shell vs Mobil en una misma consulta, usa GROUP BY LD.[Grado]."
+        )
+        heuristicas_aplicadas.append("grado_aceite")
 
     # Recordar al LLM que debe resolver referencias al contexto conversacional.
     if contexto:
