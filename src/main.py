@@ -1550,6 +1550,7 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         return _a_jsonable(rows_local)
 
     sql_query = await _generar_y_blindar(human)
+    log.info("[human_query] SQL → %s", sql_query[:400].replace("\n", " "))
 
     if not payload.execute:
         respuesta_dry: Dict[str, Any] = {
