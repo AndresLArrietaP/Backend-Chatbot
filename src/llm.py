@@ -422,10 +422,10 @@ def _detectar_proyecto(q: str) -> Optional[str]:
 # Regex para códigos de equipo individuales: letras cortas + dígitos (CA3198, WA600, PC4000…)
 _RE_EQUIPO_CODE = re.compile(r"\b([A-Z]{1,3}\d{3,5})\b")
 
-# Referencia coloquial: "el 3196", "equipo 3196", "camión 3196" — sin prefijo de letras.
-# Solo captura 4-5 dígitos precedidos por una palabra de referencia directa.
+# Referencia coloquial: "el 3196", "equipo 3196", "camión 3196", "del 3196" — sin prefijo de letras.
+# Captura 4-5 dígitos precedidos por una palabra de referencia directa o preposición.
 _RE_EQUIPO_COLOQUIAL = re.compile(
-    r"\b(?:el|del|la|equipo|camión|camion|unidad|maquina|máquina)\s+(\d{4,5})\b",
+    r"\b(?:el|del|la|equipo|camión|camion|unidad|maquina|máquina|código|codigo)\s+(\d{4,5})\b",
     re.IGNORECASE,
 )
 
@@ -435,6 +435,7 @@ def _detectar_equipo_code(q: str) -> Optional[str]:
     Extrae código de equipo de la consulta.
     - Código completo (CA3196, WA600) → retorna el código exacto para WHERE =
     - Referencia coloquial ("el 3196", "equipo 3196") → retorna '%3196' para WHERE LIKE
+      con fallback a 'CA{num}' si el número está en rango de flota Antapaccay (3100-3200).
     """
     m = _RE_EQUIPO_CODE.search(q or "")
     if m:
@@ -855,6 +856,15 @@ _RE_PISTA_ULTIMO_ANALISIS_FLOTA = re.compile(
 def _es_intencion_ultimo_analisis_flota(texto: str) -> bool:
     return bool(_RE_PISTA_ULTIMO_ANALISIS_FLOTA.search(texto or ""))
 
+
+# Regex para "últimos N análisis/registros" — usado en consulta_humana_a_sql() como hint al LLM
+# para que genere TOP(N) o rn<=N en vez de rn=1.
+_RE_ULTIMOS_N = re.compile(
+    r"\búltim[oa]s?\s+(\d+)\s+(?:an[aá]lisis|registro[s]?|muestra[s]?|resultado[s]?|reporte[s]?)\b",
+    re.IGNORECASE,
+)
+
+
 def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     """
     Genera SQL de registros individuales (sin AVG ni GROUP BY) directamente en Python.
@@ -893,12 +903,15 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
 
-    # Columnas base: fecha + código de equipo + compartimiento + métricas MT completas.
+    # Columnas base: fecha + código de equipo + compartimiento + métricas MT completas
+    # + campos operativos (Condicion, Horometro, CodigoMuestreo, Oxidacion, Agua).
     base_cols = (
         f"LD.[FechaMuestreo],ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Condicion],LD.[CodigoMuestreo],LD.[Horometro],"
         f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
         f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],"
-        f"LD.[B_ppm],LD.[P_ppm],LD.[V100],LD.[TBN],LD.[HorasDeAceite]"
+        f"LD.[B_ppm],LD.[P_ppm],LD.[V100],LD.[TBN],LD.[HorasDeAceite],"
+        f"LD.[Oxidacion],LD.[Agua]"
     )
     base_joins = (
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -955,6 +968,10 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
 
     like_comp = _detectar_like_compartimiento(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
+    # Guard: sin al menos compartimiento O proyecto, no podemos generar SQL determinístico.
+    # "None" (string) indica bug upstream; "MOTOR" sin % es catch-all demasiado amplio.
+    if like_comp in ("None", "MOTOR"):
+        like_comp = None
     if not like_comp and not proyecto:
         return None
 
@@ -972,9 +989,11 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
     sql = (
         f"WITH LatestSamples AS ("
         f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Condicion],LD.[CodigoMuestreo],LD.[Horometro],"
         f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
         f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],"
         f"LD.[B_ppm],LD.[P_ppm],LD.[V100],LD.[TBN],LD.[HorasDeAceite],LD.[FechaMuestreo],"
+        f"LD.[Oxidacion],LD.[Agua],"
         f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
         f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -984,9 +1003,11 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
         f"{_where_comp}{_where_proy}{_where_grado}"
         f") "
         f"SELECT TOP(200) [EquipmentCode],[Compartimiento],[Grado],"
+        f"[Condicion],[CodigoMuestreo],[Horometro],"
         f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
         f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],"
-        f"[B_ppm],[P_ppm],[V100],[TBN],[HorasDeAceite],[FechaMuestreo] "
+        f"[B_ppm],[P_ppm],[V100],[TBN],[HorasDeAceite],[FechaMuestreo],"
+        f"[Oxidacion],[Agua] "
         f"FROM LatestSamples "
         f"WHERE rn=1 "
         f"ORDER BY [EquipmentCode]"
@@ -1020,8 +1041,9 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     if _es_intencion_muestras_individuales(consulta_humana):
         return None
     # Sin compartimiento conocido no podemos generar SQL determinístico.
+    # "None" (string) indica bug upstream; "MOTOR" sin % es catch-all demasiado amplio.
     like_comp = _detectar_like_compartimiento(consulta_humana)
-    if not like_comp:
+    if not like_comp or like_comp in ("None", "MOTOR"):
         return None
 
     equipo_code = _detectar_equipo_code(consulta_humana)
@@ -1127,7 +1149,9 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     like_comp = _detectar_like_compartimiento(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
     # Sin ambos datos no podemos construir la doble CTE determinística.
-    if not like_comp or not proyecto:
+    # Guard adicional: like_comp="MOTOR" (catch-all sin %) es demasiado genérico para triage;
+    # like_comp="None" (string) indica un bug upstream que debe caer al LLM.
+    if not like_comp or like_comp in ("None", "MOTOR") or not proyecto:
         return None
     
     fecha_corte = _detectar_fecha_corte(consulta_humana)  # ej: "hasta abril" → '2026-04-30'
@@ -1142,6 +1166,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         # ── CTE 1: LatestSamples ────────────────────────────────────────────────
         f"WITH LatestSamples AS ("
         f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Condicion],LD.[CodigoMuestreo],LD.[Horometro],LD.[HorasDeAceite],"
         f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
         f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo],"
         f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
@@ -1176,6 +1201,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         # ── SELECT final ─────────────────────────────────────────────────────────
         f"SELECT TOP(200) "
         f"LS.[EquipmentCode],LS.[Compartimiento],LS.[Grado],"
+        f"LS.[Condicion],LS.[CodigoMuestreo],LS.[Horometro],LS.[HorasDeAceite],"
         f"LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],"
         f"LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],"
         f"LC.[FIERRO - LP],LC.[FIERRO - LC],"
@@ -1277,6 +1303,9 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
 
     like_comp = _detectar_like_compartimiento(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
+    # Guard: "None" (string) indica bug upstream; "MOTOR" sin % es catch-all demasiado amplio.
+    if like_comp in ("None", "MOTOR"):
+        like_comp = None
     if not like_comp and not proyecto:
         return None
 
@@ -1294,8 +1323,10 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
     sql = (
         f"WITH LatestSamples AS ("
         f"SELECT ME.[Code] AS [EquipmentCode],LD.[Compartimiento],LD.[Grado],"
+        f"LD.[Condicion],LD.[CodigoMuestreo],LD.[Horometro],"
         f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
         f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo],"
+        f"LD.[HorasDeAceite],"
         f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
         f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
@@ -1305,8 +1336,10 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
         f"{_where_comp}{_where_proy}{_where_grado}"
         f") "
         f"SELECT TOP({n_val}) [EquipmentCode],[Compartimiento],[Grado],"
+        f"[Condicion],[CodigoMuestreo],[Horometro],"
         f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
-        f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],[FechaMuestreo] "
+        f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],[FechaMuestreo],"
+        f"[HorasDeAceite] "
         f"FROM LatestSamples "
         f"WHERE rn=1 AND [{metal_col}] IS NOT NULL "
         f"ORDER BY [{metal_col}] {metal_order}"
@@ -1571,6 +1604,7 @@ async def consulta_humana_a_sql(
         heuristicas_aplicadas.append("tendencia_historica")
 
     # Código coloquial ("el 3196", "equipo 3196") → hint para usar LIKE '%3196' en ME.[Code].
+    # Incluye variantes: '%3196' y 'CA3196' para maximizar match en primer intento.
     m_col = _RE_EQUIPO_COLOQUIAL.search(q or "")
     if m_col:
         num = m_col.group(1)
@@ -1578,7 +1612,9 @@ async def consulta_humana_a_sql(
             q_reforzada = (
                 q_reforzada.strip()
                 + f" | IMPORTANTE: '{num}' es un código de equipo incompleto — "
-                  f"usa ME.[Code] LIKE '%{num}' (sin importar el prefijo) para encontrarlo."
+                  f"usa ME.[Code] LIKE '%{num}' para encontrarlo. "
+                  f"Variantes comunes: 'CA{num}', '{num}'. "
+                  f"Si LIKE '%{num}' no devuelve resultados, intenta ME.[Code]='CA{num}'."
             )
             heuristicas_aplicadas.append("equipo_coloquial")
 
@@ -1592,6 +1628,19 @@ async def consulta_humana_a_sql(
               f"Para comparar Shell vs Mobil en una misma consulta, usa GROUP BY LD.[Grado]."
         )
         heuristicas_aplicadas.append("grado_aceite")
+
+    # Hint "últimos N": evita que el LLM genere rn=1 cuando el usuario pide N registros.
+    m_ultimos_n = _RE_ULTIMOS_N.search(q or "")
+    if m_ultimos_n:
+        n_pedidos = m_ultimos_n.group(1)
+        q_reforzada = (
+            q_reforzada.strip()
+            + f" | IMPORTANTE: el usuario pide los últimos {n_pedidos} registros. "
+              f"Usa SELECT TOP({n_pedidos}) ... ORDER BY LD.[FechaMuestreo] DESC, "
+              f"o si usas ROW_NUMBER filtra WHERE rn <= {n_pedidos}. "
+              f"NUNCA uses rn = 1 cuando se piden {n_pedidos} registros."
+        )
+        heuristicas_aplicadas.append("ultimos_n")
 
     # Recordar al LLM que debe resolver referencias al contexto conversacional.
     if contexto:

@@ -1360,35 +1360,46 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
         Los paths 1-5 son determinísticos, no llaman al LLM y son más rápidos y confiables
         para los casos de uso principales del producto.
+
+        IMPORTANTE: las heurísticas directas (paths 1-5) reciben SOLO la consulta del
+        usuario (`human`), sin contexto conversacional concatenado. Esto evita que
+        filtros o compartimientos del turno anterior contaminen la detección de intención
+        (bug "sticky context" — A11). El LLM (path 6) sí recibe el contexto completo
+        para resolver referencias deícticas ("de esos", "el anterior").
         """
+        # Consulta limpia para heurísticas: usar `human` (query cruda del usuario),
+        # no `consulta_humana` que podría venir inflada por Copilot Studio con
+        # columnas/filtros del turno anterior o expansiones no deseadas.
+        consulta_para_heuristicas = human
+
         # Historial crudo: "sin promediar / muestra por muestra" + equipo/proyecto conocido
         # → SELECT plano sin ROW_NUMBER. Previene que el LLM reutilice el patrón triage CTE.
-        sql_crudo = llm.intentar_historial_crudo_directo(consulta_humana)
+        sql_crudo = llm.intentar_historial_crudo_directo(consulta_para_heuristicas)
         if sql_crudo:
             log.info("[human_query] historial_crudo_directo activado — SQL generado en Python sin LLM")
             return sql_crudo
 
         # Último análisis de flota: última muestra de cada equipo sin filtro LP/LC.
         # "dame el último análisis de los 27 equipos" → 1 fila por equipo+compartimiento.
-        sql_ultimo = llm.intentar_ultimo_analisis_flota_directo(consulta_humana)
+        sql_ultimo = llm.intentar_ultimo_analisis_flota_directo(consulta_para_heuristicas)
         if sql_ultimo:
             log.info("[human_query] ultimo_analisis_flota_directo activado — SQL generado en Python sin LLM")
             return sql_ultimo
 
         # Tendencia directo: compartimiento detectado → serie mensual AVG sin LP/LC
-        sql_tendencia = llm.intentar_tendencia_directo(consulta_humana)
+        sql_tendencia = llm.intentar_tendencia_directo(consulta_para_heuristicas)
         if sql_tendencia:
             log.info("[human_query] tendencia_directo activado — SQL generado en Python sin LLM")
             return sql_tendencia
 
         # Triage directo: compartimiento + proyecto detectados → observados con límites reales de BD
-        sql_triage = llm.intentar_triage_directo(consulta_humana)
+        sql_triage = llm.intentar_triage_directo(consulta_para_heuristicas)
         if sql_triage:
             log.info("[human_query] triage_directo activado — SQL generado en Python sin LLM")
             return sql_triage
 
         # Ranking directo: top-N por metal (Fe/Si/Cu/Al/TBN) con dedup ROW_NUMBER por equipo
-        sql_ranking = llm.intentar_ranking_directo(consulta_humana)
+        sql_ranking = llm.intentar_ranking_directo(consulta_para_heuristicas)
         if sql_ranking:
             log.info("[human_query] ranking_directo activado — SQL generado en Python sin LLM")
             return sql_ranking
