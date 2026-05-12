@@ -1,6 +1,6 @@
-# Backend de Análisis de Aceite — KMMP
+# Backend Analítico SQL — KomfIA (KMMP)
 
-API REST que recibe preguntas en lenguaje natural (español), las convierte a SQL mediante un modelo de lenguaje (LLM), ejecuta las consultas contra Azure SQL Server y devuelve los resultados enriquecidos con análisis estadístico. Integrado con **Microsoft Copilot Studio** como herramienta de consulta conversacional.
+API REST que recibe preguntas en lenguaje natural (español), las convierte a SQL mediante un modelo de lenguaje (LLM), ejecuta las consultas contra Azure SQL Server y devuelve los resultados enriquecidos con análisis estadístico. Integrado con **Microsoft Copilot Studio** como herramienta de consulta conversacional para análisis de aceite de equipos mineros.
 
 ---
 
@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 ## Configuración
 
-Crear un archivo `.env` en la raíz del proyecto con las siguientes variables:
+Crear un archivo `.env` en la raíz del proyecto:
 
 ```env
 # ── Base de datos ──────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ GOOGLE_API_KEY=AIza...                       # clave de Google AI Studio
 OPENAI_API_KEY=sk-...                        # solo si LLM_PROVIDER=openai
 
 GEMINI_MODEL=gemini-2.5-flash
-GEMINI_MODEL_CANDIDATES=gemini-2.5-flash,gemini-2-flash,gemini-2-flash-lite
+GEMINI_MODEL_CANDIDATES=gemini-2.5-flash,gemini-2.5-flash-lite
 
 # ── Timeouts (valores recomendados para pruebas locales) ───────────────────────
 DB_QUERY_TIMEOUT=60
@@ -79,7 +79,7 @@ APP_PROFILE=development
 PORT=5000
 ```
 
-> **Nota:** El archivo `.env` nunca se sube al repositorio. Cada desarrollador mantiene su propia copia local.
+> El archivo `.env` nunca se sube al repositorio. Cada desarrollador mantiene su propia copia local.
 
 ---
 
@@ -95,57 +95,6 @@ uvicorn index:app --host 127.0.0.1 --port 5000 --reload
 
 El servidor queda disponible en `http://127.0.0.1:5000`.  
 La documentación interactiva (Swagger UI) en `http://127.0.0.1:5000/docs`.
-
----
-
-## Verificar que todo funciona
-
-```bash
-# 1. Healthcheck
-curl http://127.0.0.1:5000/health
-
-# 2. Verificar que el LLM responde
-curl http://127.0.0.1:5000/llm/ping
-
-# 3. Prueba completa de consulta
-curl -X POST http://127.0.0.1:5000/human_query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pregunta": "Dame los 5 equipos con más hierro en Antapaccay",
-    "session_id": "test-local",
-    "max_rows": 10,
-    "incluir_respuesta_texto": false
-  }'
-```
-
----
-
-## Estructura del proyecto
-
-```
-Backend-Chatbot/
-├── index.py                        Punto de entrada; arranca uvicorn
-├── config.py                       Lectura centralizada de variables de entorno
-├── requirements.txt                Dependencias con versiones pinneadas
-├── .env                            Variables de entorno (NO versionar)
-│
-├── src/
-│   ├── __init__.py                 Fábrica FastAPI; CORS; warmup de conexión al arranque
-│   ├── main.py                     Endpoints, lógica de retry, selección de esquema
-│   ├── llm.py                      Heurísticas de dominio; generación directa de SQL
-│   ├── database.py                 Introspección de esquema; validación SQL; ejecución
-│   ├── analitica.py                Estadísticas, detección de tendencias, gráficos
-│   ├── contexto_chat.py            Memoria conversacional por sesión (TTL + disco)
-│   └── providers/
-│       ├── factory.py              Selecciona proveedor LLM según LLM_PROVIDER
-│       ├── gemini_client.py        Cliente Gemini: hedge paralelo + fallback secuencial
-│       └── openai_client.py        Cliente OpenAI (fallback)
-│
-└── test/
-    ├── test_conexionazure.py       Valida la conexión a Azure SQL
-    ├── test_gemini.py              Prueba el proveedor Gemini
-    └── test_openai.py              Prueba el proveedor OpenAI
-```
 
 ---
 
@@ -166,11 +115,13 @@ Backend-Chatbot/
 
 ```json
 {
-  "pregunta":                "string — consulta en lenguaje natural (requerido)",
+  "human_query":             "string — consulta en lenguaje natural (requerido)",
   "session_id":              "string — ID de sesión para memoria conversacional",
-  "max_rows":                100,
+  "execute":                 true,
   "incluir_respuesta_texto": false,
-  "db_key":                  null
+  "reset_contexto":          false,
+  "limit":                   200,
+  "modo_debug":              false
 }
 ```
 
@@ -181,24 +132,63 @@ Backend-Chatbot/
 ```
 POST /human_query
   │
-  ├─ Recuperar contexto de sesión
+  ├─ Recuperar contexto de sesión (TTL 45 min, máx. 8 turnos)
   ├─ ¿Se puede responder desde memoria sin nuevo SQL?
   │     → refinar (filtrar/ordenar resultado previo)
-  │     → interpretar (síntesis con LLM, sin query nueva)
   │
-  ├─ Seleccionar esquema relevante (top 18 tablas por scoring)
+  ├─ Seleccionar esquema relevante (top tablas por scoring)
   │
-  ├─ Generar SQL
-  │     → historial crudo directo  (sin LLM)
-  │     → tendencia mensual directa (sin LLM)
-  │     → triage observados directo (sin LLM, con límites LP/LC reales)
-  │     → ranking top-N por metal   (sin LLM, ROW_NUMBER dedup por equipo)
-  │     → LLM (Gemini con hedge paralelo + fallback secuencial)
+  ├─ Generar SQL — paths en orden de prioridad:
+  │   1. historial_crudo_directo   — registros individuales por equipo/compartimiento
+  │   2. ultimo_analisis_flota     — última muestra por equipo (CTE ROW_NUMBER rn=1)
+  │   3. tendencia_directo         — AVG mensual 24 meses, sin LLM
+  │   4. triage_directo            — última muestra vs LP/LC reales ([Eqpcare].[lc])
+  │   5. ranking_directo           — top N equipos por metal (ROW_NUMBER dedup)
+  │   6. LLM                       — Gemini hedge paralelo + fallback secuencial
   │
-  ├─ Validar y ejecutar SQL [timeout 80s]
-  ├─ Reintentos automáticos si el resultado es incorrecto (máx. 1 en producción)
+  ├─ Validar y ejecutar SQL [timeout configurable, abandon_on_cancel]
+  ├─ Reintento automático si resultado incorrecto (máx. 1 en producción)
   ├─ Análisis estadístico determinístico
   └─ Respuesta JSON enriquecida
+```
+
+### Lógica de triage (caso de uso principal)
+
+Cuando el usuario pregunta por el **estado actual** de un conjunto de componentes ("¿cuáles están observados?", "estado de los motores de tracción", "fuera de límite"):
+
+- El sistema evalúa **únicamente la muestra más reciente** de cada equipo (`rn=1`), sin límite superior de fecha.
+- Un equipo que estuvo observado el mes pasado pero tiene un análisis reciente normal → aparece como **normal**.
+- Los límites LP/LC se obtienen de `[Eqpcare].[lc]` según proyecto y compartimiento.
+- **0 filas no es error** — significa que ningún equipo supera sus límites en el último análisis.
+
+---
+
+## Estructura del proyecto
+
+```
+Backend-Chatbot/
+├── index.py                        Punto de entrada; arranca uvicorn
+├── config.py                       Lectura centralizada de variables de entorno
+├── requirements.txt                Dependencias con versiones pinneadas
+├── openapi_copilot_studio.json     Spec OpenAPI 3.0.3 para importar en Copilot Studio
+├── .env                            Variables de entorno (NO versionar)
+│
+├── src/
+│   ├── __init__.py                 Fábrica FastAPI; CORS; warmup de conexión al arranque
+│   ├── main.py                     Endpoints, lógica de retry, selección de esquema
+│   ├── llm.py                      Heurísticas de dominio; 5 paths directos de SQL; hints LLM
+│   ├── database.py                 Introspección de esquema; validación SQL; ejecución
+│   ├── analitica.py                Estadísticas, detección de tendencias, gráficos
+│   ├── contexto_chat.py            Memoria conversacional por sesión (TTL + disco)
+│   └── providers/
+│       ├── factory.py              Selecciona proveedor LLM según LLM_PROVIDER
+│       ├── gemini_client.py        Cliente Gemini: hedge paralelo + fallback secuencial
+│       └── openai_client.py        Cliente OpenAI (fallback)
+│
+└── test/
+    ├── test_conexionazure.py       Valida la conexión a Azure SQL
+    ├── test_gemini.py              Prueba el proveedor Gemini
+    └── test_openai.py              Prueba el proveedor OpenAI
 ```
 
 ---
@@ -206,21 +196,16 @@ POST /human_query
 ## Scripts de prueba
 
 ```bash
-# Validar conexión a Azure SQL Server
-python test/test_conexionazure.py
-
-# Probar el proveedor Gemini
-python test/test_gemini.py
-
-# Probar el proveedor OpenAI
-python test/test_openai.py
+python test/test_conexionazure.py   # Valida conexión a Azure SQL Server
+python test/test_gemini.py          # Prueba el proveedor Gemini
+python test/test_openai.py          # Prueba el proveedor OpenAI
 ```
 
 ---
 
 ## Seguridad SQL
 
-El sistema aplica múltiples capas de validación antes de ejecutar cualquier SQL generado por el LLM:
+El sistema aplica múltiples capas de validación antes de ejecutar cualquier SQL:
 
 - Solo se permiten sentencias `SELECT` y CTEs (`WITH ... AS`).
 - Se rechazan `INSERT`, `UPDATE`, `DELETE`, `DROP`, `EXEC` y extensiones del sistema (`xp_`).
@@ -231,9 +216,7 @@ El sistema aplica múltiples capas de validación antes de ejecutar cualquier SQ
 
 ## Despliegue en Render
 
-El proyecto corre en Render Pro (single worker). El despliegue es automático al hacer push a la rama `master`.
-
-**Variables de entorno en producción:** se configuran en el panel de Render, no en el repositorio.
+El proyecto corre en Render Pro (single worker). El despliegue es automático al hacer push a `master`.
 
 **Logs de arranque saludable:**
 ```
@@ -241,7 +224,7 @@ El proyecto corre en Render Pro (single worker). El despliegue es automático al
 [startup] Caché de esquema pre-cargado.
 ```
 
-**Valores críticos en Render (distintos al local):**
+**Variables críticas en producción (distintas al local):**
 
 | Variable | Local | Render | Motivo |
 |----------|-------|--------|--------|
@@ -253,23 +236,11 @@ El proyecto corre en Render Pro (single worker). El despliegue es automático al
 
 ## Integración con Copilot Studio
 
-- Copilot llama a `POST /human_query` como herramienta HTTP personalizada.
-- La spec OpenAPI debe ser versión `3.0.3` (Copilot Studio no soporta 3.1.0).
-- Configurar `incluir_respuesta_texto: false` en la herramienta de Copilot para evitar una segunda llamada al LLM (~30s extra).
+- La spec `openapi_copilot_studio.json` (versión `3.0.3`) se importa directamente en Copilot Studio.
+- Configurar `incluir_respuesta_texto: false` para evitar una segunda llamada al LLM (~30s extra).
 - El `session_id` debe mapearse a la variable global de sesión de Copilot para mantener contexto entre turnos.
-
----
-
-## Documentación técnica
-
-El archivo `DocumentacionTecnica_BackendChatbot.docx` en la raíz del proyecto contiene la documentación técnica completa para entrega al equipo de TI. Puede regenerarse ejecutando:
-
-```bash
-pip install python-docx
-python generar_documentacion.py
-```
-
-> Ambos archivos están excluidos del repositorio vía `.gitignore`.
+- Credenciales del conector: seleccionar "Credenciales del conector" (no "del usuario final").
+- Hard timeout de Microsoft Copilot Studio: 240s (no configurable).
 
 ---
 
@@ -284,7 +255,7 @@ python generar_documentacion.py
 | `google-genai` | Cliente Gemini |
 | `openai` | Cliente OpenAI (fallback) |
 | `python-decouple` | Variables de entorno |
-| `anyio` | Cancelación verdadera de threads de BD |
+| `anyio` | Cancelación verdadera de threads de BD (`abandon_on_cancel=True`) |
 | `pydantic` | Validación de modelos |
 
-> - Andrés A. 
+> - Andrés A.
