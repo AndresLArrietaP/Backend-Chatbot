@@ -1433,11 +1433,13 @@ def _reforzar_triage_observados(q: str) -> str:
         instruccion_cte = (
             f"2 CTEs: LatestSamples y LimitesLC. "
             f"LatestSamples: JOINs a ME y MP WITH (NOLOCK). "
-            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
+            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], "
+            f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+            f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){filtro_fecha_corte}. "
             f"{_limites_cte_con_proyecto}. "
-            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
             f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
@@ -1445,11 +1447,13 @@ def _reforzar_triage_observados(q: str) -> str:
         instruccion_cte = (
             f"2 CTEs: LatestSamples y LimitesLC. "
             f"LatestSamples: JOIN a ME WITH (NOLOCK). "
-            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], LD.[Fe_ppm], LD.[Cu_ppm], LD.[Si_ppm], LD.[Al_ppm], LD.[TBN], LD.[FechaMuestreo], "
+            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], "
+            f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+            f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){filtro_fecha_corte}. "
             f"{_limites_cte_con_proyecto}. "
-            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
             f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
