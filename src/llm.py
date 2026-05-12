@@ -1155,9 +1155,11 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     if not like_comp or like_comp in ("None", "MOTOR") or not proyecto:
         return None
     
-    fecha_corte = _detectar_fecha_corte(consulta_humana)  # ej: "hasta abril" → '2026-04-30'
-    if not fecha_corte and not _usuario_pide_mes_actual(consulta_humana):
-        fecha_corte = _fecha_corte_defecto()  # corta en fin del mes anterior → evita muestras incompletas del mes en curso
+    # Triage evalúa el estado ACTUAL: usa la muestra más reciente sin límite superior de fecha.
+    # Solo aplica corte explícito si el usuario lo pide ("hasta abril").
+    # _fecha_corte_defecto() NO se aplica aquí — excluiría muestras del mes en curso
+    # y devolvería equipos como "observados" aunque ya tengan análisis nuevos normales.
+    fecha_corte = _detectar_fecha_corte(consulta_humana)
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
     grado = _detectar_grado_aceite(consulta_humana)
@@ -1392,9 +1394,8 @@ def _reforzar_triage_observados(q: str) -> str:
         "LS.[Indice_PQ]>ISNULL(LC.[PQ - LP],9999) OR "
         "(LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP])"
     )
+    # Mismo criterio que intentar_triage_directo: estado actual = última muestra sin corte.
     fecha_corte = _detectar_fecha_corte(q)
-    if not fecha_corte and not _usuario_pide_mes_actual(q):
-        fecha_corte = _fecha_corte_defecto()
     filtro_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
     # CTE de límites: se construye con o sin filtro de proyecto según lo detectado.
