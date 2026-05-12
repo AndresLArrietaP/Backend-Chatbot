@@ -195,7 +195,7 @@ _RE_PISTA_TENDENCIA_HISTORICA = re.compile(
     r"\b(tendencia[s]?|evoluci[oó]n|evolucionar?|fluctuaci[oó]n(?:es)?|fluctu[aá]|"
     r"variaci[oó]n|c[oó]mo\s+ha\s+variado|ha\s+variado|c[oó]mo\s+evolucion[oó]|"
     r"a\s+lo\s+largo\s+del\s+tiempo|con\s+el\s+tiempo|en\s+el\s+tiempo|"
-    r"hist[oó]rico[s]?|hist[oó]rica[s]?|historial|progresi[oó]n|"
+    r"hist[oó]rico[s]?|hist[oó]rica[s]?|progresi[oó]n|"
     r"mes\s+a\s+mes|mensual(?:mente)?|por\s+mes|por\s+periodo|"
     r"[uú]ltimos?\s+\d+\s+mes(?:es)?|[uú]ltimos?\s+\d+\s+a[nñ]os?)\b",
     re.IGNORECASE,
@@ -210,7 +210,8 @@ _RE_MUESTRAS_INDIVIDUALES = re.compile(
     r"cada\s+muestra|muestra[s]?\s+individual(?:es)?|muestra[s]?\s+real(?:es)?|"
     r"registro[s]?\s+individual(?:es)?|registro[s]?\s+crudo[s]?|"
     r"sin\s+agrupar|dato[s]?\s+crudo[s]?|fecha[s]?\s+exacta[s]?|"
-    r"todas\s+las\s+fechas|todas\s+las\s+muestras)\b",
+    r"todas\s+las\s+fechas|todas\s+las\s+muestras|"
+    r"historial|dame\s+el\s+historial|ver\s+el\s+historial)\b",
     re.IGNORECASE,
 )
 
@@ -1639,9 +1640,10 @@ async def consulta_humana_a_sql(
         n_pedidos = m_ultimos_n.group(1)
         q_reforzada = (
             q_reforzada.strip()
-            + f" | IMPORTANTE: el usuario pide los últimos {n_pedidos} registros. "
-              f"Usa SELECT TOP({n_pedidos}) ... ORDER BY LD.[FechaMuestreo] DESC, "
-              f"o si usas ROW_NUMBER filtra WHERE rn <= {n_pedidos}. "
+            + f" | IMPORTANTE: el usuario pide los últimos {n_pedidos} registros por equipo. "
+              f"Usa ROW_NUMBER() OVER (PARTITION BY MiningEquipmentId ORDER BY FechaMuestreo DESC) AS rn "
+              f"y filtra WHERE rn <= {n_pedidos} en el SELECT externo. "
+              f"NUNCA pongas TOP({n_pedidos}) dentro del CTE — causa error de sintaxis en SQL Server. "
               f"NUNCA uses rn = 1 cuando se piden {n_pedidos} registros."
         )
         heuristicas_aplicadas.append("ultimos_n")
