@@ -294,7 +294,7 @@ def _reforzar_tendencia_historica(q: str) -> str:
 
 _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
     # Estado explícito de observación / anomalía operativa
-    r"\b(observado[s]?|con\s+observaci[oó]n|en\s+observaci[oó]n|"
+    r"\b(observad[ao]s?|condici[oó]n\s+observad[ao]|con\s+observaci[oó]n|en\s+observaci[oó]n|"
     r"fuera\s+de\s+l[ií]mite[s]?|fuera\s+de\s+rango|fuera\s+de\s+norma|"
     r"con\s+anomal[ií]a[s]?|con\s+alerta[s]?|con\s+problema[s]?|"
     r"necesitan?\s+atenci[oó]n|requieren?\s+atenci[oó]n|"
@@ -339,7 +339,7 @@ _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
     # (patrón de detección en la consulta, filtro LIKE para el WHERE en SQL)
     # Orden crítico: primero los patrones específicos, el catch-all de "motor" al final.
     (re.compile(r"\btracci[oó]n\b", re.IGNORECASE), "%TRACCION%"),
-    (re.compile(r"\bhidr[aá]ulic[ao]\b", re.IGNORECASE), "%HIDRAUL%"),
+    (re.compile(r"\bhidr[aá]ulic[ao]s?\b", re.IGNORECASE), "%HIDRAUL%"),
     (re.compile(r"\brueda[s]?\b", re.IGNORECASE), "%RUEDA%"),
     (re.compile(r"\bmando\s+final\b", re.IGNORECASE), "%MANDO%"),
     (re.compile(r"\bdiferencial\b", re.IGNORECASE), "%DIFERENCIAL%"),
@@ -1412,23 +1412,37 @@ def _reforzar_triage_observados(q: str) -> str:
         "MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
         "MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC]"
     )
-    _limites_cte_con_proyecto = (
-        f"LimitesLC AS ("
-        f"SELECT [COMPONENTE],{_lc_mins} "
-        f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
-        f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_compartimiento}' "
-        f"GROUP BY [COMPONENTE])"
-    ) if proyecto else (
-        f"LimitesLC AS ("
-        f"SELECT [COMPONENTE],{_lc_mins} "
-        f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
-        f"WHERE [COMPONENTE] LIKE '{like_compartimiento}' "
-        f"GROUP BY [COMPONENTE])"
-    ) if like_compartimiento else (
-        # Sin compartimiento detectado: LimitesLC sin filtro (el LLM debe inferir el WHERE).
-        f"LimitesLC AS (SELECT [COMPONENTE],{_lc_mins} "
-        "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [COMPONENTE])"
-    )
+    if proyecto and like_compartimiento:
+        _limites_cte_con_proyecto = (
+            f"LimitesLC AS ("
+            f"SELECT [COMPONENTE],{_lc_mins} "
+            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+            f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_compartimiento}' "
+            f"GROUP BY [COMPONENTE])"
+        )
+    elif proyecto:
+        # Sin compartimiento detectado: filtrar solo por proyecto para no escribir LIKE 'None'.
+        _limites_cte_con_proyecto = (
+            f"LimitesLC AS ("
+            f"SELECT [COMPONENTE],{_lc_mins} "
+            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+            f"WHERE [Proyecto] LIKE '%{proyecto}%' "
+            f"GROUP BY [COMPONENTE])"
+        )
+    elif like_compartimiento:
+        _limites_cte_con_proyecto = (
+            f"LimitesLC AS ("
+            f"SELECT [COMPONENTE],{_lc_mins} "
+            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+            f"WHERE [COMPONENTE] LIKE '{like_compartimiento}' "
+            f"GROUP BY [COMPONENTE])"
+        )
+    else:
+        # Sin ningún dato conocido: sin filtro (el LLM infiere el WHERE).
+        _limites_cte_con_proyecto = (
+            f"LimitesLC AS (SELECT [COMPONENTE],{_lc_mins} "
+            "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [COMPONENTE])"
+        )
 
     # Construir la instrucción de CTE según qué información se detectó.
     if like_compartimiento and proyecto:
@@ -1482,6 +1496,7 @@ def _reforzar_triage_observados(q: str) -> str:
           "Compartimiento — valores reales: 'MOTOR DE TRACCION RH/LH', 'SISTEMA HIDRAULICO', 'MOTOR', 'RUEDA DELANTERA RH/LH'. "
           "NUNCA '%MOTOR TRACCION%'. Motor sin tracción → LIKE '%MOTOR%' AND NOT LIKE '%TRACCION%'. "
           "Columnas [Eqpcare].[lc] con espacios usan corchetes: [FIERRO - LP], [TBN - LP]. "
+          "NUNCA filtrar LD.[Condicion]='OBSERVADA' — [Condicion] es numérico (1/2/3), no texto. Estado observado = superar LP en metales. "
           "DEVUELVE SOLO observados. 0 filas=válido. ORDER BY LS.[Fe_ppm] DESC."
     )
 
