@@ -1105,26 +1105,11 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
 
-    # Métricas agregadas por mes: AVG suaviza outliers puntuales. Cubre set completo MT.
-    base_metricas = (
-        f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],"
-        f"AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
-        f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],"
-        f"AVG(LD.[Pb_ppm]) AS [Pb_ppm],"
-        f"AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
-        f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
-        f"AVG(LD.[Si_ppm]) AS [Si_ppm],"
-        f"AVG(LD.[Al_ppm]) AS [Al_ppm],"
-        f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],"
-        f"AVG(LD.[TBN]) AS [TBN],"
-        f"COUNT(*) AS [Muestras]"
-    )
     base_joins = (
         f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
         f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
     )
-    filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE())"
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
 
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
@@ -1167,30 +1152,60 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"ORDER BY [FechaMuestreo] ASC"
         )
     elif proyecto:
-        # Proyecto específico: promedio mensual del universo completo del proyecto.
+        # Proyecto específico: últimas N muestras individuales por equipo (no AVG mensual).
+        # ROW_NUMBER particionado por equipo+compartimiento para obtener las últimas 6 (default)
+        # muestras de CADA equipo del proyecto, sin promediar.
+        n_muestras = _detectar_n_muestras_tendencia(consulta_humana)
+        _where_tipo = ""
+        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
+            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
+            _where_tipo = f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
         sql = (
-            f"SELECT TOP(300) "
-            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-            f"LD.[Compartimiento],"
-            f"{base_metricas} "
+            f"WITH Samples AS ("
+            f"SELECT ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[FechaMuestreo],"
+            f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+            f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
+            f"LD.[HorasDeAceite],LD.[Horometro],"
+            f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+            f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
             f"{base_joins}{_join_980e} "
-            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_980e}{_where_grado} "
-            f"GROUP BY EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
-            f"ORDER BY [Mes] ASC"
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
+            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado}{_where_980e}"
+            f") "
+            f"SELECT [Equipo],[Compartimiento],[FechaMuestreo],"
+            f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
+            f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],"
+            f"[HorasDeAceite],[Horometro] "
+            f"FROM Samples WHERE rn<={n_muestras} "
+            f"ORDER BY [Equipo],[FechaMuestreo] ASC"
         )
     else:
-        # Sin filtro de proyecto: incluir MP.[Name] en SELECT y GROUP BY para que
-        # Copilot Studio / el usuario pueda distinguir qué proyecto es cada serie.
+        # Sin filtro de proyecto: últimas N muestras individuales por equipo,
+        # incluyendo Proyecto para distinguir series.
+        n_muestras = _detectar_n_muestras_tendencia(consulta_humana)
+        _where_tipo = ""
+        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
+            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
+            _where_tipo = f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
         sql = (
-            f"SELECT TOP(300) "
-            f"MP.[Name] AS [Proyecto],"
-            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-            f"LD.[Compartimiento],"
-            f"{base_metricas} "
+            f"WITH Samples AS ("
+            f"SELECT MP.[Name] AS [Proyecto],ME.[Code] AS [Equipo],"
+            f"LD.[Compartimiento],LD.[FechaMuestreo],"
+            f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+            f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
+            f"LD.[HorasDeAceite],LD.[Horometro],"
+            f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+            f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
             f"{base_joins} "
-            f"WHERE {filtro_comp} AND {filtro_fecha}{_where_grado} "
-            f"GROUP BY MP.[Name],EOMONTH(LD.[FechaMuestreo]),LD.[Compartimiento] "
-            f"ORDER BY MP.[Name],[Mes] ASC"
+            f"WHERE {filtro_comp} "
+            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado}"
+            f") "
+            f"SELECT [Proyecto],[Equipo],[Compartimiento],[FechaMuestreo],"
+            f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
+            f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],"
+            f"[HorasDeAceite],[Horometro] "
+            f"FROM Samples WHERE rn<={n_muestras} "
+            f"ORDER BY [Proyecto],[Equipo],[FechaMuestreo] ASC"
         )
     return sql
 
