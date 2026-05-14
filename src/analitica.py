@@ -142,7 +142,7 @@ def _percentil(valores: List[float], q: float) -> float:
 
 
 def _resumen_numerico(valores: List[float]) -> Dict[str, Any]:
-    """Calcula min/max/media/mediana/p90/Q1/Q3/outliers IQR para una columna numérica."""
+    """Calcula min/max/media/mediana/stdev/p90/Q1/Q3/outliers IQR y ±2σ para columna numérica."""
     vs = sorted(valores)
     n = len(vs)
     q1 = _percentil(vs, 0.25)
@@ -150,18 +150,25 @@ def _resumen_numerico(valores: List[float]) -> Dict[str, Any]:
     iqr = max(1e-12, q3 - q1)
     lim_sup = q3 + 1.5 * iqr
     lim_inf = q1 - 1.5 * iqr
+    mean = sum(vs) / n
+    variance = sum((x - mean) ** 2 for x in vs) / n
+    stdev = math.sqrt(variance)
     return {
         "n": n,
         "min": vs[0],
         "max": vs[-1],
-        "mean": sum(vs) / n,
+        "mean": mean,
+        "stdev": stdev,
         "median": _percentil(vs, 0.50),
         "p90": _percentil(vs, 0.90),
         "q1": q1,
         "q3": q3,
+        "banda_2sigma_sup": mean + 2 * stdev,
+        "banda_2sigma_inf": max(0.0, mean - 2 * stdev),
         "ceros": sum(1 for x in vs if abs(x) < 1e-12),
         "outliers_altos": sum(1 for x in vs if x > lim_sup),
         "outliers_bajos": sum(1 for x in vs if x < lim_inf),
+        "fuera_2sigma": sum(1 for x in vs if abs(x - mean) > 2 * stdev),
     }
 
 
@@ -368,34 +375,55 @@ def generar_analisis_resultado(
                 valores = [x[1] for x in pares_validos]
                 tendencias[col] = _calcular_tendencia_simple(fechas, valores)
 
-    frases: List[str] = [f"Se analizaron {len(filas)} filas y {len(columnas)} columnas útiles en el resultado."]
+    # Orden de prioridad para columnas de aceite (dominio tribología)
+    _OIL_COLS_ORDEN = ["Fe_ppm", "Cu_ppm", "Si_ppm", "Al_ppm", "Cr_ppm", "Ni_ppm",
+                       "Pb_ppm", "Sn_ppm", "Indice_PQ", "TBN", "V100", "HorasDeAceite"]
+    cols_aceite = [c for c in _OIL_COLS_ORDEN if c in metricas]
+    cols_otras = [c for c in metricas if c not in _OIL_COLS_ORDEN]
+    cols_prioridad = (cols_aceite + cols_otras)[:3]
 
-    if metricas:
+    frases: List[str] = [f"Resultado: {len(filas)} registros."]
+
+    if cols_prioridad:
+        partes = []
+        for col in cols_prioridad:
+            m = metricas[col]
+            label = col.replace("_ppm", "")
+            stdev = m.get("stdev", 0.0)
+            if col == "TBN":
+                partes.append(f"TBN prom={_formatear_numero(m['mean'])} (min={_formatear_numero(m['min'])})")
+            else:
+                partes.append(f"{label} prom={_formatear_numero(m['mean'])} ppm±{_formatear_numero(stdev)}")
+        frases.append(" | ".join(partes) + ".")
+        fuera = [
+            (c.replace("_ppm", ""), metricas[c]["fuera_2sigma"])
+            for c in cols_prioridad if metricas[c].get("fuera_2sigma", 0) > 0
+        ]
+        if fuera:
+            frases.append(f"Fuera de banda ±2σ: {', '.join(f'{n}({k})' for n, k in fuera)}.")
+    elif metricas:
         for nombre, m in list(metricas.items())[:2]:
             frases.append(
-                f"En {nombre}, el mínimo es {_formatear_numero(m['min'])}, el máximo {_formatear_numero(m['max'])}, "
-                f"la mediana {_formatear_numero(m['median'])} y el p90 {_formatear_numero(m['p90'])}."
+                f"En {nombre}: min={_formatear_numero(m['min'])}, max={_formatear_numero(m['max'])}, "
+                f"prom={_formatear_numero(m['mean'])}, p90={_formatear_numero(m['p90'])}."
             )
-            if m.get("outliers_altos") or m.get("outliers_bajos"):
-                frases.append(
-                    f"{nombre} presenta outliers por IQR (altos={m.get('outliers_altos', 0)}, bajos={m.get('outliers_bajos', 0)})."
-                )
 
     if categorias:
         nombre, data = next(iter(categorias.items()))
         if data.get("top"):
             top0 = data["top"][0]
             frases.append(
-                f"La mayor concentración categórica aparece en {nombre}: {top0['valor']} representa {top0['share'] * 100:.1f}% de la muestra categórica observada."
+                f"{nombre}: {top0['valor']} ({top0['share'] * 100:.1f}% del total)."
             )
 
     if tendencias:
         nombre, data = next(iter(tendencias.items()))
-        frases.append(f"Para {nombre}, la tendencia detectada es {data.get('direccion', 'indefinida')}: {data.get('descripcion', '')}")
+        label = nombre.replace("_ppm", "")
+        frases.append(f"Tendencia {label}: {data.get('direccion', 'indefinida')} ({data.get('puntos', 0)} puntos).")
     elif columna_tiempo and metricas:
-        frases.append("Hay columna temporal disponible, pero la serie no tuvo suficientes puntos válidos para estimar tendencia robusta.")
+        frases.append("Serie temporal disponible con puntos insuficientes para tendencia robusta.")
     else:
-        frases.append("No se detectó una serie temporal suficientemente consistente para evaluar tendencia en este resultado.")
+        frases.append("Sin serie temporal suficiente para evaluar tendencia.")
 
     graficos: List[Dict[str, Any]] = []
     if columna_tiempo and columnas_numericas:
@@ -557,9 +585,9 @@ def generar_chart_url(
 
 
 def renderizar_resumen_analitico(analisis: Dict[str, Any]) -> str:
-    """Convierte el análisis estructurado en un texto breve y legible."""
+    """Genera resumen analítico para especialistas en tribología y análisis de aceite."""
     if not analisis or not analisis.get("row_count"):
-        return "La consulta no devolvió filas, por lo que no fue posible construir un análisis analítico confiable."
+        return ""
 
     lineas: List[str] = []
     resumen = (analisis.get("resumen_ejecutivo") or "").strip()
@@ -567,18 +595,37 @@ def renderizar_resumen_analitico(analisis: Dict[str, Any]) -> str:
         lineas.append(resumen)
 
     metricas = analisis.get("metricas") or {}
-    for nombre, m in list(metricas.items())[:2]:
-        lineas.append(
-            f"- {nombre}: min={_formatear_numero(m['min'])}, mediana={_formatear_numero(m['median'])}, "
-            f"p90={_formatear_numero(m['p90'])}, max={_formatear_numero(m['max'])}."
-        )
+    _OIL_PRIO = ["Fe_ppm", "Cu_ppm", "Si_ppm", "Al_ppm", "Cr_ppm", "Ni_ppm",
+                 "Pb_ppm", "Sn_ppm", "Indice_PQ", "TBN"]
+    cols = [c for c in _OIL_PRIO if c in metricas]
+    cols += [c for c in metricas if c not in _OIL_PRIO]
+    for col in cols[:3]:
+        m = metricas[col]
+        label = col.replace("_ppm", "")
+        stdev = m.get("stdev", 0.0)
+        fuera = m.get("fuera_2sigma", 0)
+        linea = (f"- {label}: prom={_formatear_numero(m['mean'])}, "
+                 f"σ={_formatear_numero(stdev)}, max={_formatear_numero(m['max'])}")
+        if fuera:
+            linea += f", {fuera} muestra(s) fuera ±2σ"
+        lineas.append(linea + ".")
 
     tendencias = analisis.get("tendencias") or {}
     for nombre, t in list(tendencias.items())[:1]:
+        label = nombre.replace("_ppm", "")
         lineas.append(
-            f"- Tendencia de {nombre}: {t.get('direccion', 'indefinida')} "
+            f"- Tendencia {label}: {t.get('direccion', '?')} "
             f"(inicio={_formatear_numero(t.get('valor_inicial', 0.0))}, "
-            f"fin={_formatear_numero(t.get('valor_final', 0.0))})."
+            f"fin={_formatear_numero(t.get('valor_final', 0.0))}, "
+            f"{t.get('puntos', 0)} puntos)."
+        )
+
+    graficos = analisis.get("graficos_sugeridos") or []
+    if graficos:
+        g = graficos[0]
+        lineas.append(
+            f"- Grafico sugerido: {g.get('tipo', '').capitalize()} "
+            f"de {g.get('eje_y', '')} vs {g.get('eje_x', '')}."
         )
 
     return "\n".join(lineas).strip()
