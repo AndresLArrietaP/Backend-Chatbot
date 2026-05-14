@@ -1144,12 +1144,12 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"WHERE {filtro_comp} AND {where_equipo_t} "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado}{_where_980e}"
             f") "
-            f"SELECT TOP({n_muestras}) [Equipo],[Compartimiento],[FechaMuestreo],"
+            f"SELECT [Equipo],[Compartimiento],[FechaMuestreo],"
             f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
             f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],"
             f"[HorasDeAceite],[Horometro] "
             f"FROM Samples WHERE rn<={n_muestras} "
-            f"ORDER BY [FechaMuestreo] ASC"
+            f"ORDER BY [Compartimiento],[FechaMuestreo] ASC"
         )
     elif proyecto:
         # Proyecto específico: últimas N muestras individuales por equipo (no AVG mensual).
