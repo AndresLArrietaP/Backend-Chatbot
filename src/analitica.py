@@ -332,9 +332,26 @@ def generar_analisis_resultado(
         }
 
     columnas = list(filas[0].keys())
-    columnas_numericas = _buscar_columnas_numericas(filas)
+    columnas_numericas_raw = _buscar_columnas_numericas(filas)
     columna_tiempo = _buscar_columna_tiempo(filas)
     columna_categoria = _buscar_columna_categoria(filas, excluir=[columna_tiempo] if columna_tiempo else [])
+
+    # Separar columnas de límites LP/LC (constantes en rows de tendencia) de las métricas reales.
+    # Son constantes por row → media = valor LP/LC, stdev = 0 → ruido estadístico sin sentido.
+    _es_limite = lambda c: " - LP" in c or " - LC" in c
+    primera_fila = filas[0]
+    limites_referencia: Dict[str, Dict[str, float]] = {}
+    for col in columnas_numericas_raw:
+        if _es_limite(col):
+            partes = col.rsplit(" - ", 1)
+            if len(partes) == 2:
+                metal, tipo = partes[0].strip(), partes[1].strip()
+                val = _a_float(primera_fila.get(col))
+                if val is not None:
+                    if metal not in limites_referencia:
+                        limites_referencia[metal] = {}
+                    limites_referencia[metal][tipo] = val
+    columnas_numericas = [c for c in columnas_numericas_raw if not _es_limite(c)]
 
     metricas: Dict[str, Any] = {}
     for col in columnas_numericas[:max_metricas]:
@@ -375,29 +392,51 @@ def generar_analisis_resultado(
                 valores = [x[1] for x in pares_validos]
                 tendencias[col] = _calcular_tendencia_simple(fechas, valores)
 
-    # Orden de prioridad para columnas de aceite (dominio tribología)
+    # Orden de prioridad para columnas de aceite (dominio tribología) — incluye todos los metales
     _OIL_COLS_ORDEN = ["Fe_ppm", "Cu_ppm", "Si_ppm", "Al_ppm", "Cr_ppm", "Ni_ppm",
                        "Pb_ppm", "Sn_ppm", "Indice_PQ", "TBN", "V100", "HorasDeAceite"]
+    # Mapa de columna de aceite → clave en limites_referencia (nombres en [Eqpcare].[lc])
+    _METAL_LC_KEY = {
+        "Fe_ppm": "FIERRO", "Cu_ppm": "COBRE", "Si_ppm": "SILICIO", "Al_ppm": "ALUMINIO",
+        "Cr_ppm": "CROMO", "Ni_ppm": "NIQUEL", "Pb_ppm": "PLOMO", "Sn_ppm": "ESTAÑO",
+        "Indice_PQ": "PQ", "TBN": "TBN",
+    }
     cols_aceite = [c for c in _OIL_COLS_ORDEN if c in metricas]
     cols_otras = [c for c in metricas if c not in _OIL_COLS_ORDEN]
-    cols_prioridad = (cols_aceite + cols_otras)[:3]
+    # Mostrar todos los metales de aceite presentes, no limitado a 3
+    cols_prioridad = cols_aceite + cols_otras
 
     frases: List[str] = [f"Resultado: {len(filas)} registros."]
 
     if cols_prioridad:
         partes = []
+        alertas_lc: List[str] = []
         for col in cols_prioridad:
             m = metricas[col]
-            label = col.replace("_ppm", "")
+            label = col.replace("_ppm", "").replace("Indice_", "")
             stdev = m.get("stdev", 0.0)
+            lc_key = _METAL_LC_KEY.get(col)
+            lim = limites_referencia.get(lc_key, {}) if lc_key else {}
+            lp = lim.get("LP")
+            lc = lim.get("LC")
+            mean = m["mean"]
             if col == "TBN":
-                partes.append(f"TBN prom={_formatear_numero(m['mean'])} (min={_formatear_numero(m['min'])})")
+                estado = f" ⚠LP={_formatear_numero(lp)}" if lp and mean < lp else ""
+                partes.append(f"TBN prom={_formatear_numero(mean)} (min={_formatear_numero(m['min'])}){estado}")
             else:
-                partes.append(f"{label} prom={_formatear_numero(m['mean'])} ppm±{_formatear_numero(stdev)}")
+                lp_str = f"/LP={_formatear_numero(lp)}" if lp else ""
+                estado = ""
+                if lp and mean >= lp:
+                    estado = " ⚠" if (not lc or mean < lc) else " 🚨"
+                    if estado:
+                        alertas_lc.append(f"{label}(prom={_formatear_numero(mean)}{lp_str})")
+                partes.append(f"{label} prom={_formatear_numero(mean)}±{_formatear_numero(stdev)}{lp_str}{estado}")
         frases.append(" | ".join(partes) + ".")
+        if alertas_lc:
+            frases.append(f"Superan LP referencial: {', '.join(alertas_lc)}.")
         fuera = [
-            (c.replace("_ppm", ""), metricas[c]["fuera_2sigma"])
-            for c in cols_prioridad if metricas[c].get("fuera_2sigma", 0) > 0
+            (col.replace("_ppm", "").replace("Indice_", ""), metricas[col]["fuera_2sigma"])
+            for col in cols_prioridad if metricas[col].get("fuera_2sigma", 0) > 0
         ]
         if fuera:
             frases.append(f"Fuera de banda ±2σ: {', '.join(f'{n}({k})' for n, k in fuera)}.")
@@ -457,7 +496,7 @@ def generar_analisis_resultado(
             }
         )
 
-    return {
+    result: Dict[str, Any] = {
         "row_count": len(filas),
         "columnas": columnas,
         "columna_tiempo": columna_tiempo,
@@ -469,6 +508,9 @@ def generar_analisis_resultado(
         "graficos_sugeridos": graficos,
         "consulta_humana": consulta_humana,
     }
+    if limites_referencia:
+        result["limites_referencia"] = limites_referencia
+    return result
 
 
 # ==============================================================================
@@ -595,36 +637,68 @@ def renderizar_resumen_analitico(analisis: Dict[str, Any]) -> str:
         lineas.append(resumen)
 
     metricas = analisis.get("metricas") or {}
+    limites = analisis.get("limites_referencia") or {}
     _OIL_PRIO = ["Fe_ppm", "Cu_ppm", "Si_ppm", "Al_ppm", "Cr_ppm", "Ni_ppm",
                  "Pb_ppm", "Sn_ppm", "Indice_PQ", "TBN"]
+    _METAL_LC_KEY = {
+        "Fe_ppm": "FIERRO", "Cu_ppm": "COBRE", "Si_ppm": "SILICIO", "Al_ppm": "ALUMINIO",
+        "Cr_ppm": "CROMO", "Ni_ppm": "NIQUEL", "Pb_ppm": "PLOMO", "Sn_ppm": "ESTAÑO",
+        "Indice_PQ": "PQ", "TBN": "TBN",
+    }
     cols = [c for c in _OIL_PRIO if c in metricas]
     cols += [c for c in metricas if c not in _OIL_PRIO]
-    for col in cols[:3]:
+    # Mostrar todos los metales de aceite disponibles (no limitado a 3)
+    for col in cols:
         m = metricas[col]
-        label = col.replace("_ppm", "")
+        label = col.replace("_ppm", "").replace("Indice_", "")
         stdev = m.get("stdev", 0.0)
         fuera = m.get("fuera_2sigma", 0)
-        linea = (f"- {label}: prom={_formatear_numero(m['mean'])}, "
-                 f"σ={_formatear_numero(stdev)}, max={_formatear_numero(m['max'])}")
-        if fuera:
+        lc_key = _METAL_LC_KEY.get(col)
+        lim = limites.get(lc_key, {}) if lc_key else {}
+        lp = lim.get("LP")
+        lc = lim.get("LC")
+        mean = m["mean"]
+        # Etiqueta de estado vs límites reales de BD
+        if col == "TBN":
+            estado = " ⚠ BAJO LP" if lp and mean < lp else (" ✓" if lp else "")
+            linea = (f"- {label}: prom={_formatear_numero(mean)}"
+                     f", min={_formatear_numero(m['min'])}{estado}")
+        else:
+            if lp and lc:
+                if mean >= lc:
+                    estado = " 🚨 SOBRE LC"
+                elif mean >= lp:
+                    estado = " ⚠ SOBRE LP"
+                else:
+                    estado = " ✓"
+                lim_str = f" [LP={_formatear_numero(lp)}/LC={_formatear_numero(lc)}]"
+            elif lp:
+                estado = " ⚠ SOBRE LP" if mean >= lp else " ✓"
+                lim_str = f" [LP={_formatear_numero(lp)}]"
+            else:
+                estado = ""
+                lim_str = ""
+            linea = (f"- {label}: prom={_formatear_numero(mean)}, "
+                     f"σ={_formatear_numero(stdev)}, max={_formatear_numero(m['max'])}"
+                     f"{lim_str}{estado}")
+        if fuera and col != "TBN":
             linea += f", {fuera} muestra(s) fuera ±2σ"
         lineas.append(linea + ".")
 
     tendencias = analisis.get("tendencias") or {}
-    for nombre, t in list(tendencias.items())[:1]:
-        label = nombre.replace("_ppm", "")
+    for nombre, t in list(tendencias.items())[:2]:
+        label = nombre.replace("_ppm", "").replace("Indice_", "")
         lineas.append(
             f"- Tendencia {label}: {t.get('direccion', '?')} "
-            f"(inicio={_formatear_numero(t.get('valor_inicial', 0.0))}, "
-            f"fin={_formatear_numero(t.get('valor_final', 0.0))}, "
-            f"{t.get('puntos', 0)} puntos)."
+            f"({t.get('puntos', 0)} muestras, "
+            f"{_formatear_numero(t.get('valor_inicial', 0.0))} → {_formatear_numero(t.get('valor_final', 0.0))})."
         )
 
     graficos = analisis.get("graficos_sugeridos") or []
     if graficos:
         g = graficos[0]
         lineas.append(
-            f"- Grafico sugerido: {g.get('tipo', '').capitalize()} "
+            f"- Gráfico sugerido: {g.get('tipo', '').capitalize()} "
             f"de {g.get('eje_y', '')} vs {g.get('eje_x', '')}."
         )
 

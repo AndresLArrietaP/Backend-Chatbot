@@ -555,6 +555,10 @@ def _es_error_sql_reintentable(detalle: str) -> bool:
         "invalid column name",
         "statement(s) could not be prepared",
         "syntax error",
+        # Error 8156: columna duplicada en CTE — típicamente SELECT * + ROW_NUMBER() AS rn
+        # sobre CTE fuente que ya tiene columna rn. El LLM debe reescribir sin SELECT *.
+        "specified multiple times",
+        "column name or number of supplied values does not match",
     ]
     return any(p in t for p in pistas)
 
@@ -566,10 +570,21 @@ def _construir_prompt_retry_sql_error(
     detalle_error: str,
     allowed_fqn: List[str],
 ) -> str:
+    # Instrucción extra para el error de columna duplicada (8156 "specified multiple times").
+    # Causado por LLM que hace SELECT * sobre CTE que ya tiene columna rn + agrega ROW_NUMBER() AS rn.
+    _extra = ""
+    if "specified multiple times" in (detalle_error or "").lower():
+        _extra = (
+            "CAUSA PROBABLE: SELECT * en CTE interna sobre CTE fuente que ya tiene columna rn, "
+            "más ROW_NUMBER() AS rn adicional → duplicado. "
+            "NUNCA uses SELECT * en CTEs anidadas. Lista cada columna explícitamente. "
+            "Si necesitas ROW_NUMBER, asegúrate de que ninguna CTE fuente ya tenga esa columna.\n"
+        )
     return (
         f"{human_query.strip()}\n\n"
         f"IMPORTANTE (reparación automática): el SQL anterior falló al ejecutar en {dialecto.upper()}.\n"
         f"Reescribe el SQL completo y ejecutable.\n"
+        f"{_extra}"
         f"- Usa SOLO tablas de esta allow-list.\n"
         f"- No dejes SQL truncada o parcial.\n"
         f"- No dejes aliases vacíos.\n"

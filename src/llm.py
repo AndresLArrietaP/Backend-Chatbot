@@ -347,6 +347,8 @@ _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
     # (patrón de detección en la consulta, filtro LIKE para el WHERE en SQL)
     # Orden crítico: primero los patrones específicos, el catch-all de "motor" al final.
     (re.compile(r"\btracci[oó]n\b", re.IGNORECASE), "%TRACCION%"),
+    # Abreviaturas de campo usadas por ingenieros en mina: MDLH/MDRH (Motor de Tracción LH/RH)
+    (re.compile(r"\bMD[LR]H\b|\bMTR?[LR]H\b", re.IGNORECASE), "%TRACCION%"),
     (re.compile(r"\bhidr[aá]ulic[ao]s?\b", re.IGNORECASE), "%HIDRAUL%"),
     (re.compile(r"\brueda[s]?\b", re.IGNORECASE), "%RUEDA%"),
     (re.compile(r"\bmando\s+final\b", re.IGNORECASE), "%MANDO%"),
@@ -1128,10 +1130,13 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
         if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
             excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
             _where_tipo = f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
-        # Últimas N muestras individuales (no AVG mensual) — permite calcular promedio y σ por punto.
+        # Últimas N muestras individuales + LP/LC reales de [Eqpcare].[lc] por proyecto del equipo.
+        # LimitesLC usa subquery sobre Samples para filtrar por el proyecto real del equipo
+        # evitando hardcodear el proyecto y obteniendo siempre los límites correctos.
+        # LEFT JOIN ON 1=1 → si no hay fila en lc, las columnas LP/LC son NULL (no bloquea rows).
         sql = (
             f"WITH Samples AS ("
-            f"SELECT ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[FechaMuestreo],"
+            f"SELECT ME.[Code] AS [Equipo],MP.[Name] AS [Proyecto],LD.[Compartimiento],LD.[FechaMuestreo],"
             f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
             f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
             f"LD.[HorasDeAceite],LD.[Horometro],"
@@ -1143,13 +1148,31 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             f"{_join_980e} "
             f"WHERE {filtro_comp} AND {where_equipo_t} "
             f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado}{_where_980e}"
+            f"),"
+            f"LimitesLC AS ("
+            f"SELECT MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+            f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+            f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+            f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+            f"MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
+            f"MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
+            f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
+            f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+            f"WHERE [COMPONENTE] LIKE '{like_comp}' "
+            f"AND [Proyecto] IN (SELECT DISTINCT [Proyecto] FROM Samples)"
             f") "
-            f"SELECT [Equipo],[Compartimiento],[FechaMuestreo],"
-            f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
-            f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],"
-            f"[HorasDeAceite],[Horometro] "
-            f"FROM Samples WHERE rn<={n_muestras} "
-            f"ORDER BY [Compartimiento],[FechaMuestreo] ASC"
+            f"SELECT s.[Equipo],s.[Proyecto],s.[Compartimiento],s.[FechaMuestreo],"
+            f"s.[Fe_ppm],s.[Cr_ppm],s.[Ni_ppm],s.[Pb_ppm],s.[Sn_ppm],"
+            f"s.[Cu_ppm],s.[Si_ppm],s.[Al_ppm],s.[Indice_PQ],s.[TBN],"
+            f"s.[HorasDeAceite],s.[Horometro],"
+            f"l.[FIERRO - LP],l.[FIERRO - LC],l.[ALUMINIO - LP],l.[ALUMINIO - LC],"
+            f"l.[COBRE - LP],l.[COBRE - LC],l.[SILICIO - LP],l.[SILICIO - LC],"
+            f"l.[CROMO - LP],l.[CROMO - LC],l.[NIQUEL - LP],l.[NIQUEL - LC],"
+            f"l.[PQ - LP],l.[PQ - LC],l.[TBN - LP],l.[TBN - LC] "
+            f"FROM Samples s LEFT JOIN LimitesLC l ON 1=1 "
+            f"WHERE s.rn<={n_muestras} "
+            f"ORDER BY s.[Compartimiento],s.[FechaMuestreo] ASC"
         )
     elif proyecto:
         # Proyecto específico: últimas N muestras individuales por equipo (no AVG mensual).
