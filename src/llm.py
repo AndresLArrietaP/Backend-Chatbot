@@ -220,6 +220,21 @@ def _es_intencion_tendencia_historica(texto: str) -> bool:
     return bool(_RE_PISTA_TENDENCIA_HISTORICA.search(texto or ""))
 
 
+# Keywords que indican que el usuario quiere promedios agrupados por mes, NO muestras individuales.
+# Subconjunto de _RE_PISTA_TENDENCIA_HISTORICA pero con semántica de agregación explícita.
+_RE_PROMEDIO_MENSUAL = re.compile(
+    r"\b(?:mes\s+a\s+mes|mensual(?:es|mente)?|por\s+mes(?:es)?|"
+    r"promedio\s+(?:mensual|por\s+mes)|hist[oó]rico\s+mensual|promedio[s]?\s+de\s+mes)\b",
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_promedio_mensual(texto: str) -> bool:
+    """True cuando el usuario pide explícitamente promedios agrupados por mes (no muestras individuales).
+    Se usa en intentar_tendencia_directo para elegir entre AVG mensual e historial de N muestras."""
+    return bool(_RE_PROMEDIO_MENSUAL.search(texto or ""))
+
+
 def _es_intencion_muestras_individuales(texto: str) -> bool:
     """Detecta cuando el usuario quiere registros crudos, no promedios mensuales."""
     return bool(_RE_MUESTRAS_INDIVIDUALES.search(texto or ""))
@@ -1074,18 +1089,16 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
 
 def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     """
-    Genera SQL de tendencia histórica mensual directamente en Python, sin LLM.
+    Genera SQL de tendencia histórica directamente en Python, sin LLM.
 
-    SQL producido (todos los paths):
-      - AVG de métricas agrupado por EOMONTH(FechaMuestreo) + Compartimiento [+ Proyecto o Equipo]
-      - GROUP BY mes: suaviza lecturas múltiples del mismo mes, garantiza serie cronológica limpia
-      - LP/LC reales de [Eqpcare].[lc] incluidos como constantes (equipo y proyecto paths)
-      - ORDER BY [Mes] ASC → serie cronológica para visualización temporal en Copilot Studio
-
-    Tres variantes de agrupación según contexto:
-      - Con equipo específico (CA3198) → agrupa por Equipo + Compartimiento + Mes + LP/LC
-      - Con proyecto (Antapaccay)      → agrega toda la flota por Compartimiento + Mes + LP/LC
-      - Sin proyecto ni equipo         → agrega por Proyecto + Compartimiento + Mes (sin LP/LC)
+    Dos modos según lo que el usuario pide:
+    - DEFAULT (muestras individuales): últimas N muestras por equipo+compartimiento usando
+      ROW_NUMBER() ORDER BY FechaMuestreo DESC → WHERE rn<=N → ORDER BY FechaMuestreo ASC.
+      N=6 por defecto, máx 12 (_detectar_n_muestras_tendencia).
+      Equipo path incluye LP/LC de [Eqpcare].[lc]. Proyecto/else paths sin LP/LC.
+    - PROMEDIO MENSUAL (cuando usuario dice "mes a mes", "mensual", etc.):
+      AVG de métricas GROUP BY EOMONTH(FechaMuestreo). Todos los paths incluyen LP/LC.
+      ORDER BY [Mes] ASC → serie cronológica para visualización temporal.
 
     Retorna None si no aplica → el llamador cae al LLM con refuerzo de prompt.
     """
@@ -1118,126 +1131,196 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
 
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
 
+    usar_avg_mensual = _es_intencion_promedio_mensual(consulta_humana)
+
+    # ── Helper: cláusula de exclusión MT (DDI/DIALIZADO) ──────────────────────────
+    def _tipo_where() -> str:
+        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
+            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
+            return f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
+        return ""
+
+    # ── Helper: CTE LimitesLC (reutilizado en varios paths) ──────────────────────
+    def _limites_cte(filtro_proyecto: str) -> str:
+        return (
+            f"LimitesLC AS ("
+            f"SELECT MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+            f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+            f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+            f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+            f"MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
+            f"MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
+            f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
+            f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
+            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+            f"WHERE [COMPONENTE] LIKE '{like_comp}' AND {filtro_proyecto}"
+            f")"
+        )
+
+    _lc_select = (
+        "l.[FIERRO - LP],l.[FIERRO - LC],l.[ALUMINIO - LP],l.[ALUMINIO - LC],"
+        "l.[COBRE - LP],l.[COBRE - LC],l.[SILICIO - LP],l.[SILICIO - LC],"
+        "l.[CROMO - LP],l.[CROMO - LC],l.[NIQUEL - LP],l.[NIQUEL - LC],"
+        "l.[PQ - LP],l.[PQ - LC],l.[TBN - LP],l.[TBN - LC]"
+    )
+
     if equipo_code:
-        # Código exacto → igualdad; coloquial (%3196) → LIKE (misma lógica que historial_crudo).
         where_equipo_t = (
             f"ME.[Code] LIKE '{equipo_code}'"
             if equipo_code.startswith("%")
             else f"ME.[Code]='{equipo_code}'"
         )
-        # Para MT: excluir DDI/DIALIZADO/RELLENO+DIALIZADO. NULL incluido porque NOT IN excluye NULLs.
-        _where_tipo = ""
-        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
-            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
-            _where_tipo = f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
-        # AVG mensual por compartimiento + LP/LC reales de [Eqpcare].[lc].
-        # LimitesLC filtra por proyecto real del equipo (subquery DISTINCT evita hardcodear).
-        # LEFT JOIN ON 1=1 → si no hay fila en lc las columnas LP/LC son NULL, no bloquea filas.
-        sql = (
-            f"WITH Mensual AS ("
-            f"SELECT ME.[Code] AS [Equipo],MP.[Name] AS [Proyecto],LD.[Compartimiento],"
-            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-            f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
-            f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
-            f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
-            f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
-            f"AVG(LD.[HorasDeAceite]) AS [HorasDeAceite],COUNT(*) AS [NMuestras] "
-            f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
-            f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
-            f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
-            f"{_join_980e} "
-            f"WHERE {filtro_comp} AND {where_equipo_t} "
-            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado}{_where_980e} "
-            f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo])"
-            f"),"
-            f"LimitesLC AS ("
-            f"SELECT MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
-            f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
-            f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
-            f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
-            f"MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
-            f"MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
-            f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
-            f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
-            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
-            f"WHERE [COMPONENTE] LIKE '{like_comp}' "
-            f"AND [Proyecto] IN (SELECT DISTINCT [Proyecto] FROM Mensual)"
-            f") "
-            f"SELECT m.[Equipo],m.[Proyecto],m.[Compartimiento],m.[Mes],"
-            f"m.[Fe_ppm],m.[Cr_ppm],m.[Ni_ppm],m.[Pb_ppm],m.[Sn_ppm],"
-            f"m.[Cu_ppm],m.[Si_ppm],m.[Al_ppm],m.[Indice_PQ],m.[TBN],"
-            f"m.[HorasDeAceite],m.[NMuestras],"
-            f"l.[FIERRO - LP],l.[FIERRO - LC],l.[ALUMINIO - LP],l.[ALUMINIO - LC],"
-            f"l.[COBRE - LP],l.[COBRE - LC],l.[SILICIO - LP],l.[SILICIO - LC],"
-            f"l.[CROMO - LP],l.[CROMO - LC],l.[NIQUEL - LP],l.[NIQUEL - LC],"
-            f"l.[PQ - LP],l.[PQ - LC],l.[TBN - LP],l.[TBN - LC] "
-            f"FROM Mensual m LEFT JOIN LimitesLC l ON 1=1 "
-            f"ORDER BY m.[Compartimiento],m.[Mes] ASC"
-        )
+        _wt = _tipo_where()
+
+        if usar_avg_mensual:
+            # ── EQUIPO · Promedio mensual (usuario pide "mes a mes" / "mensual") ──
+            sql = (
+                f"WITH Mensual AS ("
+                f"SELECT ME.[Code] AS [Equipo],MP.[Name] AS [Proyecto],LD.[Compartimiento],"
+                f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+                f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
+                f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+                f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+                f"AVG(LD.[HorasDeAceite]) AS [HorasDeAceite],COUNT(*) AS [NMuestras] "
+                f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+                f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+                f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
+                f"{_join_980e} "
+                f"WHERE {filtro_comp} AND {where_equipo_t} "
+                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}{_where_980e} "
+                f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo])"
+                f"),"
+                f"{_limites_cte('[Proyecto] IN (SELECT DISTINCT [Proyecto] FROM Mensual)')} "
+                f"SELECT m.[Equipo],m.[Proyecto],m.[Compartimiento],m.[Mes],"
+                f"m.[Fe_ppm],m.[Cr_ppm],m.[Ni_ppm],m.[Pb_ppm],m.[Sn_ppm],"
+                f"m.[Cu_ppm],m.[Si_ppm],m.[Al_ppm],m.[Indice_PQ],m.[TBN],"
+                f"m.[HorasDeAceite],m.[NMuestras],{_lc_select} "
+                f"FROM Mensual m LEFT JOIN LimitesLC l ON 1=1 "
+                f"ORDER BY m.[Compartimiento],m.[Mes] ASC"
+            )
+        else:
+            # ── EQUIPO · Default: últimas N muestras individuales + LP/LC ──────────
+            n_muestras = _detectar_n_muestras_tendencia(consulta_humana)
+            sql = (
+                f"WITH Samples AS ("
+                f"SELECT ME.[Code] AS [Equipo],MP.[Name] AS [Proyecto],LD.[Compartimiento],LD.[FechaMuestreo],"
+                f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+                f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
+                f"LD.[HorasDeAceite],LD.[Horometro],"
+                f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+                f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+                f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+                f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+                f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
+                f"{_join_980e} "
+                f"WHERE {filtro_comp} AND {where_equipo_t} "
+                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}{_where_980e}"
+                f"),"
+                f"{_limites_cte('[Proyecto] IN (SELECT DISTINCT [Proyecto] FROM Samples)')} "
+                f"SELECT s.[Equipo],s.[Proyecto],s.[Compartimiento],s.[FechaMuestreo],"
+                f"s.[Fe_ppm],s.[Cr_ppm],s.[Ni_ppm],s.[Pb_ppm],s.[Sn_ppm],"
+                f"s.[Cu_ppm],s.[Si_ppm],s.[Al_ppm],s.[Indice_PQ],s.[TBN],"
+                f"s.[HorasDeAceite],s.[Horometro],{_lc_select} "
+                f"FROM Samples s LEFT JOIN LimitesLC l ON 1=1 "
+                f"WHERE s.rn<={n_muestras} "
+                f"ORDER BY s.[Compartimiento],s.[FechaMuestreo] ASC"
+            )
+
     elif proyecto:
-        # Flota completa del proyecto: AVG mensual por compartimiento (agrega todos los equipos).
-        # Incluye NEquipos y NMuestras para contexto de Copilot Studio.
-        # LP/LC de [Eqpcare].[lc] filtrado por proyecto+compartimiento.
-        _where_tipo = ""
-        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
-            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
-            _where_tipo = f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
-        sql = (
-            f"WITH Mensual AS ("
-            f"SELECT LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-            f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
-            f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
-            f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
-            f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
-            f"COUNT(DISTINCT ME.[Id]) AS [NEquipos],COUNT(*) AS [NMuestras] "
-            f"{base_joins}{_join_980e} "
-            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
-            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado}{_where_980e} "
-            f"GROUP BY LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo])"
-            f"),"
-            f"LimitesLC AS ("
-            f"SELECT MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
-            f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
-            f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
-            f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
-            f"MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
-            f"MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
-            f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
-            f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
-            f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
-            f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}'"
-            f") "
-            f"SELECT m.[Compartimiento],m.[Mes],"
-            f"m.[Fe_ppm],m.[Cr_ppm],m.[Ni_ppm],m.[Pb_ppm],m.[Sn_ppm],"
-            f"m.[Cu_ppm],m.[Si_ppm],m.[Al_ppm],m.[Indice_PQ],m.[TBN],"
-            f"m.[NEquipos],m.[NMuestras],"
-            f"l.[FIERRO - LP],l.[FIERRO - LC],l.[ALUMINIO - LP],l.[ALUMINIO - LC],"
-            f"l.[COBRE - LP],l.[COBRE - LC],l.[SILICIO - LP],l.[SILICIO - LC],"
-            f"l.[CROMO - LP],l.[CROMO - LC],l.[NIQUEL - LP],l.[NIQUEL - LC],"
-            f"l.[PQ - LP],l.[PQ - LC],l.[TBN - LP],l.[TBN - LC] "
-            f"FROM Mensual m LEFT JOIN LimitesLC l ON 1=1 "
-            f"ORDER BY m.[Compartimiento],m.[Mes] ASC"
-        )
+        _wt = _tipo_where()
+
+        if usar_avg_mensual:
+            # ── PROYECTO · Promedio mensual flota (agrega todos los equipos por mes) ──
+            sql = (
+                f"WITH Mensual AS ("
+                f"SELECT LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+                f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
+                f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+                f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+                f"COUNT(DISTINCT ME.[Id]) AS [NEquipos],COUNT(*) AS [NMuestras] "
+                f"{base_joins}{_join_980e} "
+                f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
+                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}{_where_980e} "
+                f"GROUP BY LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo])"
+                f"),"
+            )
+            _filtro_proy_lc = f"[Proyecto] LIKE '%{proyecto}%'"
+            sql += (
+                f"{_limites_cte(_filtro_proy_lc)} "
+                f"SELECT m.[Compartimiento],m.[Mes],"
+                f"m.[Fe_ppm],m.[Cr_ppm],m.[Ni_ppm],m.[Pb_ppm],m.[Sn_ppm],"
+                f"m.[Cu_ppm],m.[Si_ppm],m.[Al_ppm],m.[Indice_PQ],m.[TBN],"
+                f"m.[NEquipos],m.[NMuestras],{_lc_select} "
+                f"FROM Mensual m LEFT JOIN LimitesLC l ON 1=1 "
+                f"ORDER BY m.[Compartimiento],m.[Mes] ASC"
+            )
+        else:
+            # ── PROYECTO · Default: últimas N muestras por equipo (snapshot flota) ──
+            n_muestras = _detectar_n_muestras_tendencia(consulta_humana)
+            sql = (
+                f"WITH Samples AS ("
+                f"SELECT ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[FechaMuestreo],"
+                f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+                f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
+                f"LD.[HorasDeAceite],LD.[Horometro],"
+                f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+                f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+                f"{base_joins}{_join_980e} "
+                f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
+                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}{_where_980e}"
+                f") "
+                f"SELECT [Equipo],[Compartimiento],[FechaMuestreo],"
+                f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
+                f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],"
+                f"[HorasDeAceite],[Horometro] "
+                f"FROM Samples WHERE rn<={n_muestras} "
+                f"ORDER BY [Equipo],[FechaMuestreo] ASC"
+            )
+
     else:
-        # Sin proyecto ni equipo: AVG mensual por Proyecto + Compartimiento para distinguir flotas.
-        _where_tipo = ""
-        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
-            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
-            _where_tipo = f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
-        sql = (
-            f"SELECT MP.[Name] AS [Proyecto],LD.[Compartimiento],"
-            f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-            f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
-            f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
-            f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
-            f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
-            f"COUNT(*) AS [NMuestras] "
-            f"{base_joins} "
-            f"WHERE {filtro_comp} "
-            f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_where_tipo}{_where_grado} "
-            f"GROUP BY MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
-            f"ORDER BY [Proyecto],[Compartimiento],[Mes] ASC"
-        )
+        _wt = _tipo_where()
+
+        if usar_avg_mensual:
+            # ── ELSE · Promedio mensual sin proyecto (distingue flotas por proyecto) ──
+            sql = (
+                f"SELECT MP.[Name] AS [Proyecto],LD.[Compartimiento],"
+                f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+                f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
+                f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+                f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+                f"COUNT(*) AS [NMuestras] "
+                f"{base_joins} "
+                f"WHERE {filtro_comp} "
+                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado} "
+                f"GROUP BY MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
+                f"ORDER BY [Proyecto],[Compartimiento],[Mes] ASC"
+            )
+        else:
+            # ── ELSE · Default: últimas N muestras sin proyecto ───────────────────
+            n_muestras = _detectar_n_muestras_tendencia(consulta_humana)
+            sql = (
+                f"WITH Samples AS ("
+                f"SELECT MP.[Name] AS [Proyecto],ME.[Code] AS [Equipo],"
+                f"LD.[Compartimiento],LD.[FechaMuestreo],"
+                f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+                f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
+                f"LD.[HorasDeAceite],LD.[Horometro],"
+                f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+                f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+                f"{base_joins} "
+                f"WHERE {filtro_comp} "
+                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}"
+                f") "
+                f"SELECT [Proyecto],[Equipo],[Compartimiento],[FechaMuestreo],"
+                f"[Fe_ppm],[Cr_ppm],[Ni_ppm],[Pb_ppm],[Sn_ppm],"
+                f"[Cu_ppm],[Si_ppm],[Al_ppm],[Indice_PQ],[TBN],"
+                f"[HorasDeAceite],[Horometro] "
+                f"FROM Samples WHERE rn<={n_muestras} "
+                f"ORDER BY [Proyecto],[Equipo],[FechaMuestreo] ASC"
+            )
     return sql
 
 
