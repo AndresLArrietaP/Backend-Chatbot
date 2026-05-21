@@ -220,19 +220,36 @@ def _es_intencion_tendencia_historica(texto: str) -> bool:
     return bool(_RE_PISTA_TENDENCIA_HISTORICA.search(texto or ""))
 
 
-# Keywords que indican que el usuario quiere promedios agrupados por mes, NO muestras individuales.
-# Subconjunto de _RE_PISTA_TENDENCIA_HISTORICA pero con semántica de agregación explícita.
-_RE_PROMEDIO_MENSUAL = re.compile(
-    r"\b(?:mes\s+a\s+mes|mensual(?:es|mente)?|por\s+mes(?:es)?|"
-    r"promedio\s+(?:mensual|por\s+mes)|hist[oó]rico\s+mensual|promedio[s]?\s+de\s+mes)\b",
-    re.IGNORECASE,
-)
+# Mapa escalable de periodos de agrupación para tendencia/historial.
+# Orden importante: más específico primero (lustro antes que anual, semestral antes que mensual).
+# Cada tupla: (regex, sql_expr_template, col_alias, ventana_meses_default)
+# {FMS} se sustituye por LD.[FechaMuestreo] al generar el SQL.
+_FMS = "LD.[FechaMuestreo]"
+_PERIODO_AGG_MAP: List[tuple] = [
+    (re.compile(r"\blustro[s]?\b|\bquinquenal\b|\bpor\s+lustro[s]?\b", re.IGNORECASE),
+     "DATEFROMPARTS(YEAR({FMS})/5*5,1,1)", "Periodo", 120),
+    (re.compile(r"\bsemestral\b|\bpor\s+semestre[s]?\b|\bsemestre\s+a\s+semestre\b", re.IGNORECASE),
+     "DATEFROMPARTS(YEAR({FMS}),((MONTH({FMS})-1)/6)*6+1,1)", "Periodo", 60),
+    (re.compile(r"\bcuatrimestral\b|\bpor\s+cuatrimestre[s]?\b", re.IGNORECASE),
+     "DATEFROMPARTS(YEAR({FMS}),((MONTH({FMS})-1)/4)*4+1,1)", "Periodo", 48),
+    (re.compile(r"\btrimestral\b|\bpor\s+trimestre[s]?\b|\btrimestre\s+a\s+trimestre\b", re.IGNORECASE),
+     "DATEFROMPARTS(YEAR({FMS}),((MONTH({FMS})-1)/3)*3+1,1)", "Periodo", 36),
+    (re.compile(r"\bbimestral\b|\bpor\s+bimestre[s]?\b", re.IGNORECASE),
+     "DATEFROMPARTS(YEAR({FMS}),((MONTH({FMS})-1)/2)*2+1,1)", "Periodo", 24),
+    (re.compile(r"\banual\b|\bpor\s+a[nñ]o[s]?\b|\ba[nñ]o\s+a\s+a[nñ]o\b", re.IGNORECASE),
+     "DATEFROMPARTS(YEAR({FMS}),1,1)", "Periodo", 60),
+    (re.compile(r"\bmes\s+a\s+mes\b|\bmensual(?:es|mente)?\b|\bpor\s+mes(?:es)?\b|"
+                r"\bpromedio\s+(?:mensual|por\s+mes)\b|\bpromedio[s]?\s+de\s+mes\b", re.IGNORECASE),
+     "EOMONTH({FMS})", "Mes", 36),
+]
 
 
-def _es_intencion_promedio_mensual(texto: str) -> bool:
-    """True cuando el usuario pide explícitamente promedios agrupados por mes (no muestras individuales).
-    Se usa en intentar_tendencia_directo para elegir entre AVG mensual e historial de N muestras."""
-    return bool(_RE_PROMEDIO_MENSUAL.search(texto or ""))
+def _detectar_periodo_agrupacion(q: str) -> Optional[tuple]:
+    """Retorna (group_by_expr, col_alias, ventana_meses_default) o None si no se pide agregación por periodo."""
+    for pat, expr_tpl, alias, ventana in _PERIODO_AGG_MAP:
+        if pat.search(q or ""):
+            return (expr_tpl.replace("{FMS}", _FMS), alias, ventana)
+    return None
 
 
 def _es_intencion_muestras_individuales(texto: str) -> bool:
@@ -534,23 +551,23 @@ _RE_VENTANA_MESES = re.compile(r"\b(\d+)\s+mes(?:es)?\b", re.IGNORECASE)
 _RE_VENTANA_ANIOS = re.compile(r"\b(\d+)\s+a[nñ]o[s]?\b", re.IGNORECASE)
 
 
-def _detectar_ventana_meses(q: str) -> int:
+def _detectar_ventana_meses(q: str, default: int = 24) -> int:
     """
     Extrae la ventana temporal de la consulta y la expresa siempre en meses.
-    Si el usuario dice "2 años" → retorna 24. Si no menciona período → retorna 24 (default).
+    Si el usuario dice "2 años" → retorna 24. Si no menciona período → retorna `default`.
     """
     m = _RE_VENTANA_MESES.search(q or "")
     if m:
         return int(m.group(1))
     m = _RE_VENTANA_ANIOS.search(q or "")
     if m:
-        # Convertir años a meses para usar en DATEADD(MONTH, -N, GETDATE())
         return int(m.group(1)) * 12
-    return 24  # ventana default: 24 meses hacia atrás
+    return default
 
 
 _N_TENDENCIA_DEFAULT = 6   # muestras por defecto para tendencia por equipo
 _N_TENDENCIA_MAX = 12      # máximo permitido (evita respuestas excesivamente largas)
+_HISTORIAL_VENTANA_MAX_INDIVIDUAL = 6  # >6 meses → auto-switch a AVG mensual en historial
 
 
 def _detectar_n_muestras_tendencia(q: str) -> int:
@@ -965,15 +982,64 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     if not like_comp or (not equipo_code and not proyecto):
         return None
 
-    ventana = _detectar_ventana_meses(consulta_humana)
-    filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())"
+    ventana = _detectar_ventana_meses(consulta_humana, default=3)
     filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
 
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
 
+    base_joins = (
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
+    )
+    _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
+
+    # Auto-switch: si la ventana supera 6 meses, agrupa por mes (AVG mensual) en lugar de
+    # devolver miles de filas individuales. La columna [Mes] es reconocida por analitica.py.
+    if ventana > _HISTORIAL_VENTANA_MAX_INDIVIDUAL:
+        filtro_fecha_avg = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())"
+        if equipo_code:
+            where_equipo = (
+                f"ME.[Code] LIKE '{equipo_code}'"
+                if equipo_code.startswith("%")
+                else f"ME.[Code]='{equipo_code}'"
+            )
+            sql = (
+                f"SELECT ME.[Code] AS [Equipo],MP.[Name] AS [Proyecto],LD.[Compartimiento],"
+                f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+                f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
+                f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+                f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+                f"COUNT(*) AS [NMuestras] "
+                f"{base_joins}{_join_980e} "
+                f"WHERE {filtro_comp} AND {where_equipo} "
+                f"AND {filtro_fecha_avg}{_where_980e}{_where_grado} "
+                f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
+                f"ORDER BY [Equipo],[Compartimiento],[Mes] ASC"
+            )
+        else:
+            sql = (
+                f"SELECT MP.[Name] AS [Proyecto],LD.[Compartimiento],"
+                f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+                f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
+                f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+                f"AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+                f"COUNT(DISTINCT ME.[Id]) AS [NEquipos],COUNT(*) AS [NMuestras] "
+                f"{base_joins}{_join_980e} "
+                f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
+                f"AND {filtro_fecha_avg}{_where_980e}{_where_grado} "
+                f"GROUP BY MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
+                f"ORDER BY [Proyecto],[Compartimiento],[Mes] ASC"
+            )
+        return sql
+
+    # Muestras individuales (ventana ≤ 6 meses)
     # Columnas base: fecha + código de equipo + compartimiento + métricas MT completas
     # + campos operativos (Condicion, Horometro, CodigoMuestreo, Oxidacion, Agua).
+    filtro_fecha = f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())"
     base_cols = (
         f"LD.[FechaMuestreo],ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[Grado],"
         f"LD.[Condicion],LD.[CodigoMuestreo],LD.[Horometro],"
@@ -982,13 +1048,6 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         f"LD.[B_ppm],LD.[P_ppm],LD.[V100],LD.[TBN],LD.[HorasDeAceite],"
         f"LD.[Oxidacion],LD.[Agua]"
     )
-    base_joins = (
-        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
-        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
-        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
-    )
-
-    _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
     if equipo_code:
         # Código exacto (CA3196) → igualdad; referencia coloquial (%3196) → LIKE.
         where_equipo = (
@@ -1096,9 +1155,10 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
       ROW_NUMBER() ORDER BY FechaMuestreo DESC → WHERE rn<=N → ORDER BY FechaMuestreo ASC.
       N=6 por defecto, máx 12 (_detectar_n_muestras_tendencia).
       Equipo path incluye LP/LC de [Eqpcare].[lc]. Proyecto/else paths sin LP/LC.
-    - PROMEDIO MENSUAL (cuando usuario dice "mes a mes", "mensual", etc.):
-      AVG de métricas GROUP BY EOMONTH(FechaMuestreo). Todos los paths incluyen LP/LC.
-      ORDER BY [Mes] ASC → serie cronológica para visualización temporal.
+    - AVG POR PERIODO (cuando usuario dice "mensual", "trimestral", "anual", etc.):
+      AVG de métricas GROUP BY expresión de periodo (_PERIODO_AGG_MAP).
+      Columna de salida: [Mes] (mensual) o [Periodo] (otros) → reconocida por analitica.py.
+      Ventana temporal: determinada por el periodo elegido o por mención explícita del usuario.
 
     Retorna None si no aplica → el llamador cae al LLM con refuerzo de prompt.
     """
@@ -1131,7 +1191,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
 
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
 
-    usar_avg_mensual = _es_intencion_promedio_mensual(consulta_humana)
+    periodo_agg = _detectar_periodo_agrupacion(consulta_humana)
 
     # ── Helper: cláusula de exclusión MT (DDI/DIALIZADO) ──────────────────────────
     def _tipo_where() -> str:
@@ -1172,12 +1232,14 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
         )
         _wt = _tipo_where()
 
-        if usar_avg_mensual:
-            # ── EQUIPO · Promedio mensual (usuario pide "mes a mes" / "mensual") ──
+        if periodo_agg:
+            # ── EQUIPO · AVG por periodo (mensual / trimestral / anual / etc.) ──
+            _expr, _alias, _ventana_def = periodo_agg
+            _ventana_agg = _detectar_ventana_meses(consulta_humana, default=_ventana_def)
             sql = (
                 f"WITH Mensual AS ("
                 f"SELECT ME.[Code] AS [Equipo],MP.[Name] AS [Proyecto],LD.[Compartimiento],"
-                f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"{_expr} AS [{_alias}],"
                 f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
                 f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
                 f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
@@ -1188,16 +1250,16 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
                 f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
                 f"{_join_980e} "
                 f"WHERE {filtro_comp} AND {where_equipo_t} "
-                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}{_where_980e} "
-                f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo])"
+                f"AND LD.[FechaMuestreo]>=DATEADD(MONTH,-{_ventana_agg},GETDATE()){_wt}{_where_grado}{_where_980e} "
+                f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],{_expr}"
                 f"),"
                 f"{_limites_cte('[Proyecto] IN (SELECT DISTINCT [Proyecto] FROM Mensual)')} "
-                f"SELECT m.[Equipo],m.[Proyecto],m.[Compartimiento],m.[Mes],"
+                f"SELECT m.[Equipo],m.[Proyecto],m.[Compartimiento],m.[{_alias}],"
                 f"m.[Fe_ppm],m.[Cr_ppm],m.[Ni_ppm],m.[Pb_ppm],m.[Sn_ppm],"
                 f"m.[Cu_ppm],m.[Si_ppm],m.[Al_ppm],m.[Indice_PQ],m.[TBN],"
                 f"m.[HorasDeAceite],m.[NMuestras],{_lc_select} "
                 f"FROM Mensual m LEFT JOIN LimitesLC l ON 1=1 "
-                f"ORDER BY m.[Compartimiento],m.[Mes] ASC"
+                f"ORDER BY m.[Compartimiento],m.[{_alias}] ASC"
             )
         else:
             # ── EQUIPO · Default: últimas N muestras individuales + LP/LC ──────────
@@ -1230,11 +1292,13 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     elif proyecto:
         _wt = _tipo_where()
 
-        if usar_avg_mensual:
-            # ── PROYECTO · Promedio mensual flota (agrega todos los equipos por mes) ──
+        if periodo_agg:
+            # ── PROYECTO · AVG por periodo (mensual / trimestral / anual / etc.) ──
+            _expr, _alias, _ventana_def = periodo_agg
+            _ventana_agg = _detectar_ventana_meses(consulta_humana, default=_ventana_def)
             sql = (
                 f"WITH Mensual AS ("
-                f"SELECT LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"SELECT LD.[Compartimiento],{_expr} AS [{_alias}],"
                 f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
                 f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
                 f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
@@ -1242,19 +1306,19 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
                 f"COUNT(DISTINCT ME.[Id]) AS [NEquipos],COUNT(*) AS [NMuestras] "
                 f"{base_joins}{_join_980e} "
                 f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
-                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado}{_where_980e} "
-                f"GROUP BY LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo])"
+                f"AND LD.[FechaMuestreo]>=DATEADD(MONTH,-{_ventana_agg},GETDATE()){_wt}{_where_grado}{_where_980e} "
+                f"GROUP BY LD.[Compartimiento],{_expr}"
                 f"),"
             )
             _filtro_proy_lc = f"[Proyecto] LIKE '%{proyecto}%'"
             sql += (
                 f"{_limites_cte(_filtro_proy_lc)} "
-                f"SELECT m.[Compartimiento],m.[Mes],"
+                f"SELECT m.[Compartimiento],m.[{_alias}],"
                 f"m.[Fe_ppm],m.[Cr_ppm],m.[Ni_ppm],m.[Pb_ppm],m.[Sn_ppm],"
                 f"m.[Cu_ppm],m.[Si_ppm],m.[Al_ppm],m.[Indice_PQ],m.[TBN],"
                 f"m.[NEquipos],m.[NMuestras],{_lc_select} "
                 f"FROM Mensual m LEFT JOIN LimitesLC l ON 1=1 "
-                f"ORDER BY m.[Compartimiento],m.[Mes] ASC"
+                f"ORDER BY m.[Compartimiento],m.[{_alias}] ASC"
             )
         else:
             # ── PROYECTO · Default: últimas N muestras por equipo (snapshot flota) ──
@@ -1282,11 +1346,13 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
     else:
         _wt = _tipo_where()
 
-        if usar_avg_mensual:
-            # ── ELSE · Promedio mensual sin proyecto (distingue flotas por proyecto) ──
+        if periodo_agg:
+            # ── ELSE · AVG por periodo sin proyecto (distingue flotas por proyecto) ──
+            _expr, _alias, _ventana_def = periodo_agg
+            _ventana_agg = _detectar_ventana_meses(consulta_humana, default=_ventana_def)
             sql = (
                 f"SELECT MP.[Name] AS [Proyecto],LD.[Compartimiento],"
-                f"EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
+                f"{_expr} AS [{_alias}],"
                 f"AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
                 f"AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],AVG(LD.[Sn_ppm]) AS [Sn_ppm],"
                 f"AVG(LD.[Cu_ppm]) AS [Cu_ppm],AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
@@ -1294,9 +1360,9 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
                 f"COUNT(*) AS [NMuestras] "
                 f"{base_joins} "
                 f"WHERE {filtro_comp} "
-                f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE()){_wt}{_where_grado} "
-                f"GROUP BY MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
-                f"ORDER BY [Proyecto],[Compartimiento],[Mes] ASC"
+                f"AND LD.[FechaMuestreo]>=DATEADD(MONTH,-{_ventana_agg},GETDATE()){_wt}{_where_grado} "
+                f"GROUP BY MP.[Name],LD.[Compartimiento],{_expr} "
+                f"ORDER BY [Proyecto],[Compartimiento],[{_alias}] ASC"
             )
         else:
             # ── ELSE · Default: últimas N muestras sin proyecto ───────────────────
