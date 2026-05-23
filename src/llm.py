@@ -1003,7 +1003,6 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
     )
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
-    _where_cm = _where_excluir_cm()
 
     # Auto-switch: si la ventana supera 6 meses, agrupa por mes (AVG mensual) en lugar de
     # devolver miles de filas individuales. La columna [Mes] es reconocida por analitica.py.
@@ -1025,7 +1024,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
                 f"COUNT(*) AS [NMuestras] "
                 f"{base_joins}{_join_980e} "
                 f"WHERE {filtro_comp} AND {where_equipo} "
-                f"AND {filtro_fecha_avg}{_where_980e}{_where_cm}{_where_grado} "
+                f"AND {filtro_fecha_avg}{_where_980e}{_where_grado} "
                 f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
                 f"ORDER BY [Equipo],[Compartimiento],[Mes] ASC"
             )
@@ -1040,7 +1039,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
                 f"COUNT(DISTINCT ME.[Id]) AS [NEquipos],COUNT(*) AS [NMuestras] "
                 f"{base_joins}{_join_980e} "
                 f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
-                f"AND {filtro_fecha_avg}{_where_980e}{_where_cm}{_where_grado} "
+                f"AND {filtro_fecha_avg}{_where_980e}{_where_grado} "
                 f"GROUP BY MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
                 f"ORDER BY [Proyecto],[Compartimiento],[Mes] ASC"
             )
@@ -1068,7 +1067,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins}{_join_980e} "
-            f"WHERE {filtro_comp} AND {where_equipo} AND {filtro_fecha}{_where_980e}{_where_cm}{_where_grado} "
+            f"WHERE {filtro_comp} AND {where_equipo} AND {filtro_fecha}{_where_980e}{_where_grado} "
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
     else:
@@ -1076,7 +1075,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins}{_join_980e} "
-            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_980e}{_where_cm}{_where_grado} "
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_980e}{_where_grado} "
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
     return sql
@@ -1125,7 +1124,6 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
-    _where_cm = _where_excluir_cm()
 
     sql = (
         f"WITH LatestSamples AS ("
@@ -1142,7 +1140,7 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         f"{_join_980e} "
         f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
-        f"{_where_comp}{_where_proy}{_where_980e}{_where_cm}{_where_grado}"
+        f"{_where_comp}{_where_proy}{_where_980e}{_where_grado}"
         f") "
         f"SELECT TOP(200) [EquipmentCode],[Compartimiento],[Grado],"
         f"[Condicion],[CodigoMuestreo],[Horometro],"
@@ -1508,10 +1506,10 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
         f"WHERE LS.rn=1 "
         f"AND ("
-        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],60) OR "
-        f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
-        f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
-        f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
+        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
+        f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
+        f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
+        f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
         f"LS.[Cr_ppm]>ISNULL(LC.[CROMO - LP],9999) OR "
         f"LS.[Ni_ppm]>ISNULL(LC.[NIQUEL - LP],9999) OR "
         f"LS.[Pb_ppm]>ISNULL(LC.[PLOMO - LP],9999) OR "
@@ -1670,13 +1668,12 @@ def _reforzar_triage_observados(q: str) -> str:
     )
 
     # Condición de observado: supera al menos UN límite LP.
-    # Fallbacks referenciales del dominio para Fe/Al/Cu/Si (no 9999) → resultado válido aunque
-    # el JOIN con Eqpcare.lc no matchee. Cr/Ni/Pb/Sn/PQ usan 9999 → solo disparan si hay datos reales en lc.
+    # Fallback 9999 en todos los metales → sin datos reales en lc NUNCA se dispara un falso positivo.
     _umbral_lc = (
-        "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],60) OR "
-        "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],25) OR "
-        "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],30) OR "
-        "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],25) OR "
+        "LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
+        "LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
+        "LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
+        "LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
         "LS.[Cr_ppm]>ISNULL(LC.[CROMO - LP],9999) OR "
         "LS.[Ni_ppm]>ISNULL(LC.[NIQUEL - LP],9999) OR "
         "LS.[Pb_ppm]>ISNULL(LC.[PLOMO - LP],9999) OR "
@@ -1720,12 +1717,14 @@ def _reforzar_triage_observados(q: str) -> str:
             f"GROUP BY [COMPONENTE])"
         )
     elif like_compartimiento:
+        # Sin proyecto detectado: incluir [Proyecto] en el GROUP BY y el JOIN usa el proyecto
+        # del equipo → cada equipo obtiene el LP/LC de su propio proyecto, no el MIN global.
         _limites_cte_con_proyecto = (
             f"LimitesLC AS ("
-            f"SELECT [COMPONENTE],{_lc_mins} "
+            f"SELECT [Proyecto],[COMPONENTE],{_lc_mins} "
             f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
             f"WHERE [COMPONENTE] LIKE '{like_compartimiento}' "
-            f"GROUP BY [COMPONENTE])"
+            f"GROUP BY [Proyecto],[COMPONENTE])"
         )
     else:
         # Sin ningún dato conocido: sin filtro (el LLM infiere el WHERE).
@@ -1752,15 +1751,15 @@ def _reforzar_triage_observados(q: str) -> str:
     elif like_compartimiento:
         instruccion_cte = (
             f"2 CTEs: LatestSamples y LimitesLC. "
-            f"LatestSamples: JOIN a ME WITH (NOLOCK). "
-            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], LD.[Compartimiento], "
+            f"LatestSamples: JOIN a ME y MP WITH (NOLOCK). "
+            f"SELECT SIN TOP: ME.[Code] AS [EquipmentCode], MP.[Name] AS [Proyecto], LD.[Compartimiento], "
             f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
             f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[FechaMuestreo], "
             f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){filtro_fecha_corte}. "
             f"{_limites_cte_con_proyecto}. "
-            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
-            f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Proyecto],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] AND LC.[Proyecto] LIKE '%'+LS.[Proyecto]+'%' "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     else:
