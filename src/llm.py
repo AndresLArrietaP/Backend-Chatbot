@@ -308,7 +308,8 @@ def _reforzar_tendencia_historica(q: str) -> str:
         f"ORDER BY {group_prefix},[Mes] "
         "— EOMONTH() devuelve tipo date, úsalo sin CAST. "
         "NUNCA usar ROW_NUMBER/rn para este tipo de consulta. "
-        "Si el usuario pide un metal específico, incluirlo como primera métrica AVG."
+        "Si el usuario pide un metal específico, incluirlo como primera métrica AVG. "
+        "SIEMPRE excluir DDI: AND (LD.[CM] IS NULL OR LD.[CM] NOT IN ('DDI','DIALIZADO','RELLENO+DIALIZADO'))."
         + _hint_980e_tend
     )
 
@@ -392,13 +393,21 @@ _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
 ]
 
 # Columna que indica el tipo de muestra en [Oil].[LaboratoryData]: CM (varchar 30).
-# Valores confirmados 2026-05-13 en BD (Motor Tracción): M/MUESTRA/MUESTREO/MONI=Monitoreo,
-# C/CAMBIO=Cambio, ADI=Antes de Dialización (muestra real), DDI=Después de Dialización,
-# DIALIZADO=post-dializado, RELLENO+DIALIZADO=combinado. NULL=9123 filas (sin registro).
-# Excluir DDI/DIALIZADO/RELLENO+DIALIZADO — aceite ya limpiado, metales artificialmente bajos.
-# ADI se INCLUYE (muestra real del estado pre-intervención). NULL se INCLUYE (histórico válido).
+# Valores confirmados 2026-05-13 en BD: M/MUESTRA/MUESTREO/MONI=Monitoreo,
+# C/CAMBIO=Cambio, ADI=Antes de Dialización (muestra real → incluir), DDI=Después de Dialización,
+# DIALIZADO=post-dializado, RELLENO+DIALIZADO=combinado. NULL=9123 filas (histórico → incluir).
+# Excluir DDI/DIALIZADO/RELLENO+DIALIZADO globalmente — metales artificialmente bajos post-proceso.
+# Aunque DDI solo ocurre en Motor Tracción, el filtro se aplica a TODOS los queries por seguridad.
 _TIPO_MUESTRA_COL: str = "CM"
 _TIPO_MUESTRA_MT_EXCLUIR = ("DDI", "DIALIZADO", "RELLENO+DIALIZADO")
+
+
+def _where_excluir_cm() -> str:
+    """Excluye muestras post-dializado de cualquier query sobre LaboratoryData.
+    Aplicar globalmente — aunque DDI solo aparece en Motor Tracción, no filtra otras filas.
+    """
+    excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
+    return f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
 
 # Proyectos mineros conocidos mapeados a su nombre real en BD.
 # Se usa en filtros LIKE sobre [Mine].[MiningProject].[Name].
@@ -565,7 +574,7 @@ def _detectar_ventana_meses(q: str, default: int = 24) -> int:
     return default
 
 
-_N_TENDENCIA_DEFAULT = 6   # muestras por defecto para tendencia por equipo
+_N_TENDENCIA_DEFAULT = 8   # muestras por defecto para tendencia por equipo
 _N_TENDENCIA_MAX = 12      # máximo permitido (evita respuestas excesivamente largas)
 _HISTORIAL_VENTANA_MAX_INDIVIDUAL = 6  # >6 meses → auto-switch a AVG mensual en historial
 
@@ -994,6 +1003,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
     )
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
+    _where_cm = _where_excluir_cm()
 
     # Auto-switch: si la ventana supera 6 meses, agrupa por mes (AVG mensual) en lugar de
     # devolver miles de filas individuales. La columna [Mes] es reconocida por analitica.py.
@@ -1015,7 +1025,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
                 f"COUNT(*) AS [NMuestras] "
                 f"{base_joins}{_join_980e} "
                 f"WHERE {filtro_comp} AND {where_equipo} "
-                f"AND {filtro_fecha_avg}{_where_980e}{_where_grado} "
+                f"AND {filtro_fecha_avg}{_where_980e}{_where_cm}{_where_grado} "
                 f"GROUP BY ME.[Code],MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
                 f"ORDER BY [Equipo],[Compartimiento],[Mes] ASC"
             )
@@ -1030,7 +1040,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
                 f"COUNT(DISTINCT ME.[Id]) AS [NEquipos],COUNT(*) AS [NMuestras] "
                 f"{base_joins}{_join_980e} "
                 f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' "
-                f"AND {filtro_fecha_avg}{_where_980e}{_where_grado} "
+                f"AND {filtro_fecha_avg}{_where_980e}{_where_cm}{_where_grado} "
                 f"GROUP BY MP.[Name],LD.[Compartimiento],EOMONTH(LD.[FechaMuestreo]) "
                 f"ORDER BY [Proyecto],[Compartimiento],[Mes] ASC"
             )
@@ -1058,7 +1068,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins}{_join_980e} "
-            f"WHERE {filtro_comp} AND {where_equipo} AND {filtro_fecha}{_where_980e}{_where_grado} "
+            f"WHERE {filtro_comp} AND {where_equipo} AND {filtro_fecha}{_where_980e}{_where_cm}{_where_grado} "
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
     else:
@@ -1066,7 +1076,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         sql = (
             f"SELECT TOP(500) {base_cols} "
             f"{base_joins}{_join_980e} "
-            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_980e}{_where_grado} "
+            f"WHERE {filtro_comp} AND MP.[Name] LIKE '%{proyecto}%' AND {filtro_fecha}{_where_980e}{_where_cm}{_where_grado} "
             f"ORDER BY LD.[FechaMuestreo] DESC"
         )
     return sql
@@ -1115,6 +1125,7 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
+    _where_cm = _where_excluir_cm()
 
     sql = (
         f"WITH LatestSamples AS ("
@@ -1131,7 +1142,7 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         f"{_join_980e} "
         f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
-        f"{_where_comp}{_where_proy}{_where_980e}{_where_grado}"
+        f"{_where_comp}{_where_proy}{_where_980e}{_where_cm}{_where_grado}"
         f") "
         f"SELECT TOP(200) [EquipmentCode],[Compartimiento],[Grado],"
         f"[Condicion],[CodigoMuestreo],[Horometro],"
@@ -1193,13 +1204,6 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
 
     periodo_agg = _detectar_periodo_agrupacion(consulta_humana)
 
-    # ── Helper: cláusula de exclusión MT (DDI/DIALIZADO) ──────────────────────────
-    def _tipo_where() -> str:
-        if like_comp == "%TRACCION%" and _TIPO_MUESTRA_COL:
-            excluir = ",".join(f"'{v}'" for v in _TIPO_MUESTRA_MT_EXCLUIR)
-            return f" AND (LD.[{_TIPO_MUESTRA_COL}] IS NULL OR LD.[{_TIPO_MUESTRA_COL}] NOT IN ({excluir}))"
-        return ""
-
     # ── Helper: CTE LimitesLC (reutilizado en varios paths) ──────────────────────
     def _limites_cte(filtro_proyecto: str) -> str:
         return (
@@ -1230,7 +1234,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             if equipo_code.startswith("%")
             else f"ME.[Code]='{equipo_code}'"
         )
-        _wt = _tipo_where()
+        _wt = _where_excluir_cm()
 
         if periodo_agg:
             # ── EQUIPO · AVG por periodo (mensual / trimestral / anual / etc.) ──
@@ -1290,7 +1294,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             )
 
     elif proyecto:
-        _wt = _tipo_where()
+        _wt = _where_excluir_cm()
 
         if periodo_agg:
             # ── PROYECTO · AVG por periodo (mensual / trimestral / anual / etc.) ──
@@ -1344,7 +1348,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
             )
 
     else:
-        _wt = _tipo_where()
+        _wt = _where_excluir_cm()
 
         if periodo_agg:
             # ── ELSE · AVG por periodo sin proyecto (distingue flotas por proyecto) ──
@@ -1430,9 +1434,21 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     fecha_corte = _detectar_fecha_corte(consulta_humana)
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
+    # Equipo específico: "barrido del 3160 de Antapaccay" → filtrar solo ese equipo.
+    equipo_code = _detectar_equipo_code(consulta_humana)
+    if equipo_code:
+        _where_equipo = (
+            f" AND ME.[Code] LIKE '{equipo_code}'"
+            if equipo_code.startswith("%")
+            else f" AND ME.[Code]='{equipo_code}'"
+        )
+    else:
+        _where_equipo = ""
+
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
+    _where_cm = _where_excluir_cm()
 
     sql = (
         # ── CTE 1: LatestSamples ────────────────────────────────────────────────
@@ -1449,7 +1465,8 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"{_join_980e} "
         f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
         f"AND MP.[Name] LIKE '%{proyecto}%' "
-        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}{_where_980e}{_where_grado}"
+        f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
+        f"{_where_equipo}{_where_980e}{_where_cm}{_where_grado}"
         f"), "
         # ── CTE 2: LimitesLC ─────────────────────────────────────────────────────
         # MIN para metales ppm: límite más restrictivo entre modelos del mismo componente.
@@ -1593,6 +1610,7 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
+    _where_cm = _where_excluir_cm()
 
     sql = (
         f"WITH LatestSamples AS ("
@@ -1608,7 +1626,7 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         f"{_join_980e} "
         f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
-        f"{_where_comp}{_where_proy}{_where_980e}{_where_grado}"
+        f"{_where_comp}{_where_proy}{_where_980e}{_where_cm}{_where_grado}"
         f") "
         f"SELECT TOP({n_val}) [EquipmentCode],[Compartimiento],[Grado],"
         f"[Condicion],[CodigoMuestreo],[Horometro],"
@@ -1774,6 +1792,7 @@ def _reforzar_triage_observados(q: str) -> str:
           "NUNCA '%MOTOR TRACCION%'. Motor sin tracción → LIKE '%MOTOR%' AND NOT LIKE '%TRACCION%'. "
           "Columnas [Eqpcare].[lc] con espacios usan corchetes: [FIERRO - LP], [TBN - LP]. "
           "NUNCA filtrar LD.[Condicion]='OBSERVADA' — [Condicion] es numérico (1/2/3), no texto. Estado observado = superar LP en metales. "
+          "EXCLUIR DDI: agregar AND (LD.[CM] IS NULL OR LD.[CM] NOT IN ('DDI','DIALIZADO','RELLENO+DIALIZADO')) en LatestSamples WHERE. "
           "DEVUELVE SOLO observados. 0 filas=válido. ORDER BY LS.[Fe_ppm] DESC."
         + _hint_980e
     )
