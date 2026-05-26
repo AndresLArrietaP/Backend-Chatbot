@@ -1727,10 +1727,11 @@ def _reforzar_triage_observados(q: str) -> str:
             f"GROUP BY [Proyecto],[COMPONENTE])"
         )
     else:
-        # Sin ningún dato conocido: sin filtro (el LLM infiere el WHERE).
+        # Sin datos conocidos: incluir [Proyecto] en GROUP BY → cada equipo usa el LP de su
+        # propio proyecto, no el MIN global (evita LP=80 de Cerro Verde aplicado a Antapaccay).
         _limites_cte_con_proyecto = (
-            f"LimitesLC AS (SELECT [COMPONENTE],{_lc_mins} "
-            "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [COMPONENTE])"
+            f"LimitesLC AS (SELECT [Proyecto],[COMPONENTE],{_lc_mins} "
+            "FROM [Eqpcare].[lc] WITH (NOLOCK) GROUP BY [Proyecto],[COMPONENTE])"
         )
 
     # Construir la instrucción de CTE según qué información se detectó.
@@ -1763,15 +1764,16 @@ def _reforzar_triage_observados(q: str) -> str:
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     else:
-        # Sin compartimiento: instrucción genérica, el LLM debe inferir el filtro LIKE.
+        # Sin compartimiento: instrucción genérica, el LLM infiere el filtro LIKE.
+        # MP JOIN obligatorio para que LS.[Proyecto] exista → JOIN LP/LC sea por proyecto correcto.
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%', '%HIDRAUL%'). "
-            "2 CTEs: LatestSamples y LimitesLC. LatestSamples: JOIN a ME. "
-            "SELECT SIN TOP: ME.[Code] AS [EquipmentCode], columnas LD, "
+            "2 CTEs: LatestSamples y LimitesLC. LatestSamples: JOIN a ME y MP WITH (NOLOCK). "
+            "SELECT SIN TOP: ME.[Code] AS [EquipmentCode], MP.[Name] AS [Proyecto], columnas LD, "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"LimitesLC: {_limites_cte_con_proyecto}. "
-            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
-            "FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Proyecto],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
+            "FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] AND LC.[Proyecto] LIKE '%'+LS.[Proyecto]+'%' "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
 
