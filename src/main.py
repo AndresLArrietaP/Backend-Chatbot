@@ -1056,7 +1056,11 @@ async def _armar_respuesta_desde_resultado_previo(
     }
 
     if origen_respuesta.endswith("_filtrado"):
-        respuesta["rows"] = rows
+        _lp_lc_keys_mem = {k for k in (rows[0] if rows else {}) if " - LP" in k or " - LC" in k}
+        respuesta["rows"] = (
+            [{k: v for k, v in r.items() if k not in _lp_lc_keys_mem} for r in rows]
+            if _lp_lc_keys_mem else rows
+        )
 
     if INCLUIR_ANALISIS_RESULTADO:
         respuesta["analisis"] = analisis_resultado
@@ -1874,13 +1878,24 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
 
     estado_contexto_despues = _GESTOR_CONTEXTO.obtener_estado(session_id) if session_id else None
 
+    # Las columnas LP/LC son constantes en triage (CROSS JOIN devuelve 1 fila → mismos valores
+    # en cada row). Ya fueron extraídas a analisis.limites_referencia por generar_analisis_resultado.
+    # Stripearlas del payload de respuesta reduce el JSON ~50% para triage con muchos observados
+    # (ej: Cerro Verde 106 rows × 40 cols → 106 rows × 20 cols), acelerando el procesamiento del agente.
+    # El contexto de sesión conserva el rows completo (con LP/LC) para refinamientos futuros.
+    _lp_lc_keys = {k for k in (rows[0] if rows else {}) if " - LP" in k or " - LC" in k}
+    rows_respuesta = (
+        [{k: v for k, v in r.items() if k not in _lp_lc_keys} for r in rows]
+        if _lp_lc_keys else rows
+    )
+
     respuesta: Dict[str, Any] = {
         "ok": True,
         "human_query": human,
         "dialect": dialecto,
         "sql": sql_query,
         "executed": True,
-        "rows": rows,
+        "rows": rows_respuesta,
         "row_count": len(rows),
         "answer_text": respuesta_textual,
         "contexto_aplicado": contexto_aplicado,
