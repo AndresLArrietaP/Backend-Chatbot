@@ -298,6 +298,146 @@ def _calcular_tendencia_simple(fechas: List[datetime], valores: List[float]) -> 
 
 
 # ==============================================================================
+#  Recomendaciones técnicas — Motor de Tracción (MT) Antapaccay 980E
+# ==============================================================================
+
+# Nombre de display por metal (para el prefijo "Alto X")
+_MT_REC_NOMBRE: Dict[str, str] = {
+    "Fe": "Hierro", "PQ": "PQ", "Cr": "Cromo", "Ni": "Niquel",
+    "Cu": "Cobre",  "Pb": "Plomo", "Sn": "Estaño", "Si": "Silicio",
+}
+
+# Cuerpo de recomendación por metal (texto después de "Alto <Nombre> entre muestras de aceite ")
+# Fe y PQ comparten el mismo cuerpo → se agrupan: "Alto Hierro y PQ entre muestras..."
+# Pb y Sn comparten el mismo cuerpo → se agrupan: "Alto Plomo y Estaño entre muestras..."
+_MT_REC_CUERPO: Dict[str, str] = {
+    "Fe": (
+        "puede indicar un problema en los engranajes o cojinetes. "
+        "Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en su proximo PM. "
+        "Retirar los 8 tapones magneticos para inspeccion y limpieza en busca de particulado anormal. "
+        "De continuar elevada la tendencia solicitar inspeccion del piñon solar. "
+        "Solicite mayor informacion y detalle con confiabilidad.operaciones@kmmp.com.pe"
+    ),
+    "Cr": (
+        "puede indicar un problema en los rodillos y pistas de rodamientos. "
+        "Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en su proximo PM. "
+        "Retirar los 8 tapones magneticos para inspeccion y limpieza en busca de particulado anormal. "
+        "Solicite mayor informacion y detalle con confiabilidad.operaciones@kmmp.com.pe"
+    ),
+    "Ni": (
+        "puede indicar un problema en los engranajes. "
+        "Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en su proximo PM. "
+        "Retirar los 8 tapones magneticos para inspeccion y limpieza en busca de particulado anormal. "
+        "De continuar elevada la tendencia solicitar inspeccion del piñon solar. "
+        "Solicite mayor informacion y detalle con confiabilidad.operaciones@kmmp.com.pe"
+    ),
+    "Cu": (
+        "puede indicar un desgaste en las arandelas de empuje (interna y/o externa) o en el cojinete. "
+        "Revise la arandela de empuje si encuentra valores altos de Cu/Pb/Sn en conjunto. "
+        "Si encuentra daños o desgaste excesivo remplacela de ser necesario. "
+        "Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en su proximo PM. "
+        "Retirar los 8 tapones magneticos para inspeccion y limpieza en busca de particulado anormal. "
+        "Solicite mayor informacion y detalle con confiabilidad.operaciones@kmmp.com.pe"
+    ),
+    "Pb": (
+        "acompañado de alto Cu y Sn puede indicar un desgaste en las arandelas de empuje "
+        "(interna y/o externa). Revise la arandela de empuje, si encuentra daños o desgaste "
+        "excesivo remplacela de ser necesario. "
+        "Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en su proximo PM. "
+        "Retirar los 8 tapones magneticos para inspeccion y limpieza en busca de particulado anormal. "
+        "Solicite mayor informacion y detalle con confiabilidad.operaciones@kmmp.com.pe"
+    ),
+    "Si": (
+        "es probable este asociado a ingreso de contaminacion a la caja de engranajes. "
+        "Revise la tendencia de Al: si ambas suben en paralelo indicaria presencia de tierra/polvo "
+        "abrasivo, con correlaciones en el incremento de Fe/PQ. "
+        "Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en su proximo PM. "
+        "Retirar los 8 tapones magneticos para inspeccion y limpieza en busca de particulado anormal. "
+        "Solicite mayor informacion y detalle con confiabilidad.operaciones@kmmp.com.pe"
+    ),
+}
+# PQ comparte cuerpo con Fe; Sn comparte cuerpo con Pb
+_MT_REC_CUERPO["PQ"] = _MT_REC_CUERPO["Fe"]
+_MT_REC_CUERPO["Sn"] = _MT_REC_CUERPO["Pb"]
+
+# Columna SQL → clave metal interna
+_MT_COL_A_METAL: Dict[str, str] = {
+    "Fe_ppm": "Fe", "Indice_PQ": "PQ", "Cr_ppm": "Cr", "Ni_ppm": "Ni",
+    "Cu_ppm": "Cu", "Pb_ppm": "Pb", "Sn_ppm": "Sn", "Si_ppm": "Si",
+}
+
+# Columna SQL → clave en limites_referencia (nombres de [Eqpcare].[lc])
+_MT_COL_A_LC: Dict[str, str] = {
+    "Fe_ppm": "FIERRO",  "Indice_PQ": "PQ",    "Cr_ppm": "CROMO",  "Ni_ppm": "NIQUEL",
+    "Cu_ppm": "COBRE",   "Pb_ppm":   "PLOMO",  "Sn_ppm": "ESTAÑO", "Si_ppm": "SILICIO",
+}
+
+# Orden de presentación de recomendaciones MT
+_MT_ORDEN: List[str] = ["Fe", "PQ", "Cr", "Ni", "Cu", "Pb", "Sn", "Si"]
+
+
+def _recomendaciones_mt(
+    filas: List[Dict[str, Any]],
+    limites_referencia: Dict[str, Dict[str, float]],
+) -> List[str]:
+    """
+    Genera recomendaciones técnicas para Motor de Tracción basadas en metales que
+    superan LP. Agrupa automáticamente metales con cuerpo de texto idéntico
+    (Fe+PQ → 'Alto Hierro y PQ...', Pb+Sn → 'Alto Plomo y Estaño...').
+
+    Condiciones de activación:
+    - Al menos una fila con Compartimiento que contenga 'TRACCION'.
+    - Metal con max > LP según limites_referencia. Sin LP no genera recomendación.
+    """
+    if not filas or not limites_referencia:
+        return []
+
+    tiene_mt = any(
+        "TRACCION" in str(fila.get("Compartimiento", "")).upper()
+        for fila in filas
+    )
+    if not tiene_mt:
+        return []
+
+    # Detectar metales que superan LP en al menos una fila
+    metals_elevados: List[str] = []
+    for col, metal in _MT_COL_A_METAL.items():
+        lc_key = _MT_COL_A_LC.get(col)
+        lp = limites_referencia.get(lc_key, {}).get("LP") if lc_key else None
+        if lp is None:
+            continue
+        max_val = max((_a_float(f.get(col)) or 0.0) for f in filas)
+        if max_val > lp and metal not in metals_elevados:
+            metals_elevados.append(metal)
+
+    if not metals_elevados:
+        return []
+
+    # Generar recomendaciones agrupando por cuerpo idéntico
+    procesados: set = set()
+    recomendaciones: List[str] = []
+    for metal in _MT_ORDEN:
+        if metal in procesados or metal not in metals_elevados:
+            continue
+        cuerpo = _MT_REC_CUERPO.get(metal)
+        if not cuerpo:
+            continue
+        # Buscar otros metales elevados con exactamente el mismo cuerpo
+        grupo = [metal]
+        for otro in _MT_ORDEN:
+            if otro != metal and otro not in procesados and otro in metals_elevados:
+                if _MT_REC_CUERPO.get(otro) == cuerpo:
+                    grupo.append(otro)
+        nombres = [_MT_REC_NOMBRE.get(m, m) for m in grupo]
+        prefijo = "Alto " + " y ".join(nombres)
+        recomendaciones.append(f"{prefijo} entre muestras de aceite {cuerpo}")
+        for m in grupo:
+            procesados.add(m)
+
+    return recomendaciones
+
+
+# ==============================================================================
 #  API pública
 # ==============================================================================
 
@@ -496,6 +636,8 @@ def generar_analisis_resultado(
             }
         )
 
+    rec_mt = _recomendaciones_mt(filas, limites_referencia)
+
     result: Dict[str, Any] = {
         "row_count": len(filas),
         "columnas": columnas,
@@ -510,6 +652,8 @@ def generar_analisis_resultado(
     }
     if limites_referencia:
         result["limites_referencia"] = limites_referencia
+    if rec_mt:
+        result["recomendaciones_mt"] = rec_mt
     return result
 
 
