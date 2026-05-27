@@ -425,6 +425,16 @@ _PROYECTOS_CONOCIDOS: List[tuple] = [
     ("bayovar", "Bayovar"),
 ]
 
+# LP de Fe confirmados por proyecto (fuente: [Eqpcare].[lc] verificado 2026-05-22).
+# Se usa como fallback en ISNULL cuando el JOIN con LimitesLC no matchea por naming.
+# Solo Fe: es el metal de alerta más crítico y el único con LP validado en todos los proyectos.
+_PROYECTO_FE_LP_FALLBACK: dict = {
+    "Antapaccay": 200,
+    "Antamina":   200,
+    "Cerro Verde": 80,
+    "Toromocho":  145,
+}
+
 
 # ==============================================================================
 #  FUNCIONES DE DETECCIÓN
@@ -1419,12 +1429,24 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         return None
     like_comp = _detectar_like_compartimiento(consulta_humana)
     proyecto = _detectar_proyecto(consulta_humana)
-    # Sin ambos datos no podemos construir la doble CTE determinística.
-    # Guard adicional: like_comp="MOTOR" (catch-all sin %) es demasiado genérico para triage;
-    # like_comp="None" (string) indica un bug upstream que debe caer al LLM.
-    if not like_comp or like_comp in ("None", "MOTOR") or not proyecto:
+    equipo_code = _detectar_equipo_code(consulta_humana)
+
+    # Guard: "MOTOR" (catch-all sin %) solo se permite si hay equipo específico;
+    # sin equipo es demasiado ambiguo (¿motor de tracción? ¿motor principal?) → LLM.
+    # "None" (string) = bug upstream → siempre al LLM.
+    if not like_comp or like_comp == "None":
         return None
-    
+    if like_comp == "MOTOR" and not equipo_code:
+        return None
+
+    # Sin proyecto explícito → Antapaccay (proyecto principal de KomfIA).
+    # El filtro 980E NO se aplica en este caso: la consulta es genérica y no
+    # implica exclusividad de flota. Solo se aplica cuando el usuario menciona
+    # explícitamente "Antapaccay" (proyecto_inferido=False).
+    proyecto_inferido = not bool(proyecto)
+    if not proyecto:
+        proyecto = "Antapaccay"
+
     # Triage evalúa el estado ACTUAL: usa la muestra más reciente sin límite superior de fecha.
     # Solo aplica corte explícito si el usuario lo pide ("hasta abril").
     # _fecha_corte_defecto() NO se aplica aquí — excluiría muestras del mes en curso
@@ -1432,8 +1454,6 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
     fecha_corte = _detectar_fecha_corte(consulta_humana)
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
-    # Equipo específico: "barrido del 3160 de Antapaccay" → filtrar solo ese equipo.
-    equipo_code = _detectar_equipo_code(consulta_humana)
     if equipo_code:
         _where_equipo = (
             f" AND ME.[Code] LIKE '{equipo_code}'"
@@ -1445,8 +1465,14 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
 
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
-    _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
+    # 980E solo cuando Antapaccay fue mencionado explícitamente, nunca para defaults.
+    _join_980e, _where_980e = _join_modelo_antapaccay(None if proyecto_inferido else proyecto)
     _where_cm = _where_excluir_cm()
+
+    # Fallback Fe LP por proyecto: si el JOIN con LimitesLC no matchea (naming distinto
+    # de [COMPONENTE] en [Eqpcare].[lc]), ISNULL(9999) silenciaría equipos realmente
+    # observados. Solo Fe: es el único metal con LP confirmado en todos los proyectos.
+    _fe_lp_fallback = _PROYECTO_FE_LP_FALLBACK.get(proyecto, 9999)
 
     sql = (
         # ── CTE 1: LatestSamples ────────────────────────────────────────────────
@@ -1467,11 +1493,14 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"{_where_equipo}{_where_980e}{_where_cm}{_where_grado}"
         f"), "
         # ── CTE 2: LimitesLC ─────────────────────────────────────────────────────
-        # MIN para metales ppm: límite más restrictivo entre modelos del mismo componente.
-        # MAX para TBN: TBN bajo = alerta → referencia más alta = menos falsos positivos.
-        # Metales nuevos (Cr/Ni/Pb/Sn/PQ): fallback 9999 → solo disparan si lc tiene datos reales.
+        # Sin GROUP BY [COMPONENTE]: MIN sobre todos los rows del proyecto+keyword devuelve
+        # exactamente 1 fila. Incluso si el WHERE no matchea (proyecto sin datos en lc),
+        # SQL Server devuelve 1 fila con todos NULLs → ISNULL fallback actúa correctamente.
+        # Elimina la dependencia de exact-match por nombre de [COMPONENTE], que varía entre
+        # proyectos (ej: "MOTOR TRACCION RH" vs "MOTOR DE TRACCION RH").
+        # CROSS JOIN (no LEFT JOIN) porque LimitesLC siempre tiene exactamente 1 fila.
         f"LimitesLC AS ("
-        f"SELECT [COMPONENTE],"
+        f"SELECT "
         f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
         f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
         f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
@@ -1483,8 +1512,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
         f"MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC] "
         f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
-        f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}' "
-        f"GROUP BY [COMPONENTE]"
+        f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}'"
         f") "
         # ── SELECT final ─────────────────────────────────────────────────────────
         f"SELECT TOP(200) "
@@ -1503,10 +1531,10 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"LC.[PQ - LP],LC.[PQ - LC],"
         f"LC.[TBN - LP],LC.[TBN - LC] "
         f"FROM LatestSamples LS "
-        f"LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
+        f"CROSS JOIN LimitesLC LC "
         f"WHERE LS.rn=1 "
         f"AND ("
-        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],9999) OR "
+        f"LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],{_fe_lp_fallback}) OR "
         f"LS.[Al_ppm]>ISNULL(LC.[ALUMINIO - LP],9999) OR "
         f"LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) OR "
         f"LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR "
@@ -1700,12 +1728,14 @@ def _reforzar_triage_observados(q: str) -> str:
         "MAX([TBN - LP]) AS [TBN - LP],MAX([TBN - LC]) AS [TBN - LC]"
     )
     if proyecto and like_compartimiento:
+        # Sin GROUP BY: MIN sobre todos los rows del proyecto+keyword → 1 fila siempre.
+        # Si el proyecto no existe en lc, devuelve 1 fila con NULLs → ISNULL fallback actúa.
+        # Elimina la dependencia del exact-match de [COMPONENTE] entre proyectos.
         _limites_cte_con_proyecto = (
             f"LimitesLC AS ("
-            f"SELECT [COMPONENTE],{_lc_mins} "
+            f"SELECT {_lc_mins} "
             f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
-            f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_compartimiento}' "
-            f"GROUP BY [COMPONENTE])"
+            f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_compartimiento}')"
         )
     elif proyecto:
         # Sin compartimiento detectado: filtrar solo por proyecto para no escribir LIKE 'None'.
@@ -1746,7 +1776,7 @@ def _reforzar_triage_observados(q: str) -> str:
             f"WHERE: LD.[Compartimiento] LIKE '{like_compartimiento}' AND MP.[Name] LIKE '%{proyecto}%' AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){filtro_fecha_corte}. "
             f"{_limites_cte_con_proyecto}. "
             f"SELECT externo: SELECT TOP(200) LS.[EquipmentCode],LS.[Compartimiento],LS.[Fe_ppm],LS.[Cr_ppm],LS.[Ni_ppm],LS.[Pb_ppm],LS.[Sn_ppm],LS.[Cu_ppm],LS.[Si_ppm],LS.[Al_ppm],LS.[Indice_PQ],LS.[TBN],LS.[FechaMuestreo],{_lc_cols} "
-            f"FROM LatestSamples LS LEFT JOIN LimitesLC LC ON LC.[COMPONENTE]=LS.[Compartimiento] "
+            f"FROM LatestSamples LS CROSS JOIN LimitesLC LC "
             f"WHERE LS.rn=1 AND ({_umbral_lc}). "
         )
     elif like_compartimiento:
@@ -1766,9 +1796,14 @@ def _reforzar_triage_observados(q: str) -> str:
     else:
         # Sin compartimiento: instrucción genérica, el LLM infiere el filtro LIKE.
         # MP JOIN obligatorio para que LS.[Proyecto] exista → JOIN LP/LC sea por proyecto correcto.
+        _default_proyecto_hint = (
+            "" if proyecto
+            else "Sin proyecto especificado → filtrar por Antapaccay: MP.[Name] LIKE '%Antapaccay%'. "
+        )
         instruccion_cte = (
             "Compartimiento: usa keyword simple (ej: '%TRACCION%', '%HIDRAUL%'). "
-            "2 CTEs: LatestSamples y LimitesLC. LatestSamples: JOIN a ME y MP WITH (NOLOCK). "
+            + _default_proyecto_hint
+            + "2 CTEs: LatestSamples y LimitesLC. LatestSamples: JOIN a ME y MP WITH (NOLOCK). "
             "SELECT SIN TOP: ME.[Code] AS [EquipmentCode], MP.[Name] AS [Proyecto], columnas LD, "
             "ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] ORDER BY LD.[FechaMuestreo] DESC) AS rn. "
             f"LimitesLC: {_limites_cte_con_proyecto}. "
