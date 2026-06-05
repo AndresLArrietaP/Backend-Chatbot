@@ -1370,12 +1370,13 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         Genera el SQL para la consulta humana. Devuelve siempre una SQL string limpia.
 
         Orden de prioridad (cortocircuito — el primero que aplique gana):
-          1. intentar_historial_crudo_directo()         → registros individuales sin AVG
-          2. intentar_ultimo_analisis_flota_directo()   → última muestra por equipo, sin filtro LP/LC
-          3. intentar_tendencia_directo()               → serie mensual AVG sin filtros LP/LC
-          4. intentar_triage_directo()                  → triage de observados con doble CTE Python
-          5. intentar_ranking_directo()                 → top-N por metal con ROW_NUMBER
-          6. LLM (Gemini/OpenAI)                        → caso general con refuerzo de heurísticas
+          1. intentar_conteo_flota_directo()            → COUNT equipos por modelo/proyecto sin LLM
+          2. intentar_historial_crudo_directo()         → registros individuales sin AVG
+          3. intentar_ultimo_analisis_flota_directo()   → última muestra por equipo, sin filtro LP/LC
+          4. intentar_tendencia_directo()               → serie mensual AVG sin filtros LP/LC
+          5. intentar_triage_directo()                  → triage de observados con doble CTE Python
+          6. intentar_ranking_directo()                 → top-N por metal con ROW_NUMBER
+          7. LLM (Gemini/OpenAI)                        → caso general con refuerzo de heurísticas
 
         Los paths 1-5 son determinísticos, no llaman al LLM y son más rápidos y confiables
         para los casos de uso principales del producto.
@@ -1390,6 +1391,12 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         # no `consulta_humana` que podría venir inflada por Copilot Studio con
         # columnas/filtros del turno anterior o expansiones no deseadas.
         consulta_para_heuristicas = human
+
+        # Conteo de flota: "cuántos [modelo] tiene [proyecto]" → COUNT sin LLM, evita EquipmentCode.
+        sql_conteo = llm.intentar_conteo_flota_directo(consulta_para_heuristicas)
+        if sql_conteo:
+            log.info("[human_query] conteo_flota_directo activado — SQL generado en Python sin LLM")
+            return sql_conteo
 
         # Historial crudo: "sin promediar / muestra por muestra" + equipo/proyecto conocido
         # → SELECT plano sin ROW_NUMBER. Previene que el LLM reutilice el patrón triage CTE.

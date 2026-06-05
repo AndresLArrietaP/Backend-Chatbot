@@ -59,7 +59,9 @@ _proveedor = _obtener_proveedor()
 
 # Consultas que comparan dos valores, métricas o entidades entre sí.
 _RE_PISTA_COMPARACION = re.compile(
-    r"\b(supera|mayor\s+que|menor\s+que|más\s+que|menos\s+que|compar|vs\.?|versus|diferenc|pendien|despach)\b",
+    r"\b(supera|mayor\s+que|menor\s+que|más\s+que|menos\s+que|compar|vs\.?|versus|diferenc|pendien|despach|"
+    r"frente\s+a|en\s+comparaci[oó]n|comparado\s+con|respecto\s+a|entre\s+proyecto[s]?|entre\s+flota[s]?|"
+    r"mejor\s+que|peor\s+que|a\s+diferencia\s+de)\b",
     re.IGNORECASE,
 )
 
@@ -101,8 +103,11 @@ _RE_PISTA_SINTESIS_INTERPRETACION = re.compile(
 # Peticiones de priorización o filtro por severidad: "los más críticos", "peores", etc.
 _RE_PISTA_CRITICIDAD = re.compile(
     r"\b(crítico|critico|críticos|criticos|severo|severa|severos|severas|"
-    r"alarma|riesgo|urgente|peor|peores|más\s+alto|mas\s+alto|"
-    r"prioriza|priorizalos|priorízalos|ordena|ordenalos|ordénalos)\b",
+    r"alarma[s]?|riesgo[s]?|urgente[s]?|peor|peores|más\s+alto|mas\s+alto|"
+    r"prioriza|priorizalos|priorízalos|ordena|ordenalos|ordénalos|"
+    r"ranking|clasifica|clasific[ao]|mayor\s+prioridad|alta\s+prioridad|"
+    r"m[áa]s\s+grave[s]?|m[áa]s\s+cr[ií]tico[s]?|preocupante[s]?|en\s+riesgo|"
+    r"tbn\s+bajo|bajo\s+tbn|valor(?:es)?\s+bajos?|nivel(?:es)?\s+bajo[s]?|elevado[s]?)\b",
     re.IGNORECASE,
 )
 
@@ -159,8 +164,12 @@ _RE_PISTA_DIMENSIONAL = re.compile(
     # "todos los X" dimensional
     r"\btodo[s]?\s+(?:los?|las?)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|incidente[s]?|falla[s]?)\b"
     r"|"
-    # "qué/cuáles/cuántos X hay" — cubre "tipos de equipo hay", "cuántos modelos existen"
-    r"\b(?:qu[eé]|cu[aá]les?|cu[aá]ntos?)\s+(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|incidente[s]?|falla[s]?).{0,30}(?:hay|existen?|tiene[n]?|present[e]?[s]?)\b",
+    # "qué/cuáles/cuántos X hay/tiene" — cubre "cuántos equipos hay", "cuántos 980E tiene Antapaccay"
+    r"\b(?:qu[eé]|cu[aá]les?|cu[aá]nt(?:o[s]?|a[s]?))\s+"
+    r"(?:proyecto[s]?|modelo[s]?|tipo[s]?|equipo[s]?|camion(?:es)?|unidad(?:es)?|m[aá]quina[s]?|"
+    r"980[Ee]?(?:-\d)?|930[Ee]?|d475|d375|hd[0-9]+|wa[0-9]+|pc[0-9]+|"
+    r"incidente[s]?|falla[s]?)"
+    r".{0,40}(?:hay|existen?|tiene[n]?|present[e]?[s]?|registra[n]?|cuenta[n]?)\b",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -218,6 +227,118 @@ _RE_MUESTRAS_INDIVIDUALES = re.compile(
 
 def _es_intencion_tendencia_historica(texto: str) -> bool:
     return bool(_RE_PISTA_TENDENCIA_HISTORICA.search(texto or ""))
+
+
+# ==============================================================================
+#  AGREGACIÓN — consultas de promedio/máximo/mínimo/conteo + GROUP BY
+#
+#  Se activa cuando el usuario pide estadísticas agrupadas, no registros individuales.
+#  Ejemplos: "promedio de Fe por proyecto", "máximo de cobre en hidráulicos",
+#  "cuántas muestras hay por mes", "comparar promedios entre proyectos".
+# ==============================================================================
+
+_RE_PISTA_AGREGACION = re.compile(
+    r"\b(promedio[s]?|media\s+de|average|"
+    r"m[áa]ximo\s+de|m[áa]x(?:imo)?|"
+    r"m[ií]nimo\s+de|m[ií]n(?:imo)?|"
+    r"suma\s+de|total\s+de|sumar|totaliz|"
+    r"contar\s+(?:muestra[s]?|registro[s]?|equipo[s]?|an[aá]lisis)|"
+    r"cu[aá]nt(?:o[s]?|a[s]?)\s+(?:muestra[s]?|registro[s]?|an[aá]lisis|dato[s]?)|"
+    r"estad[ií]stica[s]?|desviaci[oó]n\s+est[aá]ndar|varianza|"
+    r"por\s+proyecto|por\s+flota|por\s+modelo|agrupar\s+por|agrupado\s+por|"
+    r"distribuci[oó]n\s+de|desglose\s+por|breakdown\s+por)\b",
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_agregacion(texto: str) -> bool:
+    return bool(_RE_PISTA_AGREGACION.search(texto or ""))
+
+
+# ==============================================================================
+#  PERÍODOS DE CALENDARIO
+#
+#  Detecta "este año", "este trimestre", "Q1 2025", "año 2024", etc.
+#  Permite generar filtros de fecha precisos en vez de DATEADD(MONTH,-N,...).
+# ==============================================================================
+
+_RE_PISTA_PERIODO_CALENDARIO = re.compile(
+    r"\b(este\s+a[nñ]o|a[nñ]o\s+actual|a[nñ]o\s+en\s+curso|"
+    r"este\s+trimestre|trimestre\s+actual|"
+    r"este\s+semestre|semestre\s+actual|"
+    r"Q[1-4](?:\s*20\d{2})?|"
+    r"primer\s+trimestre|segundo\s+trimestre|tercer\s+trimestre|cuarto\s+trimestre|"
+    r"20\d{2}\b)"  # año específico: 2023, 2024, 2025...
+    ,
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_periodo_calendario(texto: str) -> bool:
+    return bool(_RE_PISTA_PERIODO_CALENDARIO.search(texto or ""))
+
+
+def _reforzar_periodo_calendario(q: str) -> str:
+    """Genera el filtro de fecha correcto para períodos de calendario expresados en lenguaje natural."""
+    hoy = datetime.date.today()
+    q_l = (q or "").lower()
+    hint = ""
+
+    # "este año" / "año actual"
+    if re.search(r"\beste\s+a[nñ]o\b|\ba[nñ]o\s+actual\b|\ba[nñ]o\s+en\s+curso\b", q_l):
+        hint = (
+            f"este año ({hoy.year}): "
+            f"LD.[FechaMuestreo] >= '{hoy.year}-01-01' AND LD.[FechaMuestreo] <= GETDATE()"
+        )
+    # "primer/segundo/tercer/cuarto trimestre" o "este trimestre"
+    elif re.search(r"\bprimer\s+trimestre\b", q_l):
+        hint = f"Q1 {hoy.year}: LD.[FechaMuestreo] BETWEEN '{hoy.year}-01-01' AND '{hoy.year}-03-31'"
+    elif re.search(r"\bsegundo\s+trimestre\b", q_l):
+        hint = f"Q2 {hoy.year}: LD.[FechaMuestreo] BETWEEN '{hoy.year}-04-01' AND '{hoy.year}-06-30'"
+    elif re.search(r"\btercer\s+trimestre\b", q_l):
+        hint = f"Q3 {hoy.year}: LD.[FechaMuestreo] BETWEEN '{hoy.year}-07-01' AND '{hoy.year}-09-30'"
+    elif re.search(r"\bcuarto\s+trimestre\b", q_l):
+        hint = f"Q4 {hoy.year}: LD.[FechaMuestreo] BETWEEN '{hoy.year}-10-01' AND '{hoy.year}-12-31'"
+    elif re.search(r"\beste\s+trimestre\b|\btrimestre\s+actual\b", q_l):
+        q_num = (hoy.month - 1) // 3 + 1
+        mes_inicio = (q_num - 1) * 3 + 1
+        inicio = datetime.date(hoy.year, mes_inicio, 1)
+        hint = f"Q{q_num} {hoy.year}: LD.[FechaMuestreo] >= '{inicio}' AND LD.[FechaMuestreo] <= GETDATE()"
+    # "este semestre"
+    elif re.search(r"\beste\s+semestre\b|\bsemestre\s+actual\b", q_l):
+        sem = 1 if hoy.month <= 6 else 2
+        inicio = datetime.date(hoy.year, 1 if sem == 1 else 7, 1)
+        hint = f"semestre {sem} de {hoy.year}: LD.[FechaMuestreo] >= '{inicio}' AND LD.[FechaMuestreo] <= GETDATE()"
+    # "Q1/Q2/Q3/Q4 [año]"
+    else:
+        m_q = re.search(r"\bQ([1-4])(?:\s*(20\d{2}))?\b", q, re.IGNORECASE)
+        if m_q:
+            q_num = int(m_q.group(1))
+            anio_q = int(m_q.group(2)) if m_q.group(2) else hoy.year
+            mes_inicio = (q_num - 1) * 3 + 1
+            mes_fin = mes_inicio + 2
+            fin_dia = 31 if mes_fin in (3, 12) else 30 if mes_fin in (6, 9) else 28
+            hint = (
+                f"Q{q_num} {anio_q}: "
+                f"LD.[FechaMuestreo] BETWEEN '{anio_q}-{mes_inicio:02d}-01' "
+                f"AND '{anio_q}-{mes_fin:02d}-{fin_dia}'"
+            )
+        else:
+            # Año específico: "2024", "2025"
+            m_yr = re.search(r"\b(20\d{2})\b", q)
+            if m_yr:
+                yr = m_yr.group(1)
+                hint = f"año {yr}: LD.[FechaMuestreo] BETWEEN '{yr}-01-01' AND '{yr}-12-31'"
+
+    if not hint:
+        return q
+
+    return (
+        q.strip()
+        + f" | PERIODO-CALENDARIO: {hint}. "
+          "Usa este rango de fechas exacto en el WHERE en lugar de DATEADD(MONTH,-N,GETDATE()). "
+          "No uses @año ni variables — usa las fechas literales calculadas arriba."
+    )
 
 
 # Mapa escalable de periodos de agrupación para tendencia/historial.
@@ -337,13 +458,25 @@ _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
     # Estado explícito de observación / anomalía operativa
     r"\b(observad[ao]s?|condici[oó]n\s+observad[ao]|con\s+observaci[oó]n|en\s+observaci[oó]n|"
     r"fuera\s+de\s+l[ií]mite[s]?|fuera\s+de\s+rango|fuera\s+de\s+norma|"
-    r"con\s+anomal[ií]a[s]?|con\s+alerta[s]?|con\s+problema[s]?|"
+    r"fuera\s+de\s+espec(?:ificaci[oó]n)?[s]?|fuera\s+de\s+spec[s]?|"
+    r"con\s+anomal[ií]a[s]?|con\s+alerta[s]?|con\s+problema[s]?|en\s+alarma[s]?|"
     r"necesitan?\s+atenci[oó]n|requieren?\s+atenci[oó]n|"
     r"prestar(?:le)?\s+atenci[oó]n|a\s+(?:los?\s+)?que\s+prestarle\s+atenci[oó]n|"
+    r"supera[n]?\s+(?:el\s+)?l[ií]mite|superan?\s+(?:el\s+)?umbral|"
     # Patrón "estado de los N [componente]" — captura "estado de los 54 motores"
     r"estado\s+de\s+(?:los?|las?|todos?\s+los?|todas?\s+las?)?\s*\d*\s*"
     r"(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?|compartimiento[s]?|"
-    r"mando[s]?\s+final(?:es)?|diferencial(?:es)?|hidr[aá]ulico[s]?|rueda[s]?)|"
+    r"mando[s]?\s+final(?:es)?|diferencial(?:es)?|hidr[aá]ulico[s]?|rueda[s]?|flota[s]?)|"
+    # "cómo están los [componentes]" — consulta de estado sin "observado" explícito
+    r"c[oó]mo\s+est[aá]n?\s+(?:los?|las?)?\s*"
+    r"(?:motor(?:es)?|hidr[aá]ulico[s]?|transmisi[oó]n(?:es)?|rueda[s]?|"
+    r"mando[s]?\s+final(?:es)?|diferencial(?:es)?|componente[s]?|equipo[s]?|la\s+flota)|"
+    # "¿están bien/mal/dentro/fuera los [componentes]?"
+    r"(?:motor(?:es)?|hidr[aá]ulico[s]?|transmisi[oó]n(?:es)?|rueda[s]?|componente[s]?|equipo[s]?)\s+"
+    r"(?:est[aá][ns]?\s+(?:bien|mal|fuera|dentro|observad[ao]|en\s+alarma)|"
+    r"dentro\s+de\s+l[ií]mite[s]?|fuera\s+de\s+l[ií]mite[s]?)|"
+    # "hay algún/alguna [observado/fuera/problema/alerta]"
+    r"hay\s+alg[uú]n[a]?\s+(?:observad[ao]|fuera|problema|alerta|anomal[ií]a)|"
     # "cuáles/qué [componentes] están observados/con anomalía"
     r"cu[aá]les?\s+(?:motor(?:es)?|transmisi[oó]n(?:es)?|componente[s]?|equipo[s]?)\s+"
     r"(?:est[aá][ns]?|tienen?|presentan?)\s+(?:observaci[oó]n|anomal[ií]a|problema|alerta|fuera)|"
@@ -357,7 +490,10 @@ _RE_PISTA_TRIAGE_OBSERVADOS = re.compile(
     r"dame\s+(?:los?|las?)\s+observados?|"
     # Masa crítica de componentes sin metal específico mencionado
     r"(?:54|todos?\s+los?)\s+(?:motor(?:es)?\s+de\s+tracci[oó]n|transmisi[oó]n(?:es)?)|"
-    r"masa\s+de\s+componentes?|universo\s+de\s+(?:componentes?|equipos?)"
+    r"masa\s+de\s+componentes?|universo\s+de\s+(?:componentes?|equipos?)|"
+    # "salud de la flota", "status de equipos"
+    r"salud\s+de\s+(?:la\s+)?(?:flota|equipo[s]?)|"
+    r"status\s+de\s+(?:los?|las?\s+)?(?:equipo[s]?|motor(?:es)?|componente[s]?)"
     r")\b",
     re.IGNORECASE,
 )
@@ -747,14 +883,18 @@ def _reforzar_consulta_dimensional(q: str) -> str:
     return (
         q.strip()
         + " | IMPORTANTE — TABLAS DIMENSIONALES / CATÁLOGO: "
-          "Proyectos mineros → [Mine].[MiningProject] (columnas clave: Name, Department, Client). "
-          "Modelos y tipos de equipo → [Mine].[EquipmentFleet] (columnas clave: Model, Type, Description). "
-          "Equipos individuales → [Mine].[MiningEquipment] (columnas: Code; "
+          "Proyectos mineros → [Mine].[MiningProject] (PK: Id | columnas: Name, Department, Client). "
+          "Modelos y tipos de equipo → [Mine].[EquipmentFleet] (PK: Id | columnas: Model, Type, Description). "
+          "Equipos individuales → [Mine].[MiningEquipment] "
+          "(PK: Id | Code = identificador ej:'CA3160' — NO es el modelo; "
+          "COLUMNAS INEXISTENTES — NUNCA usar: EquipmentCode, EquipmentId, ModelCode, FleetCode; "
           "FK EquipmentFleetId → [Mine].[EquipmentFleet]; FK MiningProjectId → [Mine].[MiningProject]). "
-          "Para listar todos los componentes/compartimientos distintos → "
-          "SELECT DISTINCT [Compartimiento] FROM [Oil].[LaboratoryData] WHERE [Compartimiento] IS NOT NULL. "
-          "Incidentes o fallas → buscar en el esquema [Eqpcare] (revisar schema para el nombre exacto de la tabla). "
-          "En listados usa SELECT DISTINCT sin métricas agregadas. "
+          "Para CONTAR o LISTAR equipos por modelo y proyecto: "
+          "SELECT COUNT(ME.[Id]) FROM [Mine].[MiningEquipment] ME WITH (NOLOCK) "
+          "JOIN [Mine].[EquipmentFleet] EF WITH (NOLOCK) ON EF.[Id]=ME.[EquipmentFleetId] "
+          "JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+          "WHERE MP.[Name] LIKE '%Antapaccay%' AND EF.[Model] LIKE '%980%'. "
+          "Para listar compartimientos → SELECT DISTINCT [Compartimiento] FROM [Oil].[LaboratoryData] WHERE [Compartimiento] IS NOT NULL. "
           "En SQL Server: SELECT DISTINCT TOP(N) — DISTINCT siempre antes de TOP."
     )
 
@@ -802,13 +942,15 @@ def _reforzar_consulta_compartimiento_aceite(q: str) -> str:
     return (
         q.strip()
         + " | IMPORTANTE: si el usuario menciona motor, transmisión, hidráulico, diferencial, mando final, "
-          "reductor o convertidor dentro del contexto de análisis de aceite, interprétalo primero como un valor "
-          "del campo descriptivo Compartimiento del hecho de análisis de aceite. "
-          "La tabla preferida para datos de análisis de aceite es [Oil].[LaboratoryData]; "
-          "usa [Oil].[LaboratoryData].[Compartimiento] para filtrar por compartimiento. "
+          "reductor o convertidor dentro del contexto de análisis de aceite, interprétalo como un valor "
+          "del campo LD.[Compartimiento] en [Oil].[LaboratoryData]. "
+          "Valores reales en BD (usar LIKE con keyword corto, NUNCA frase compuesta con 'DE'): "
+          "'MOTOR DE TRACCION RH'/'LH' → LIKE '%TRACCION%'; "
+          "'SISTEMA HIDRAULICO' → LIKE '%HIDRAUL%'; "
+          "'RUEDA DELANTERA RH'/'LH' → LIKE '%RUEDA%'; "
+          "'MOTOR' (motor principal) → LIKE '%MOTOR%' AND NOT LIKE '%TRACCION%'. "
           "Prefiere filtrar con LIKE sobre Compartimiento. "
-          "NO uses dbo.Component.ComponentName salvo que el usuario pida explícitamente el componente maestro, "
-          "catálogo de componentes o una dimensión de componente de catálogo."
+          "NO uses dbo.Component.ComponentName salvo que el usuario pida explícitamente el catálogo de componentes."
     )
 
 
@@ -879,9 +1021,13 @@ def _reforzar_consulta_comparativa(q: str) -> str:
     """Asegura que las consultas comparativas incluyan ambas métricas y la diferencia calculada."""
     return (
         q.strip()
-        + " | IMPORTANTE: si la consulta implica comparar 2 campos (A vs B), el SELECT DEBE incluir "
-          "las 2 métricas y una columna Diferencia = (A - B), y ordenar por Diferencia DESC cuando "
-          "se esté limitando la cantidad de filas devueltas."
+        + " | IMPORTANTE: si la consulta implica comparar 2 campos o 2 entidades (A vs B), el SELECT DEBE incluir "
+          "las 2 métricas y una columna Diferencia = (A - B), ordenar por Diferencia DESC. "
+          "Para comparar ENTRE PROYECTOS (ej: Antapaccay vs Cerro Verde): "
+          "usar AVG(LD.[Fe_ppm]) GROUP BY MP.[Name] — incluir MP.[Name] en SELECT y GROUP BY. "
+          "Para comparar entre modelos: GROUP BY EF.[Model]. "
+          "Para comparar entre compartimientos: GROUP BY LD.[Compartimiento]. "
+          "NUNCA inventar valores de límite LP/LC — si se piden, obtenerlos de [Eqpcare].[lc] con ISNULL(...,9999)."
     )
 
 
@@ -919,13 +1065,31 @@ def _reforzar_consulta_criticidad(q: str) -> str:
     return (
         q.strip()
         + " | IMPORTANTE: si el usuario pide los casos más críticos y no define una regla exacta, "
-          "prioriza el orden descendente por las métricas de desgaste o contaminación explícitamente mencionadas "
-          "en la consulta actual o presentes en el contexto conversacional inmediato. "
+          "prioriza el orden descendente por las métricas de desgaste o contaminación mencionadas. "
           "Evita inventar umbrales operativos que no existan en la base. "
-          "Para encontrar 'el más alto/mayor/top N' por un metal en un compartimiento: "
-          "usa CTE con ROW_NUMBER() OVER (PARTITION BY MiningEquipmentId,Compartimiento ORDER BY FechaMuestreo DESC) "
-          "para obtener la última muestra por equipo, luego selecciona el TOP con ORDER BY metal DESC. "
-          "NUNCA ordenes solo por fecha ni uses MAX() sin deduplicar por equipo primero."
+          "Para 'el más alto/mayor/top N' por metal: "
+          "CTE con ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+          "ORDER BY LD.[FechaMuestreo] DESC) AS rn → WHERE rn=1 → ORDER BY metal DESC. "
+          "NUNCA ordenes solo por fecha ni uses MAX() sin deduplicar por equipo primero. "
+          "EXCEPCIÓN TBN: TBN bajo es malo (falla de aceite). "
+          "Para 'el peor TBN': ORDER BY TBN ASC (no DESC). "
+          "Para triage por TBN: WHERE LS.[TBN] < LC.[TBN - LP] (menor que LP = observado)."
+    )
+
+
+def _reforzar_consulta_agregacion(q: str) -> str:
+    """Instrucciones para queries de agregación (AVG/MAX/MIN/COUNT + GROUP BY) en SQL Server."""
+    return (
+        q.strip()
+        + " | AGREGACION-SQL: para consultas de promedio/máximo/mínimo/conteo en SQL Server: "
+          "1. Usar AVG(LD.[Fe_ppm]), MAX(LD.[Fe_ppm]), MIN(LD.[Fe_ppm]), COUNT(*) directamente. "
+          "2. GROUP BY las columnas de agrupación: MP.[Name] (por proyecto), EF.[Model] (por modelo), "
+          "LD.[Compartimiento] (por compartimiento), EOMONTH(LD.[FechaMuestreo]) (por mes). "
+          "3. NUNCA usar ROW_NUMBER en consultas de agregación — ROW_NUMBER deduplica registros, no agrupa. "
+          "4. HAVING para filtrar después del GROUP BY (ej: HAVING AVG(LD.[Fe_ppm])>100). "
+          "5. Para 'cuántas muestras': COUNT(LD.[LaboratoryDataId]). "
+          "6. En SQL Server: ORDER BY la misma expresión del SELECT (no alias en ORDER BY si no está en SELECT → error 8127). "
+          "7. Siempre WITH (NOLOCK) en todas las tablas."
     )
 
 
@@ -968,6 +1132,64 @@ _RE_ULTIMOS_N = re.compile(
     r"\búltim[oa]s?\s+(\d+)\s+(?:an[aá]lisis|registro[s]?|muestra[s]?|resultado[s]?|reporte[s]?)\b",
     re.IGNORECASE,
 )
+
+
+def intentar_conteo_flota_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera SQL de conteo de equipos por modelo/proyecto directamente en Python.
+
+    Activa cuando el usuario pregunta "cuántos [camiones/equipos/unidades] [modelo] tiene [proyecto]".
+    Evita que el LLM invente columnas inexistentes como EquipmentCode o EquipmentId.
+
+    SQL generado: COUNT(ME.[Id]) con JOIN ME→EF→MP, filtrando por modelo y/o proyecto.
+    Retorna None si no hay modelo ni proyecto detectado.
+    """
+    # Activar solo si hay intención de conteo explícita
+    if not re.search(
+        r"\bcu[aá]nt(?:o[s]?|a[s]?)\b|\bn[uú]mero\s+de\b|\bcantidad\s+de\b|\bcont(?:ar|eo)\b",
+        consulta_humana, re.IGNORECASE
+    ):
+        return None
+    # No activar para queries de aceite/triage/historial — tienen sus propios paths
+    if _es_intencion_triage_observados(consulta_humana):
+        return None
+    if _es_intencion_laboratorio_aceite(consulta_humana):
+        return None
+
+    proyecto = _detectar_proyecto(consulta_humana)
+    # Detectar modelo de equipo en la consulta
+    m_modelo = re.search(
+        r"\b(980[Ee]?(?:-\d)?|930[Ee]?|d475|d375|d155|hd[0-9]+|wa[0-9]+|pc[0-9]+)\b",
+        consulta_humana, re.IGNORECASE
+    )
+    modelo_str = m_modelo.group(1).upper() if m_modelo else None
+
+    # Necesitamos al menos proyecto o modelo para que el query sea determinístico
+    if not proyecto and not modelo_str:
+        return None
+
+    _where_modelo = f" AND EF.[Model] LIKE '%{modelo_str}%'" if modelo_str else ""
+    _where_proyecto = f" AND MP.[Name] LIKE '%{proyecto}%'" if proyecto else ""
+
+    # Alias descriptivo para la columna de resultado
+    if modelo_str and proyecto:
+        alias = f"[Total_{modelo_str}_en_{proyecto.replace(' ', '_')}]"
+    elif modelo_str:
+        alias = f"[Total_{modelo_str}]"
+    else:
+        alias = f"[Total_Equipos_{proyecto.replace(' ', '_')}]"
+
+    sql = (
+        f"SELECT COUNT(ME.[Id]) AS {alias}, "
+        f"MP.[Name] AS [Proyecto], EF.[Model] AS [Modelo] "
+        f"FROM [Mine].[MiningEquipment] ME WITH (NOLOCK) "
+        f"JOIN [Mine].[EquipmentFleet] EF WITH (NOLOCK) ON EF.[Id]=ME.[EquipmentFleetId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId] "
+        f"WHERE 1=1{_where_modelo}{_where_proyecto} "
+        f"GROUP BY MP.[Name], EF.[Model] "
+        f"ORDER BY MP.[Name], EF.[Model]"
+    )
+    return sql
 
 
 def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
@@ -1908,6 +2130,16 @@ async def consulta_humana_a_sql(
     if _es_intencion_dimensional(base_heuristica):
         q_reforzada = _reforzar_consulta_dimensional(q_reforzada)
         heuristicas_aplicadas.append("dimensional")
+
+    # Agregación: promedio/máximo/mínimo/conteo + GROUP BY.
+    if _es_intencion_agregacion(base_heuristica):
+        q_reforzada = _reforzar_consulta_agregacion(q_reforzada)
+        heuristicas_aplicadas.append("agregacion")
+
+    # Períodos de calendario: "este año", "Q1 2025", "año 2024", etc.
+    if _es_intencion_periodo_calendario(base_heuristica):
+        q_reforzada = _reforzar_periodo_calendario(q_reforzada)
+        heuristicas_aplicadas.append("periodo_calendario")
 
     # Asegurar que las consultas de aceite usen [Oil].[LaboratoryData] como tabla base.
     if _es_intencion_laboratorio_aceite(base_heuristica):
