@@ -1192,6 +1192,134 @@ def intentar_conteo_flota_directo(consulta_humana: str) -> Optional[str]:
     return sql
 
 
+def intentar_ultimo_analisis_con_limites_directo(consulta_humana: str) -> Optional[str]:
+    """
+    Genera SQL del último análisis por equipo+compartimiento CON columnas LP/LC incluidas.
+
+    Caso de uso: el usuario pide el último análisis de un equipo/flota Y quiere ver
+    el estado vs límites en la misma respuesta (sin filtrar a solo los observados).
+
+    Ejemplos:
+      "dame un barrido del último análisis del CA3160 y cuál está fuera de límites"
+      "último análisis del 3177 con sus límites"
+      "cómo está el CA3164 en su último análisis vs los límites"
+
+    Diferencia con intentar_triage_directo:
+      - Triage devuelve SOLO los que superan LP/LC (filtro WHERE).
+      - Este path devuelve TODOS con columnas LP/LC visibles + estado computado.
+      - Ideal para inspeccionar un equipo individual o subconjunto pequeño.
+
+    Diferencia con intentar_ultimo_analisis_flota_directo:
+      - Este path incluye LP/LC columns (CROSS JOIN LimitesLC).
+      - Requiere compartimiento detectado (para hacer el JOIN a lc).
+
+    Retorna None si no aplica → cae al intentar_triage_directo o LLM.
+    """
+    # Requiere AMBAS intenciones: último análisis + estado/límites
+    if not _es_intencion_ultimo_analisis_flota(consulta_humana):
+        return None
+    if not _es_intencion_triage_observados(consulta_humana):
+        return None
+    if _es_intencion_tendencia_historica(consulta_humana):
+        return None
+
+    like_comp = _detectar_like_compartimiento(consulta_humana)
+    equipo_code = _detectar_equipo_code(consulta_humana)
+    proyecto = _detectar_proyecto(consulta_humana)
+
+    # Sin compartimiento no podemos hacer el JOIN a [Eqpcare].[lc]
+    if not like_comp or like_comp in ("None", "MOTOR"):
+        return None
+    # Necesitamos al menos equipo O proyecto para un query determinístico
+    if not equipo_code and not proyecto:
+        return None
+
+    proyecto_inferido = not bool(proyecto)
+    if not proyecto:
+        proyecto = "Antapaccay"
+
+    _fe_lp_fallback = _PROYECTO_FE_LP_FALLBACK.get(proyecto, 9999)
+    _join_980e, _where_980e = _join_modelo_antapaccay(None if proyecto_inferido else proyecto)
+    _where_comp = f" AND LD.[Compartimiento] LIKE '{like_comp}'"
+    _where_proy = f" AND MP.[Name] LIKE '%{proyecto}%'"
+    _where_cm = _where_excluir_cm()
+
+    grado = _detectar_grado_aceite(consulta_humana)
+    _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+
+    if equipo_code:
+        _where_equipo = (
+            f" AND ME.[Code] LIKE '{equipo_code}'"
+            if equipo_code.startswith("%")
+            else f" AND ME.[Code]='{equipo_code}'"
+        )
+    else:
+        _where_equipo = ""
+
+    # CTE LimitesLC — mismo patrón CROSS JOIN que intentar_triage_directo
+    _lc_cols = (
+        f"MIN([FIERRO - LP]) AS [FIERRO - LP],MIN([FIERRO - LC]) AS [FIERRO - LC],"
+        f"MIN([COBRE - LP]) AS [COBRE - LP],MIN([COBRE - LC]) AS [COBRE - LC],"
+        f"MIN([SILICIO - LP]) AS [SILICIO - LP],MIN([SILICIO - LC]) AS [SILICIO - LC],"
+        f"MIN([ALUMINIO - LP]) AS [ALUMINIO - LP],MIN([ALUMINIO - LC]) AS [ALUMINIO - LC],"
+        f"MIN([CROMO - LP]) AS [CROMO - LP],MIN([CROMO - LC]) AS [CROMO - LC],"
+        f"MIN([NIQUEL - LP]) AS [NIQUEL - LP],MIN([NIQUEL - LC]) AS [NIQUEL - LC],"
+        f"MIN([PLOMO - LP]) AS [PLOMO - LP],MIN([ESTAÑO - LP]) AS [ESTAÑO - LP],"
+        f"MIN([PQ - LP]) AS [PQ - LP],MIN([PQ - LC]) AS [PQ - LC],"
+        f"MAX([TBN - LP]) AS [TBN - LP]"
+    )
+
+    sql = (
+        f"WITH LatestSamples AS ("
+        f"SELECT ME.[Code] AS [EquipmentCode],MP.[Name] AS [Proyecto],LD.[Compartimiento],"
+        f"LD.[FechaMuestreo],LD.[Horometro],LD.[HorasDeAceite],LD.[CM],"
+        f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+        f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],LD.[Grado],"
+        f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+        f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) "
+        f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
+        f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
+        f"{_join_980e} "
+        f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"
+        f"{_where_comp}{_where_proy}{_where_equipo}{_where_980e}{_where_cm}{_where_grado}"
+        f"), "
+        f"LimitesLC AS ("
+        f"SELECT {_lc_cols} "
+        f"FROM [Eqpcare].[lc] WITH (NOLOCK) "
+        f"WHERE [Proyecto] LIKE '%{proyecto}%' AND [COMPONENTE] LIKE '{like_comp}'"
+        f") "
+        f"SELECT TOP(200) "
+        f"LS.[EquipmentCode],LS.[Proyecto],LS.[Compartimiento],LS.[FechaMuestreo],"
+        f"LS.[Fe_ppm],LC.[FIERRO - LP],LC.[FIERRO - LC],"
+        f"LS.[Cu_ppm],LC.[COBRE - LP],LC.[COBRE - LC],"
+        f"LS.[Si_ppm],LC.[SILICIO - LP],LC.[SILICIO - LC],"
+        f"LS.[Al_ppm],LC.[ALUMINIO - LP],LC.[ALUMINIO - LC],"
+        f"LS.[Cr_ppm],LC.[CROMO - LP],LC.[CROMO - LC],"
+        f"LS.[Ni_ppm],LC.[NIQUEL - LP],LC.[NIQUEL - LC],"
+        f"LS.[Pb_ppm],LC.[PLOMO - LP],"
+        f"LS.[Indice_PQ],LC.[PQ - LP],LC.[PQ - LC],"
+        f"LS.[TBN],LC.[TBN - LP],"
+        f"LS.[HorasDeAceite],LS.[CM],LS.[Grado],"
+        f"CASE "
+        f"WHEN LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LC],9999) OR LS.[Cu_ppm]>ISNULL(LC.[COBRE - LC],9999) "
+        f"  OR LS.[Si_ppm]>ISNULL(LC.[SILICIO - LC],9999) OR LS.[Cr_ppm]>ISNULL(LC.[CROMO - LC],9999) "
+        f"  OR LS.[Ni_ppm]>ISNULL(LC.[NIQUEL - LC],9999) OR LS.[Indice_PQ]>ISNULL(LC.[PQ - LC],9999) "
+        f"  OR (LC.[TBN - LP] IS NOT NULL AND LS.[TBN]>0 AND LS.[TBN]<LC.[TBN - LP]) "
+        f"THEN 'CRITICO' "
+        f"WHEN LS.[Fe_ppm]>ISNULL(LC.[FIERRO - LP],{_fe_lp_fallback}) OR LS.[Cu_ppm]>ISNULL(LC.[COBRE - LP],9999) "
+        f"  OR LS.[Si_ppm]>ISNULL(LC.[SILICIO - LP],9999) OR LS.[Cr_ppm]>ISNULL(LC.[CROMO - LP],9999) "
+        f"  OR LS.[Ni_ppm]>ISNULL(LC.[NIQUEL - LP],9999) OR LS.[Indice_PQ]>ISNULL(LC.[PQ - LP],9999) "
+        f"THEN 'PRECAUCION' "
+        f"ELSE 'NORMAL' END AS [Estado] "
+        f"FROM LatestSamples LS "
+        f"CROSS JOIN LimitesLC LC "
+        f"WHERE LS.rn=1 "
+        f"ORDER BY LS.[EquipmentCode],LS.[Compartimiento]"
+    )
+    return sql
+
+
 def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
     """
     Genera SQL de registros individuales (sin AVG ni GROUP BY) directamente en Python.

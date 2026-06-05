@@ -1370,13 +1370,14 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         Genera el SQL para la consulta humana. Devuelve siempre una SQL string limpia.
 
         Orden de prioridad (cortocircuito — el primero que aplique gana):
-          1. intentar_conteo_flota_directo()            → COUNT equipos por modelo/proyecto sin LLM
-          2. intentar_historial_crudo_directo()         → registros individuales sin AVG
-          3. intentar_ultimo_analisis_flota_directo()   → última muestra por equipo, sin filtro LP/LC
-          4. intentar_tendencia_directo()               → serie mensual AVG sin filtros LP/LC
-          5. intentar_triage_directo()                  → triage de observados con doble CTE Python
-          6. intentar_ranking_directo()                 → top-N por metal con ROW_NUMBER
-          7. LLM (Gemini/OpenAI)                        → caso general con refuerzo de heurísticas
+          1. intentar_conteo_flota_directo()                → COUNT equipos por modelo/proyecto
+          2. intentar_ultimo_analisis_con_limites_directo() → último análisis + LP/LC + Estado (NORMAL/CRÍTICO)
+          3. intentar_historial_crudo_directo()             → registros individuales sin AVG
+          4. intentar_ultimo_analisis_flota_directo()       → última muestra por equipo, sin LP/LC
+          5. intentar_tendencia_directo()                   → serie mensual AVG sin filtros LP/LC
+          6. intentar_triage_directo()                      → triage: solo observados con LP/LC
+          7. intentar_ranking_directo()                     → top-N por metal con ROW_NUMBER
+          8. LLM (Gemini/OpenAI)                            → caso general con refuerzo de heurísticas
 
         Los paths 1-5 son determinísticos, no llaman al LLM y son más rápidos y confiables
         para los casos de uso principales del producto.
@@ -1417,6 +1418,15 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         if sql_tendencia:
             log.info("[human_query] tendencia_directo activado — SQL generado en Python sin LLM")
             return sql_tendencia
+
+        # Último análisis + límites: "dame el último análisis del CA3160 y cuál está fuera de límites"
+        # → Devuelve TODOS los compartimientos con LP/LC visibles + columna Estado (NORMAL/PRECAUCIÓN/CRÍTICO).
+        # Se activa antes que triage_directo para evitar el flujo 2-pasos cuando el usuario
+        # pide explícitamente ver el análisis completo junto con el estado.
+        sql_ultimo_limites = llm.intentar_ultimo_analisis_con_limites_directo(consulta_para_heuristicas)
+        if sql_ultimo_limites:
+            log.info("[human_query] ultimo_analisis_con_limites_directo activado — SQL generado en Python sin LLM")
+            return sql_ultimo_limites
 
         # Triage directo: compartimiento + proyecto detectados → observados con límites reales de BD
         sql_triage = llm.intentar_triage_directo(consulta_para_heuristicas)
