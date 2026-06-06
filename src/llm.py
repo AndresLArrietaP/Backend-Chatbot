@@ -688,6 +688,33 @@ def _detectar_like_compartimiento(q: str) -> Optional[str]:
     return None
 
 
+# Lado del componente: izquierdo (LH) / derecho (RH). Los valores en BD terminan en
+# " LH"/" RH" (ej: 'MOTOR DE TRACCION LH', 'RUEDA DELANTERA RH').
+_RE_LADO_LH = re.compile(r"\b(izquierd[ao]s?|lh|left)\b", re.IGNORECASE)
+_RE_LADO_RH = re.compile(r"\b(derech[ao]s?|rh|right)\b", re.IGNORECASE)
+
+
+def _detectar_lado(q: str) -> Optional[str]:
+    """Detecta lado izquierdo/derecho → 'LH'/'RH'. None si no se especifica (ambos lados).
+    Evita falsos positivos: 'RH'/'LH' como palabra suelta o izquierdo/derecho explícito."""
+    t = q or ""
+    lh = _buscar(_RE_LADO_LH, t)
+    rh = _buscar(_RE_LADO_RH, t)
+    if lh and not rh:
+        return "LH"
+    if rh and not lh:
+        return "RH"
+    return None  # ambos o ninguno → no filtrar
+
+
+def _where_lado(lado: Optional[str]) -> str:
+    """Cláusula WHERE para filtrar el compartimiento al lado pedido (LH/RH).
+    Los valores en BD terminan en ' LH'/' RH'. Vacío si no se pidió lado."""
+    if lado in ("LH", "RH"):
+        return f" AND LD.[Compartimiento] LIKE '%{lado}'"
+    return ""
+
+
 def _detectar_proyecto(q: str) -> Optional[str]:
     """
     Retorna el nombre del proyecto minero (tal como está en BD) si se menciona en la consulta.
@@ -1344,6 +1371,10 @@ def intentar_ultimo_analisis_con_limites_directo(consulta_humana: str) -> Option
     _fe_lp_fallback = _PROYECTO_FE_LP_FALLBACK.get(proyecto, 9999)
     _join_980e, _where_980e = _join_modelo_antapaccay(None if proyecto_inferido else proyecto)
     _where_comp = f" AND LD.[Compartimiento] LIKE '{like_comp}'"
+    # Lado izquierdo/derecho (LH/RH): filtra SOLO las muestras (LaboratoryData), NO los límites
+    # (LP/LC son iguales por lado). Si el usuario dice "MT izquierdo", devolver solo LH — evita
+    # que el RH contamine las recomendaciones con max() sobre filas no mostradas.
+    _where_lado_sql = _where_lado(_detectar_lado(consulta_humana))
     _where_proy = f" AND MP.[Name] LIKE '%{proyecto}%'"
     _where_cm = _where_excluir_cm()
 
@@ -1385,7 +1416,7 @@ def intentar_ultimo_analisis_con_limites_directo(consulta_humana: str) -> Option
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         f"{_join_980e} "
         f"WHERE LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE())"
-        f"{_where_comp}{_where_proy}{_where_equipo}{_where_980e}{_where_cm}{_where_grado}"
+        f"{_where_comp}{_where_lado_sql}{_where_proy}{_where_equipo}{_where_980e}{_where_cm}{_where_grado}"
         f"), "
         f"LimitesLC AS ("
         f"SELECT {_lc_cols} "
