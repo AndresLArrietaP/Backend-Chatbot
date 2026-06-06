@@ -34,11 +34,61 @@ import datetime
 import json
 import logging
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 from .providers.factory import obtener_proveedor as _obtener_proveedor
 
 log = logging.getLogger(__name__)
+
+
+# ==============================================================================
+#  NORMALIZACIÓN DE TEXTO — robustez ante tildes faltantes
+#
+#  Los usuarios escriben sin tildes constantemente ("ultimo analisis",
+#  "traccion", "condicion", "cuantos"). Varios regex usan tildes duras
+#  (ej: 'últi(?:mo|ma)') que NO matchean texto sin tilde → la heurística no
+#  dispara → SQL incorrecto o fallback al LLM.
+#
+#  _buscar() matchea el regex contra el texto ORIGINAL y contra una copia SIN
+#  tildes. Solo puede AÑADIR detecciones, nunca quitar (acorde al criterio del
+#  módulo: preferir falsos positivos sobre falsos negativos). Cero riesgo de
+#  romper detecciones existentes.
+# ==============================================================================
+
+def _strip_accents(s: str) -> str:
+    """Quita tildes/diacríticos: 'último'→'ultimo', 'tracción'→'traccion', 'año'→'ano'."""
+    if not s:
+        return ""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+_STRIPPED_PATTERN_CACHE: Dict[Any, "re.Pattern"] = {}
+
+
+def _regex_sin_tildes(regex: "re.Pattern") -> "re.Pattern":
+    """Versión del patrón con sus literales/clases sin tildes (cacheada).
+    Ej: 'últi(?:mo|ma)' → 'ulti(?:mo|ma)'; 'a[nñ]o' → 'a[nn]o'; '[oó]' → '[oo]'.
+    Stripping solo elimina marcas combinantes → el patrón resultante siempre es válido."""
+    cached = _STRIPPED_PATTERN_CACHE.get(regex)
+    if cached is None:
+        cached = re.compile(_strip_accents(regex.pattern), regex.flags)
+        _STRIPPED_PATTERN_CACHE[regex] = cached
+    return cached
+
+
+def _buscar(regex: "re.Pattern", texto: str) -> bool:
+    """True si el regex matchea el texto. Robusto ante tildes en AMBAS direcciones:
+    - texto con tilde vs patrón base (ej: 'tracción' vs 'tracci[oó]n')
+    - texto base vs patrón con tilde dura (ej: 'ultimo' vs 'últi(?:mo|ma)')
+    Matchea el texto original, y si no, el texto sin tildes contra el patrón sin tildes."""
+    t = texto or ""
+    if regex.search(t):
+        return True
+    return bool(_regex_sin_tildes(regex).search(_strip_accents(t)))
 
 # Proveedor LLM activo, instanciado una sola vez al importar el módulo.
 # Se selecciona en función de la variable de entorno LLM_PROVIDER (.env).
@@ -226,7 +276,7 @@ _RE_MUESTRAS_INDIVIDUALES = re.compile(
 
 
 def _es_intencion_tendencia_historica(texto: str) -> bool:
-    return bool(_RE_PISTA_TENDENCIA_HISTORICA.search(texto or ""))
+    return _buscar(_RE_PISTA_TENDENCIA_HISTORICA, texto)
 
 
 # ==============================================================================
@@ -252,7 +302,7 @@ _RE_PISTA_AGREGACION = re.compile(
 
 
 def _es_intencion_agregacion(texto: str) -> bool:
-    return bool(_RE_PISTA_AGREGACION.search(texto or ""))
+    return _buscar(_RE_PISTA_AGREGACION, texto)
 
 
 # ==============================================================================
@@ -275,7 +325,7 @@ _RE_PISTA_PERIODO_CALENDARIO = re.compile(
 
 
 def _es_intencion_periodo_calendario(texto: str) -> bool:
-    return bool(_RE_PISTA_PERIODO_CALENDARIO.search(texto or ""))
+    return _buscar(_RE_PISTA_PERIODO_CALENDARIO, texto)
 
 
 def _reforzar_periodo_calendario(q: str) -> str:
@@ -375,7 +425,7 @@ def _detectar_periodo_agrupacion(q: str) -> Optional[tuple]:
 
 def _es_intencion_muestras_individuales(texto: str) -> bool:
     """Detecta cuando el usuario quiere registros crudos, no promedios mensuales."""
-    return bool(_RE_MUESTRAS_INDIVIDUALES.search(texto or ""))
+    return _buscar(_RE_MUESTRAS_INDIVIDUALES, texto)
 
 
 def _reforzar_tendencia_historica(q: str) -> str:
@@ -383,30 +433,24 @@ def _reforzar_tendencia_historica(q: str) -> str:
     Refuerzo de prompt para tendencia histórica cuando intentar_tendencia_directo()
     devuelve None (sin compartimiento detectado → el LLM debe inferirlo).
 
-    Notas importantes que el LLM debe respetar:
-    - EOMONTH() en SQL Server devuelve tipo 'date', no datetime. Compatible con _a_fecha().
-    - AVG mensual suaviza picos puntuales y reduce el número de filas al LLM.
-    - NUNCA ROW_NUMBER/rn=1: para tendencia se necesitan todas las muestras, no solo la última.
+    CRÍTICO — consistencia con el path directo:
+    - DEFAULT (sin keyword de periodo): últimas N muestras INDIVIDUALES por equipo+compartimiento
+      (ROW_NUMBER rn<=8). NO promediar. Esto refleja lo que el usuario espera al decir "tendencia".
+    - SOLO si el usuario dice "mensual/trimestral/anual/etc.": AVG por periodo (EOMONTH/DATEFROMPARTS).
+    Antes este hint SIEMPRE forzaba AVG mensual de 24 meses → contradecía el path directo
+    y producía "todo el historial" cuando el usuario solo pidió "tendencia".
     """
     like_compartimiento = _detectar_like_compartimiento(q)
     proyecto = _detectar_proyecto(q)
+    periodo_agg = _detectar_periodo_agrupacion(q)
 
-    # Construir filtros y JOINs según lo que se detectó en la consulta.
-    filtros = ["LD.[FechaMuestreo]>=DATEADD(MONTH,-24,GETDATE())"]
     joins = "JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId]"
-    group_prefix = "LD.[Compartimiento]"
-
+    filtros: List[str] = []
     if like_compartimiento:
         filtros.append(f"LD.[Compartimiento] LIKE '{like_compartimiento}'")
     if proyecto:
-        # Si hay proyecto, añadir el JOIN a MiningProject y agrupar también por proyecto.
-        joins += (
-            " JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
-        )
+        joins += " JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         filtros.append(f"MP.[Name] LIKE '%{proyecto}%'")
-        group_prefix = "MP.[Name],LD.[Compartimiento]"
-
-    where_clause = " AND ".join(filtros)
 
     _hint_980e_tend = ""
     if proyecto and proyecto.lower() == "antapaccay":
@@ -414,25 +458,53 @@ def _reforzar_tendencia_historica(q: str) -> str:
             " ANTAPACCAY-980E: agregar JOIN [Mine].[EquipmentFleet] EF WITH (NOLOCK) ON EF.[Id]=ME.[EquipmentFleetId]"
             " y WHERE EF.[Model] LIKE '%980E%'."
         )
-
-    instruccion = (
-        f"SELECT TOP(300) {group_prefix},EOMONTH(LD.[FechaMuestreo]) AS [Mes],"
-        "AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
-        "AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Pb_ppm]) AS [Pb_ppm],"
-        "AVG(LD.[Sn_ppm]) AS [Sn_ppm],AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
-        "AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
-        "AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
-        "COUNT(*) AS [Muestras] "
-        f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) {joins} "
-        f"WHERE {where_clause} "
-        f"GROUP BY {group_prefix},EOMONTH(LD.[FechaMuestreo]) "
-        f"ORDER BY {group_prefix},[Mes] "
-        "— EOMONTH() devuelve tipo date, úsalo sin CAST. "
-        "NUNCA usar ROW_NUMBER/rn para este tipo de consulta. "
-        "Si el usuario pide un metal específico, incluirlo como primera métrica AVG. "
-        "SIEMPRE excluir DDI: AND (LD.[CM] IS NULL OR LD.[CM] NOT IN ('DDI','DIALIZADO','RELLENO+DIALIZADO'))."
-        + _hint_980e_tend
+    _excluir_ddi = (
+        " SIEMPRE excluir post-dializado: "
+        "AND (LD.[CM] IS NULL OR LD.[CM] NOT IN ('DDI','DIALIZADO','RELLENO+DIALIZADO'))."
     )
+
+    if periodo_agg:
+        # ── Usuario pidió agregación por periodo → AVG ───────────────────────────
+        _expr, _alias, _ventana_def = periodo_agg
+        ventana = _detectar_ventana_meses(q, default=_ventana_def)
+        group_prefix = "MP.[Name],LD.[Compartimiento]" if proyecto else "LD.[Compartimiento]"
+        filtros.append(f"LD.[FechaMuestreo]>=DATEADD(MONTH,-{ventana},GETDATE())")
+        where_clause = " AND ".join(filtros) if filtros else "1=1"
+        instruccion = (
+            f"El usuario pidió agregación por periodo. "
+            f"SELECT TOP(300) {group_prefix},{_expr} AS [{_alias}],"
+            "AVG(LD.[Fe_ppm]) AS [Fe_ppm],AVG(LD.[Cr_ppm]) AS [Cr_ppm],"
+            "AVG(LD.[Ni_ppm]) AS [Ni_ppm],AVG(LD.[Cu_ppm]) AS [Cu_ppm],"
+            "AVG(LD.[Si_ppm]) AS [Si_ppm],AVG(LD.[Al_ppm]) AS [Al_ppm],"
+            "AVG(LD.[Indice_PQ]) AS [Indice_PQ],AVG(LD.[TBN]) AS [TBN],"
+            "COUNT(*) AS [Muestras] "
+            f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) {joins} "
+            f"WHERE {where_clause} "
+            f"GROUP BY {group_prefix},{_expr} "
+            f"ORDER BY {group_prefix},[{_alias}] "
+            "— EOMONTH()/DATEFROMPARTS() devuelven tipo date, úsalos sin CAST. "
+            "NUNCA usar ROW_NUMBER/rn en agregación por periodo."
+            + _excluir_ddi
+        )
+    else:
+        # ── DEFAULT: últimas 8 muestras individuales (NO promediar) ──────────────
+        n = _detectar_n_muestras_tendencia(q)
+        filtros.append("LD.[FechaMuestreo]>=DATEADD(YEAR,-3,GETDATE())")
+        where_clause = " AND ".join(filtros) if filtros else "1=1"
+        instruccion = (
+            f"TENDENCIA DEFAULT = últimas {n} muestras INDIVIDUALES por equipo+compartimiento. "
+            f"NO promediar, NO agrupar por mes (el usuario NO pidió 'mensual'/'historial'). "
+            f"WITH Samples AS (SELECT ME.[Code] AS [Equipo],LD.[Compartimiento],LD.[FechaMuestreo],"
+            f"LD.[Fe_ppm],LD.[Cr_ppm],LD.[Ni_ppm],LD.[Pb_ppm],LD.[Sn_ppm],"
+            f"LD.[Cu_ppm],LD.[Si_ppm],LD.[Al_ppm],LD.[Indice_PQ],LD.[TBN],"
+            f"ROW_NUMBER() OVER (PARTITION BY LD.[MiningEquipmentId],LD.[Compartimiento] "
+            f"ORDER BY LD.[FechaMuestreo] DESC) AS rn "
+            f"FROM [Oil].[LaboratoryData] LD WITH (NOLOCK) {joins} "
+            f"WHERE {where_clause}{_excluir_ddi.replace(' SIEMPRE excluir post-dializado: ','')} ) "
+            f"SELECT * FROM Samples WHERE rn<={n} ORDER BY [Compartimiento],[FechaMuestreo] ASC. "
+            f"NUNCA pongas TOP dentro del CTE. Une LP/LC de [Eqpcare].[lc] si hay compartimiento conocido."
+            + _hint_980e_tend
+        )
 
     return q.strip() + " | TENDENCIA-HISTORICA: " + instruccion
 
@@ -516,8 +588,10 @@ _COMPARTIMIENTO_KEYWORD_MAP: List[tuple] = [
     # (patrón de detección en la consulta, filtro LIKE para el WHERE en SQL)
     # Orden crítico: primero los patrones específicos, el catch-all de "motor" al final.
     (re.compile(r"\btracci[oó]n\b", re.IGNORECASE), "%TRACCION%"),
-    # Abreviaturas de campo usadas por ingenieros en mina: MDLH/MDRH (Motor de Tracción LH/RH)
-    (re.compile(r"\bMD[LR]H\b|\bMTR?[LR]H\b", re.IGNORECASE), "%TRACCION%"),
+    # Abreviaturas de campo usadas por ingenieros en mina (Motor de Tracción LH/RH):
+    #   MDLH/MDRH, MTLH/MTRH, "MT RH"/"MT LH" (con espacio), EMT/"EMT RH", "E MT"
+    #   "EMT de izquierda/derecha" → izquierda=LH, derecha=RH (ambos %TRACCION%)
+    (re.compile(r"\bMD[LR]H\b|\bE?MT(?:\s*[LR]H)?\b", re.IGNORECASE), "%TRACCION%"),
     (re.compile(r"\bhidr[aá]ulic[ao]s?\b", re.IGNORECASE), "%HIDRAUL%"),
     (re.compile(r"\brueda[s]?\b", re.IGNORECASE), "%RUEDA%"),
     (re.compile(r"\bmando\s+final\b", re.IGNORECASE), "%MANDO%"),
@@ -779,7 +853,7 @@ _RE_MES_ACTUAL = re.compile(
 
 
 def _usuario_pide_mes_actual(q: str) -> bool:
-    return bool(_RE_MES_ACTUAL.search(q or ""))
+    return _buscar(_RE_MES_ACTUAL, q)
 
 
 def _fecha_corte_defecto() -> str:
@@ -806,26 +880,25 @@ def _json_cauto_loads(s: str) -> Optional[Dict[str, Any]]:
 
 def _es_intencion_triage_observados(texto: str) -> bool:
     """Detecta el caso de uso principal: estado masivo de componentes → solo los observados."""
-    return bool(_RE_PISTA_TRIAGE_OBSERVADOS.search(texto or ""))
+    return _buscar(_RE_PISTA_TRIAGE_OBSERVADOS, texto)
 
 
 def _es_intencion_componentes_modelo(texto: str) -> bool:
-    return bool(_RE_PISTA_COMPONENTES_MODELO.search(texto or ""))
+    return _buscar(_RE_PISTA_COMPONENTES_MODELO, texto)
 
 
 def _es_intencion_compartimiento_aceite(texto: str) -> bool:
     # Requiere AMBAS condiciones: mención de compartimiento Y mención de análisis de aceite.
     # Evita activar el refuerzo en consultas genéricas sobre motores sin contexto de aceite.
-    t = texto or ""
-    return bool(_RE_PISTA_COMPARTIMIENTO_ACEITE.search(t)) and bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
+    return _buscar(_RE_PISTA_COMPARTIMIENTO_ACEITE, texto) and _buscar(_RE_PISTA_ANALISIS_ACEITE, texto)
 
 
 def _es_intencion_laboratorio_aceite(texto: str) -> bool:
-    return bool(_RE_PISTA_LABORATORIO_ACEITE.search(texto or ""))
+    return _buscar(_RE_PISTA_LABORATORIO_ACEITE, texto)
 
 
 def _es_intencion_dimensional(texto: str) -> bool:
-    return bool(_RE_PISTA_DIMENSIONAL.search(texto or ""))
+    return _buscar(_RE_PISTA_DIMENSIONAL, texto)
 
 
 def _es_intencion_join_proyecto_modelo(texto: str) -> bool:
@@ -833,38 +906,36 @@ def _es_intencion_join_proyecto_modelo(texto: str) -> bool:
     Detecta consultas que cruzan datos de aceite con proyecto y/o modelo de equipo.
     Requiere mención de aceite Y al menos proyecto O modelo. No aplica a triage puro.
     """
-    t = texto or ""
-    tiene_aceite = bool(_RE_PISTA_LABORATORIO_ACEITE.search(t)) or bool(_RE_PISTA_ANALISIS_ACEITE.search(t))
-    tiene_proyecto = bool(_RE_PISTA_PROYECTO_MINERO.search(t))
-    tiene_modelo = bool(_RE_PISTA_MODELO_EQUIPO.search(t))
+    tiene_aceite = _buscar(_RE_PISTA_LABORATORIO_ACEITE, texto) or _buscar(_RE_PISTA_ANALISIS_ACEITE, texto)
+    tiene_proyecto = _buscar(_RE_PISTA_PROYECTO_MINERO, texto)
+    tiene_modelo = _buscar(_RE_PISTA_MODELO_EQUIPO, texto)
     return tiene_aceite and (tiene_proyecto or tiene_modelo)
 
 
 def _es_intencion_ultimo_ventana(texto: str) -> bool:
-    return bool(_RE_PISTA_ULTIMO_VENTANA.search(texto or ""))
+    return _buscar(_RE_PISTA_ULTIMO_VENTANA, texto)
 
 
 def _usuario_pide_excluir_nulos(texto: str) -> bool:
-    return bool(_RE_PISTA_EXCLUSION_NULOS.search(texto or ""))
+    return _buscar(_RE_PISTA_EXCLUSION_NULOS, texto)
 
 
 def _es_intencion_comparativa(texto: str) -> bool:
-    return bool(_RE_PISTA_COMPARACION.search(texto or ""))
+    return _buscar(_RE_PISTA_COMPARACION, texto)
 
 
 def _es_intencion_continuidad(texto: str, contexto: str) -> bool:
     # La continuidad solo aplica si HAY contexto previo. Sin contexto, no hay referencia posible.
-    t = texto or ""
     c = contexto or ""
-    return bool(c.strip()) and bool(_RE_PISTA_CONTINUIDAD.search(t))
+    return bool(c.strip()) and _buscar(_RE_PISTA_CONTINUIDAD, texto)
 
 
 def _es_intencion_sintesis_interpretacion(texto: str) -> bool:
-    return bool(_RE_PISTA_SINTESIS_INTERPRETACION.search(texto or ""))
+    return _buscar(_RE_PISTA_SINTESIS_INTERPRETACION, texto)
 
 
 def _es_intencion_criticidad(texto: str) -> bool:
-    return bool(_RE_PISTA_CRITICIDAD.search(texto or ""))
+    return _buscar(_RE_PISTA_CRITICIDAD, texto)
 
 
 # ==============================================================================
@@ -1123,13 +1194,13 @@ _RE_PISTA_ULTIMO_ANALISIS_FLOTA = re.compile(
 
 
 def _es_intencion_ultimo_analisis_flota(texto: str) -> bool:
-    return bool(_RE_PISTA_ULTIMO_ANALISIS_FLOTA.search(texto or ""))
+    return _buscar(_RE_PISTA_ULTIMO_ANALISIS_FLOTA, texto)
 
 
 # Regex para "últimos N análisis/registros" — usado en consulta_humana_a_sql() como hint al LLM
 # para que genere TOP(N) o rn<=N en vez de rn=1.
 _RE_ULTIMOS_N = re.compile(
-    r"\búltim[oa]s?\s+(\d+)\s+(?:an[aá]lisis|registro[s]?|muestra[s]?|resultado[s]?|reporte[s]?)\b",
+    r"\b[uú]ltim[oa]s?\s+(\d+)\s+(?:an[aá]lisis|registro[s]?|muestra[s]?|resultado[s]?|reporte[s]?)\b",
     re.IGNORECASE,
 )
 
