@@ -1486,7 +1486,7 @@ def intentar_historial_crudo_directo(consulta_humana: str) -> Optional[str]:
         return None
 
     ventana = _detectar_ventana_meses(consulta_humana, default=3)
-    filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
+    filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'" + _where_lado(_detectar_lado(consulta_humana))
 
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
@@ -1612,7 +1612,7 @@ def intentar_ultimo_analisis_flota_directo(consulta_humana: str) -> Optional[str
         fecha_corte = _fecha_corte_defecto()
     _sql_fecha_corte = f" AND LD.[FechaMuestreo]<='{fecha_corte}'" if fecha_corte else ""
 
-    _where_comp = f" AND LD.[Compartimiento] LIKE '{like_comp}'" if like_comp else ""
+    _where_comp = (f" AND LD.[Compartimiento] LIKE '{like_comp}'" + _where_lado(_detectar_lado(consulta_humana))) if like_comp else ""
     _where_proy = f" AND MP.[Name] LIKE '%{proyecto}%'" if proyecto else ""
 
     grado = _detectar_grado_aceite(consulta_humana)
@@ -1690,7 +1690,7 @@ def intentar_tendencia_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
     )
-    filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'"
+    filtro_comp = f"LD.[Compartimiento] LIKE '{like_comp}'" + _where_lado(_detectar_lado(consulta_humana))
 
     _join_980e, _where_980e = _join_modelo_antapaccay(proyecto)
 
@@ -1949,6 +1949,8 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
 
     grado = _detectar_grado_aceite(consulta_humana)
     _where_grado = f" AND {_grado_where_clause(grado)}" if grado else ""
+    # Lado LH/RH: filtra SOLO las muestras, NO LimitesLC (LP/LC iguales por lado).
+    _where_lado_t = _where_lado(_detectar_lado(consulta_humana))
     # 980E solo cuando Antapaccay fue mencionado explícitamente, nunca para defaults.
     _join_980e, _where_980e = _join_modelo_antapaccay(None if proyecto_inferido else proyecto)
     _where_cm = _where_excluir_cm()
@@ -1971,7 +1973,7 @@ def intentar_triage_directo(consulta_humana: str) -> Optional[str]:
         f"JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id]=LD.[MiningEquipmentId] "
         f"JOIN [Mine].[MiningProject] MP WITH (NOLOCK) ON MP.[Id]=ME.[MiningProjectId]"
         f"{_join_980e} "
-        f"WHERE LD.[Compartimiento] LIKE '{like_comp}' "
+        f"WHERE LD.[Compartimiento] LIKE '{like_comp}'{_where_lado_t} "
         f"AND MP.[Name] LIKE '%{proyecto}%' "
         f"AND LD.[FechaMuestreo]>=DATEADD(YEAR,-2,GETDATE()){_sql_fecha_corte}"
         f"{_where_equipo}{_where_980e}{_where_cm}{_where_grado}"
@@ -2109,7 +2111,7 @@ def intentar_ranking_directo(consulta_humana: str) -> Optional[str]:
     if not like_comp and not proyecto:
         return None
 
-    _where_comp = f" AND LD.[Compartimiento] LIKE '{like_comp}'" if like_comp else ""
+    _where_comp = (f" AND LD.[Compartimiento] LIKE '{like_comp}'" + _where_lado(_detectar_lado(consulta_humana))) if like_comp else ""
     _where_proy = f" AND MP.[Name] LIKE '%{proyecto}%'" if proyecto else ""
 
     fecha_corte = _detectar_fecha_corte(consulta_humana)
