@@ -1197,6 +1197,24 @@ def _es_intencion_ultimo_analisis_flota(texto: str) -> bool:
     return _buscar(_RE_PISTA_ULTIMO_ANALISIS_FLOTA, texto)
 
 
+# Intención de evaluar la CONDICIÓN/ESTADO de un equipo contra sus límites LP/LC.
+# Distinto de triage puro (que filtra SOLO observados): aquí el usuario pide ver
+# el estado completo de un equipo específico vs límites. Caso típico del inspector:
+# "condición del MT del 3171", "cómo está el EMT izquierdo del 3198 vs límites".
+_RE_PISTA_CONDICION_EVAL = re.compile(
+    r"\b(condici[oó]n|estado|c[oó]mo\s+est[aá]|diagn[oó]stico|diagnostica|"
+    r"eval[uú]a(?:r|me)?|evaluaci[oó]n|"
+    r"vs\s+l[ií]mite|contra\s+(?:el\s+|sus\s+)?l[ií]mite|respecto\s+a\s+(?:los?\s+)?l[ií]mite|"
+    r"fuera\s+de\s+l[ií]mite|dentro\s+de\s+l[ií]mite|"
+    r"observad[ao]|cr[ií]tic[ao]|precauci[oó]n|fuera\s+de\s+rango)\b",
+    re.IGNORECASE,
+)
+
+
+def _es_intencion_condicion_eval(texto: str) -> bool:
+    return _buscar(_RE_PISTA_CONDICION_EVAL, texto)
+
+
 # Regex para "últimos N análisis/registros" — usado en consulta_humana_a_sql() como hint al LLM
 # para que genere TOP(N) o rn<=N en vez de rn=1.
 _RE_ULTIMOS_N = re.compile(
@@ -1286,12 +1304,10 @@ def intentar_ultimo_analisis_con_limites_directo(consulta_humana: str) -> Option
 
     Retorna None si no aplica → cae al intentar_triage_directo o LLM.
     """
-    # Requiere AMBAS intenciones: último análisis + estado/límites
-    if not _es_intencion_ultimo_analisis_flota(consulta_humana):
-        return None
-    if not _es_intencion_triage_observados(consulta_humana):
-        return None
+    # Tendencia/historial tienen sus propios paths — no robar esas consultas.
     if _es_intencion_tendencia_historica(consulta_humana):
+        return None
+    if _es_intencion_muestras_individuales(consulta_humana):
         return None
 
     like_comp = _detectar_like_compartimiento(consulta_humana)
@@ -1300,6 +1316,22 @@ def intentar_ultimo_analisis_con_limites_directo(consulta_humana: str) -> Option
 
     # Sin compartimiento no podemos hacer el JOIN a [Eqpcare].[lc]
     if not like_comp or like_comp in ("None", "MOTOR"):
+        return None
+
+    # ── Disparadores ─────────────────────────────────────────────────────────
+    # Caso A (PRINCIPAL del inspector): equipo específico + intención de evaluar
+    #   condición/estado/límites. Ej: "condición del MT del 3171", "cómo está el
+    #   EMT izquierdo del 3198 vs límites". Devuelve el equipo con LP/LC + Estado.
+    # Caso B (barrido): "último análisis ... y cuál está fuera de límites" —
+    #   combo de último-análisis + triage sobre un equipo/proyecto.
+    # Pure triage de proyecto ("dame los OBSERVADOS de la flota") NO entra aquí:
+    #   eso lo maneja intentar_triage_directo (filtra solo a los observados).
+    caso_a = bool(equipo_code) and _es_intencion_condicion_eval(consulta_humana)
+    caso_b = (
+        _es_intencion_ultimo_analisis_flota(consulta_humana)
+        and _es_intencion_triage_observados(consulta_humana)
+    )
+    if not caso_a and not caso_b:
         return None
     # Necesitamos al menos equipo O proyecto para un query determinístico
     if not equipo_code and not proyecto:

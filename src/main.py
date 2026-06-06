@@ -1399,6 +1399,15 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
             log.info("[human_query] conteo_flota_directo activado — SQL generado en Python sin LLM")
             return sql_conteo
 
+        # Último análisis + límites: "condición del MT del 3171", "último análisis del CA3160 y cuál
+        # está fuera de límites". Devuelve el equipo con columnas LP/LC + columna Estado
+        # (NORMAL/PRECAUCIÓN/CRÍTICO). DEBE evaluarse ANTES que historial/flota/tendencia: si no,
+        # esos paths (sin LP/LC) capturan la consulta y el modelo termina inventando los límites.
+        sql_ultimo_limites = llm.intentar_ultimo_analisis_con_limites_directo(consulta_para_heuristicas)
+        if sql_ultimo_limites:
+            log.info("[human_query] ultimo_analisis_con_limites_directo activado — SQL generado en Python sin LLM")
+            return sql_ultimo_limites
+
         # Historial crudo: "sin promediar / muestra por muestra" + equipo/proyecto conocido
         # → SELECT plano sin ROW_NUMBER. Previene que el LLM reutilice el patrón triage CTE.
         sql_crudo = llm.intentar_historial_crudo_directo(consulta_para_heuristicas)
@@ -1418,15 +1427,6 @@ async def _procesar_human_query(payload: HumanQueryRequest) -> Dict[str, Any]:
         if sql_tendencia:
             log.info("[human_query] tendencia_directo activado — SQL generado en Python sin LLM")
             return sql_tendencia
-
-        # Último análisis + límites: "dame el último análisis del CA3160 y cuál está fuera de límites"
-        # → Devuelve TODOS los compartimientos con LP/LC visibles + columna Estado (NORMAL/PRECAUCIÓN/CRÍTICO).
-        # Se activa antes que triage_directo para evitar el flujo 2-pasos cuando el usuario
-        # pide explícitamente ver el análisis completo junto con el estado.
-        sql_ultimo_limites = llm.intentar_ultimo_analisis_con_limites_directo(consulta_para_heuristicas)
-        if sql_ultimo_limites:
-            log.info("[human_query] ultimo_analisis_con_limites_directo activado — SQL generado en Python sin LLM")
-            return sql_ultimo_limites
 
         # Triage directo: compartimiento + proyecto detectados → observados con límites reales de BD
         sql_triage = llm.intentar_triage_directo(consulta_para_heuristicas)

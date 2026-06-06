@@ -481,7 +481,12 @@ def generar_analisis_resultado(
     _es_limite = lambda c: " - LP" in c or " - LC" in c
     primera_fila = filas[0]
     limites_referencia: Dict[str, Dict[str, float]] = {}
-    for col in columnas_numericas_raw:
+    # IMPORTANTE: iterar TODAS las columnas, no solo las detectadas como numéricas.
+    # Las columnas LP/LC son CONSTANTES por query (CROSS JOIN LimitesLC) → con pocas filas
+    # (ej: condición de 1 equipo = 2 filas LH/RH) NO superan el umbral de 3 valores de
+    # _buscar_columnas_numericas y quedarían fuera. Eso vaciaba limites_referencia y
+    # bloqueaba las recomendaciones técnicas. Extraerlas por nombre es independiente del conteo.
+    for col in columnas:
         if _es_limite(col):
             partes = col.rsplit(" - ", 1)
             if len(partes) == 2:
