@@ -1,18 +1,22 @@
+# ── Entornos y cache ──────────────────────────────────────────────
 venv/
-
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.cache/
+
+# ── Secretos ──────────────────────────────────────────────────────
 .env
 *.env
 
-.pytest_cache/
-
+# ── Claude ────────────────────────────────────────────────────────
 .claude/
 CLAUDE.md
 
-DocumentacionTecnica_BackendChatbot.docx
-generar_documentacion.py
-
-agregar_comparativa.py
-generar_instrucciones.py
-KomfIA_Instrucciones_Copilot.docx
+# ── Documentos ────────────────────────────────────────────────────
+# Los .docx de docs/copilot/ SÍ se versionan: son la fuente de verdad de las
+# instrucciones desplegadas en Copilot Studio (se editan directo, no por generador).
+# Los .docx de arquitectura son regenerables con tools/ → se ignoran.
+docs/arquitectura/*.docx
+# Presentación de gerencia: pesada y no necesaria en el repo.
+docs/gerencia/

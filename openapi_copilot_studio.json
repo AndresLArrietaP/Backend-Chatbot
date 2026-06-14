@@ -1,0 +1,215 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "KomfIA — Backend Analítico SQL (Data aceites)",
+    "description": "Convierte lenguaje natural a SQL, consulta la BD de análisis de aceites KMMP y devuelve resultados con análisis estadístico y sugerencias.",
+    "version": "0.4.6"
+  },
+  "servers": [
+    {
+      "url": "https://backend-chatbot-kh3t.onrender.com"
+    }
+  ],
+  "paths": {
+    "/human_query": {
+      "post": {
+        "summary": "Human Query",
+        "description": "Recibe una pregunta en lenguaje natural sobre análisis de aceites de equipos mineros, genera el SQL correspondiente, lo ejecuta contra la base de datos Azure SQL y devuelve los resultados con estadísticas. Usar para cualquier consulta sobre estado actual de equipos (triage observados/críticos por último análisis), rankings por metal, tendencias históricas, último análisis de flota o historial de muestras por equipo. El triage evalúa siempre la muestra más reciente por equipo comparada contra límites LP/LC reales.",
+        "operationId": "human_query",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            },
+            "description": "API Key de autenticación del servicio"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HumanQueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consulta procesada exitosamente. Devuelve rows con los datos, sql generado, análisis estadístico y sugerencias de gráfico.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Timeout — la consulta tardó más de 180s"
+          },
+          "500": {
+            "description": "Error interno — SQL inválido o fallo de BD"
+          }
+        }
+      }
+    },
+    "/chat/context/{session_id}": {
+      "get": {
+        "summary": "Ver Contexto de Sesión",
+        "description": "Recupera el historial de conversación de una sesión para diagnóstico.",
+        "operationId": "ver_contexto",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de la sesión de conversación"
+          },
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Historial de turnos de la sesión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/schema": {
+      "get": {
+        "summary": "Schema Get",
+        "description": "Devuelve el esquema de la base de datos (tablas y columnas disponibles). Usar solo para confirmar estructura de BD. No mostrar al usuario.",
+        "operationId": "schema_get",
+        "responses": {
+          "200": {
+            "description": "Esquema de la BD en JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/schema/refresh": {
+      "post": {
+        "summary": "Schema Refresh",
+        "description": "Fuerza la recarga del caché del esquema de la base de datos. Usar solo si se realizaron cambios en la BD que afecten las consultas.",
+        "operationId": "schema_refresh",
+        "responses": {
+          "200": {
+            "description": "Caché de esquema actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Verifica que el servicio backend está activo y con conexión a BD.",
+        "operationId": "health_check",
+        "responses": {
+          "200": {
+            "description": "Servicio activo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HumanQueryRequest": {
+        "type": "object",
+        "required": ["human_query"],
+        "title": "HumanQueryRequest",
+        "properties": {
+          "human_query": {
+            "type": "string",
+            "title": "Human Query",
+            "description": "Pregunta en lenguaje natural sobre análisis de aceites. Enviar TAL CUAL la escribió el usuario, sin expandir ni reformular. Ejemplos: '¿Cuáles motores de tracción de Antapaccay están observados?', '¿Qué ruedas delanteras están fuera de límite?', 'Top 5 equipos con mayor Fe', 'Dame el último análisis de los motores de tracción de Antapaccay', 'Tendencia del hierro mes a mes en Antapaccay', 'Dame el historial del equipo CA3164'."
+          },
+          "session_id": {
+            "type": "string",
+            "nullable": true,
+            "title": "Session Id",
+            "description": "ID de sesión para mantener contexto conversacional entre turnos. Usar la variable de sesión global de Copilot Studio."
+          },
+          "execute": {
+            "type": "boolean",
+            "title": "Execute",
+            "default": true,
+            "description": "Si true ejecuta el SQL. Dejar siempre en true."
+          },
+          "incluir_respuesta_texto": {
+            "type": "boolean",
+            "nullable": true,
+            "title": "Incluir Respuesta Texto",
+            "description": "Si true genera respuesta analítica en lenguaje natural. Dejar en false — Copilot Studio tiene su propio LLM para eso."
+          },
+          "reset_contexto": {
+            "type": "boolean",
+            "title": "Reset Contexto",
+            "default": false,
+            "description": "Si true limpia el historial de la sesión antes de procesar. Usar solo al inicio de una nueva conversación."
+          },
+          "limit": {
+            "type": "integer",
+            "nullable": true,
+            "title": "Limit",
+            "description": "Límite máximo de filas. Por defecto 200. Aumentar solo si se necesitan más registros explícitamente."
+          },
+          "modo_debug": {
+            "type": "boolean",
+            "nullable": true,
+            "title": "Modo Debug",
+            "description": "Si true incluye información de diagnóstico (heurísticas aplicadas, SQL generado). Útil para desarrollo."
+          }
+        }
+      }
+    }
+  }
+}
