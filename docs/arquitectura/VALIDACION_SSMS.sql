@@ -212,3 +212,41 @@ WHERE Compartimiento NOT LIKE '%TRACCION%'
   AND Compartimiento NOT LIKE '%TRANSMISION%'
   AND Compartimiento NOT LIKE '%MOTOR%';
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 13 — DIAGNÓSTICO POR EQUIPO (nueva vista vw_UltimoAnalisisFlota)
+   Todos los componentes de UN equipo, su última muestra (no-DDI), con Hor. Comp.
+   real. Es la fuente de la tabla ancha del diagnóstico.
+   ---------------------------------------------------------------------------- */
+
+-- (13a) Fuente del diagnóstico (lo que consumirá KomfIA para la tabla ancha).
+--       Debe traer las ~6 filas de componentes del equipo, con HorasComponente.
+SELECT Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
+       Horometro, HorasDeAceite, HorasComponente, CM, Estado_General,
+       Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
+       Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP,
+       Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
+       Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, B_ppm, P_ppm, Mg_ppm, Mg_LP, Mg_LC,
+       V100, TBN, TBN_LP
+FROM [dbo].[vw_UltimoAnalisisFlota] WITH (NOLOCK)
+WHERE Equipo = 'CA3171'
+ORDER BY Compartimiento;
+GO
+
+-- (13b) Comprobación de NO-regresión: el diagnóstico (todos los componentes) debe
+--       tener >= filas que el barrido del mismo equipo (solo observados).
+SELECT 'diagnostico_todos' AS fuente, COUNT(*) AS filas
+FROM [dbo].[vw_UltimoAnalisisFlota] WITH (NOLOCK) WHERE Equipo = 'CA3177'
+UNION ALL
+SELECT 'barrido_observados', COUNT(*)
+FROM [dbo].[vw_ObservadosDetalle] WITH (NOLOCK) WHERE Equipo = 'CA3177';
+GO
+
+-- (13c) Hor. Comp. por componente del equipo (NULL = ese componente no mapeó en HsCc;
+--       el formato usará Hor. Ace. como respaldo y lo encabezará como tal).
+SELECT Compartimiento, FechaMuestreo, HorasComponente, HorasDeAceite, Cond_Area, Estado_General
+FROM [dbo].[vw_UltimoAnalisisFlota] WITH (NOLOCK)
+WHERE Equipo = 'CA3171'
+ORDER BY Compartimiento;
+GO

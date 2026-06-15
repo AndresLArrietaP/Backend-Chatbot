@@ -17,7 +17,8 @@
    ORDEN DE DEPENDENCIAS (este archivo, de corrido con F5):
      1) vw_LimitesPorComponente  2) vw_MuestrasEstado  3) vw_MuestrasRankeadas
      4) vw_UltimoAnalisisAceite  5) vw_EstadoActualMT  6) vw_ObservadosFlota (barrido + HorasComponente)
-     7) vw_ObservadosResumen (RESUMEN barrido, 1 fila/equipo)  8) vw_ObservadosDetalle (DETALLE barrido, ligero).
+     7) vw_ObservadosResumen (RESUMEN barrido, 1 fila/equipo)  8) vw_ObservadosDetalle (DETALLE barrido, ligero)
+     9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc).
    Todo CREATE OR ALTER (reversible). Junto con DDL_indices.sql cubren toda la capa de vistas.
    ============================================================================ */
 GO
@@ -407,6 +408,46 @@ WHERE Estado_General <> 'OK';
 GO
 
 
+/* ----------------------------------------------------------------------------
+   vw_UltimoAnalisisFlota — DIAGNÓSTICO POR EQUIPO (todos los componentes).
+   = vw_UltimoAnalisisAceite (última muestra no-DDI por componente, TODOS los
+   params + LP/LC + Estado) + "Hor. Comp." real desde HsCc (mismo mapeo que el
+   barrido). REUTILIZA vw_UltimoAnalisisAceite y NO toca vw_ObservadosFlota.
+   Incluye componentes OK (a diferencia del barrido). Pensada para UN equipo
+   (SELECT ... WHERE Equipo='CAxxxx') → el JOIN a HsCc cruza pocas filas.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_UltimoAnalisisFlota] AS
+WITH hs AS (
+    SELECT [EQUIPO], [SISTEMA], [SMR ULTIMO SERVICIO], [HORAS DE TRABAJO ACUMULADO ], [ESTADO SOS],
+           ROW_NUMBER() OVER (PARTITION BY [EQUIPO], [SISTEMA] ORDER BY [FECHA] DESC) AS rn
+    FROM [Eqpcare].[HsCc] WITH (NOLOCK)
+)
+SELECT
+    u.*,
+    CASE WHEN TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) IS NOT NULL
+          AND u.Horometro >= TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO])
+         THEN u.Horometro - TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO])
+         ELSE TRY_CONVERT(decimal(12,2), H.[HORAS DE TRABAJO ACUMULADO ]) END AS HorasComponente,
+    H.[ESTADO SOS] AS Cond_Area
+FROM [dbo].[vw_UltimoAnalisisAceite] u
+LEFT JOIN hs H
+  ON  H.rn = 1
+  AND ( H.[EQUIPO] = u.Equipo
+        OR (H.[EQUIPO] LIKE 'T[0-9]%' AND u.Equipo = 'CA' + SUBSTRING(H.[EQUIPO], 2, 10)) )
+  AND H.[SISTEMA] = CASE
+        WHEN u.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH'
+        WHEN u.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH'
+        WHEN u.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC'
+        WHEN u.Compartimiento LIKE '%RUEDA%LH'    THEN 'SPINDLE LH'
+        WHEN u.Compartimiento LIKE '%RUEDA%RH'    THEN 'SPINDLE RH'
+        WHEN u.Compartimiento LIKE 'MOTOR%'       THEN 'MOTOR DIESEL'
+        ELSE u.Compartimiento END
+/* Excluye muestras sin componente (Compartimiento NULL/vacío): no son un
+   compartimiento real y ensucian el diagnóstico (p.ej. registros CM='PM4'). */
+WHERE u.Compartimiento IS NOT NULL AND LTRIM(RTRIM(u.Compartimiento)) <> '';
+GO
+
+
 /* ============================================================================
    VALIDACIÓN  (queries de ejemplo; cópialas fuera de este comentario para correrlas)
    ----------------------------------------------------------------------------
@@ -438,7 +479,7 @@ GO
    WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
    ORDER BY NumCrit DESC, Equipo, Compartimiento;
 
-   REVERTIR todo:  DROP VIEW en orden inverso (vw_ObservadosDetalle → vw_ObservadosResumen →
-   vw_ObservadosFlota → vw_EstadoActualMT → vw_UltimoAnalisisAceite → vw_MuestrasRankeadas →
-   vw_MuestrasEstado → vw_LimitesPorComponente).
+   REVERTIR todo:  DROP VIEW en orden inverso (vw_UltimoAnalisisFlota → vw_ObservadosDetalle →
+   vw_ObservadosResumen → vw_ObservadosFlota → vw_EstadoActualMT → vw_UltimoAnalisisAceite →
+   vw_MuestrasRankeadas → vw_MuestrasEstado → vw_LimitesPorComponente).
    ============================================================================ */
