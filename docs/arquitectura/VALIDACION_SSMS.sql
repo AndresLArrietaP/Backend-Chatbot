@@ -1,7 +1,7 @@
 /* ============================================================================
    KomfIA — VALIDACIÓN EN SSMS  (bd_kmmp_osconfiabilidad, Azure SQL)
    Corre cada BLOQUE por separado (selecciona y F5). Son SOLO lecturas.
-   Objetivo: probar las 10 vistas, el barrido/diagnóstico/tendencia, y — sobre todo — diagnosticar la
+   Objetivo: probar las 11 vistas, el barrido/diagnóstico/tendencia/historial, y — sobre todo — diagnosticar la
    COBERTURA de [Eqpcare].[lc], que es el único cuello para escalar a otros
    proyectos / modelos / componentes.
    Requisito previo: haber corrido DDL_vistas.sql (F5) y DDL_indices.sql.
@@ -9,7 +9,7 @@
 
 
 /* ----------------------------------------------------------------------------
-   BLOQUE 0 — ¿Existen las 10 vistas? (deben aparecer las 10)
+   BLOQUE 0 — ¿Existen las 11 vistas? (deben aparecer las 11)
    ---------------------------------------------------------------------------- */
 SELECT s.name AS esquema, v.name AS vista, v.modify_date
 FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
@@ -17,7 +17,7 @@ WHERE v.name IN (
     'vw_LimitesPorComponente','vw_MuestrasEstado','vw_MuestrasRankeadas',
     'vw_UltimoAnalisisAceite','vw_EstadoActualMT','vw_ObservadosFlota',
     'vw_ObservadosResumen','vw_ObservadosDetalle',
-    'vw_UltimoAnalisisFlota','vw_TendenciaElemento')
+    'vw_UltimoAnalisisFlota','vw_TendenciaElemento','vw_HistorialMuestra')
 ORDER BY v.name;
 GO
 
@@ -280,4 +280,37 @@ SELECT Parametro, f1, f8, d1, d8, Tendencia
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH' AND Parametro IN ('Fe','PQ')
 ORDER BY Orden;
+GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 15 — HISTORIAL muestra por muestra (nueva vista vw_HistorialMuestra)
+   1 fila por muestra (INCLUYE DDI), últimos 2 meses (horneados en la vista), params pre-formateados con
+   chip. El central pinta la tabla con FechaMuestreo DESC (cantidad de datos, sin
+   estadística). LIGERA: ventana 12 meses + columnas chip (no LP/LC).
+   ---------------------------------------------------------------------------- */
+
+-- (15a) Historial de un componente (lo que consumirá KomfIA, descendente).
+--       La VISTA ya hornea la ventana de 2 meses → SELECT * sin filtro de fecha = liviano.
+SELECT * FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY FechaMuestreo DESC;
+GO
+
+-- (15b) Cuántas muestras devuelve por componente (debe ser acotado, ~2 meses):
+SELECT Compartimiento, COUNT(*) AS muestras_2m,
+       SUM(CASE WHEN EsDDI=1 THEN 1 ELSE 0 END) AS ddi,
+       MIN(FechaMuestreo) AS desde, MAX(FechaMuestreo) AS hasta
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3198'
+GROUP BY Compartimiento
+ORDER BY Compartimiento;
+GO
+
+-- (15c) Latencia (mira elapsed time): debe ser baja por la ventana de 12 meses.
+SET STATISTICS TIME ON;
+SELECT * FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY FechaMuestreo DESC;
+SET STATISTICS TIME OFF;
 GO

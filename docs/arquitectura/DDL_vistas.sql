@@ -19,7 +19,8 @@
      4) vw_UltimoAnalisisAceite  5) vw_EstadoActualMT  6) vw_ObservadosFlota (barrido + HorasComponente)
      7) vw_ObservadosResumen (RESUMEN barrido, 1 fila/equipo)  8) vw_ObservadosDetalle (DETALLE barrido, ligero)
      9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc)
-    10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d8 + chip).
+    10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d8 + chip)
+    11) vw_HistorialMuestra (HISTORIAL muestra por muestra, 2 meses, pre-formateado por fila).
    Todo CREATE OR ALTER (reversible). Junto con DDL_indices.sql cubren toda la capa de vistas.
    ============================================================================ */
 GO
@@ -546,6 +547,44 @@ GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf;
 GO
 
 
+/* ----------------------------------------------------------------------------
+   11) vw_HistorialMuestra — HISTORIAL muestra por muestra (últimos 2 meses, horneados).
+   1 fila por MUESTRA (INCLUYE DDI, flag EsDDI), últimos 2 MESES (ventana horneada en la vista), PRE-FORMATEADA: cada parámetro
+   ya trae su chip (🟥 >LC, 🟨 >LP; informativos Ca/Zn/K/Mg con ' inf'; TBN inverso).
+   A diferencia de la tendencia (params en filas, 8 fechas), aquí las FECHAS van en
+   FILAS (orden descendente al consultar) y los params en columnas -> tabla "cantidad
+   de datos", sin estadistica. LIGERA: ventana 2 meses + columnas chip (no LP/LC).
+   Reutiliza vw_MuestrasEstado (Estado_<metal> ya calculado). Se consulta por
+   Equipo + Compartimiento: SELECT * FROM vw_HistorialMuestra WHERE Equipo='..'
+   AND Compartimiento LIKE '%..%' ORDER BY FechaMuestreo DESC. (la vista ya acota 2 meses)
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_HistorialMuestra] AS
+SELECT
+    Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
+    Horometro, HorasDeAceite, CM, EsDDI, Estado_General,
+    CONVERT(varchar(20),CAST(Fe_ppm    AS decimal(18,1))) + CASE Estado_Fe  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Fe,
+    CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1))) + CASE Estado_PQ  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS PQ,
+    CONVERT(varchar(20),CAST(Cr_ppm    AS decimal(18,1))) + CASE Estado_Cr  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Cr,
+    CONVERT(varchar(20),CAST(Ni_ppm    AS decimal(18,1))) + CASE Estado_Ni  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Ni,
+    CONVERT(varchar(20),CAST(Cu_ppm    AS decimal(18,1))) + CASE Estado_Cu  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Cu,
+    CONVERT(varchar(20),CAST(Pb_ppm    AS decimal(18,1))) + CASE Estado_Pb  WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Pb,
+    CONVERT(varchar(20),CAST(Sn_ppm    AS decimal(18,1))) + CASE Estado_Sn  WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Sn,
+    CONVERT(varchar(20),CAST(Al_ppm    AS decimal(18,1))) + CASE Estado_Al  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Al,
+    CONVERT(varchar(20),CAST(Si_ppm    AS decimal(18,1))) + CASE Estado_Si  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Si,
+    CONVERT(varchar(20),CAST(Ca_ppm    AS decimal(18,1))) + CASE Estado_Ca  WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS Ca,
+    CONVERT(varchar(20),CAST(Zn_ppm    AS decimal(18,1))) + CASE Estado_Zn  WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS Zn,
+    CONVERT(varchar(20),CAST(K_ppm     AS decimal(18,1))) + CASE Estado_K   WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS K,
+    CONVERT(varchar(20),CAST(Mg_ppm    AS decimal(18,1))) + CASE Estado_Mg  WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS Mg,
+    CONVERT(varchar(20),CAST(B_ppm     AS decimal(18,1))) AS B,
+    CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
+    CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
+    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS TBN
+FROM [dbo].[vw_MuestrasEstado]
+WHERE Compartimiento IS NOT NULL
+  AND FechaMuestreo >= DATEADD(MONTH, -2, GETDATE());   -- ventana 2 meses HORNEADA (a prueba de error del agente)
+GO
+
+
 /* ============================================================================
    VALIDACIÓN  (queries de ejemplo; cópialas fuera de este comentario para correrlas)
    ----------------------------------------------------------------------------
@@ -577,7 +616,8 @@ GO
    WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
    ORDER BY NumCrit DESC, Equipo, Compartimiento;
 
-   REVERTIR todo:  DROP VIEW en orden inverso (vw_TendenciaElemento → vw_UltimoAnalisisFlota →
-   vw_ObservadosDetalle → vw_ObservadosResumen → vw_ObservadosFlota → vw_EstadoActualMT →
-   vw_UltimoAnalisisAceite → vw_MuestrasRankeadas → vw_MuestrasEstado → vw_LimitesPorComponente).
+   REVERTIR todo:  DROP VIEW en orden inverso (vw_HistorialMuestra → vw_TendenciaElemento →
+   vw_UltimoAnalisisFlota → vw_ObservadosDetalle → vw_ObservadosResumen → vw_ObservadosFlota →
+   vw_EstadoActualMT → vw_UltimoAnalisisAceite → vw_MuestrasRankeadas → vw_MuestrasEstado →
+   vw_LimitesPorComponente).
    ============================================================================ */
