@@ -1,7 +1,7 @@
 /* ============================================================================
    KomfIA — VALIDACIÓN EN SSMS  (bd_kmmp_osconfiabilidad, Azure SQL)
    Corre cada BLOQUE por separado (selecciona y F5). Son SOLO lecturas.
-   Objetivo: probar las 8 vistas, el barrido, y — sobre todo — diagnosticar la
+   Objetivo: probar las 10 vistas, el barrido/diagnóstico/tendencia, y — sobre todo — diagnosticar la
    COBERTURA de [Eqpcare].[lc], que es el único cuello para escalar a otros
    proyectos / modelos / componentes.
    Requisito previo: haber corrido DDL_vistas.sql (F5) y DDL_indices.sql.
@@ -9,14 +9,15 @@
 
 
 /* ----------------------------------------------------------------------------
-   BLOQUE 0 — ¿Existen las 8 vistas? (deben aparecer las 8)
+   BLOQUE 0 — ¿Existen las 10 vistas? (deben aparecer las 10)
    ---------------------------------------------------------------------------- */
 SELECT s.name AS esquema, v.name AS vista, v.modify_date
 FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
 WHERE v.name IN (
     'vw_LimitesPorComponente','vw_MuestrasEstado','vw_MuestrasRankeadas',
     'vw_UltimoAnalisisAceite','vw_EstadoActualMT','vw_ObservadosFlota',
-    'vw_ObservadosResumen','vw_ObservadosDetalle')
+    'vw_ObservadosResumen','vw_ObservadosDetalle',
+    'vw_UltimoAnalisisFlota','vw_TendenciaElemento')
 ORDER BY v.name;
 GO
 
@@ -249,4 +250,34 @@ SELECT Compartimiento, FechaMuestreo, HorasComponente, HorasDeAceite, Cond_Area,
 FROM [dbo].[vw_UltimoAnalisisFlota] WITH (NOLOCK)
 WHERE Equipo = 'CA3171'
 ORDER BY Compartimiento;
+GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 14 — TENDENCIA POR ELEMENTO (nueva vista vw_TendenciaElemento)
+   1 fila por parámetro, con d1..d8 (8 valores cronológicos + chip embebido) y
+   f1..f8 (fechas). PASO 2 de tendencia: el central solo PINTA d1..d8.
+   ---------------------------------------------------------------------------- */
+
+-- (14a) PASO 2 por defecto: SOLO parámetros relevantes (~4-8 filas chiquititas).
+SELECT Parametro, Grupo, LP, LC, d1,d2,d3,d4,d5,d6,d7,d8,
+       f1,f2,f3,f4,f5,f6,f7,f8, Prom, Sigma, Tendencia, NVecesObs, Inf
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%' AND Compartimiento LIKE '%RH'
+  AND EsRelevante = 1
+ORDER BY Orden;
+GO
+
+-- (14b) Matriz COMPLETA (los 17 parámetros): la MISMA query SIN "AND EsRelevante = 1".
+SELECT Parametro, Grupo, LP, LC, d1, d8, Prom, Sigma, NVecesObs, EsRelevante, Tendencia
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH'
+ORDER BY Orden;
+GO
+
+-- (14c) Sanidad: d1=más antigua, d8=la última; f1..f8 en orden cronológico ascendente.
+SELECT Parametro, f1, f8, d1, d8, Tendencia
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH' AND Parametro IN ('Fe','PQ')
+ORDER BY Orden;
 GO

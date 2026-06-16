@@ -18,7 +18,8 @@
      1) vw_LimitesPorComponente  2) vw_MuestrasEstado  3) vw_MuestrasRankeadas
      4) vw_UltimoAnalisisAceite  5) vw_EstadoActualMT  6) vw_ObservadosFlota (barrido + HorasComponente)
      7) vw_ObservadosResumen (RESUMEN barrido, 1 fila/equipo)  8) vw_ObservadosDetalle (DETALLE barrido, ligero)
-     9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc).
+     9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc)
+    10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d8 + chip).
    Todo CREATE OR ALTER (reversible). Junto con DDL_indices.sql cubren toda la capa de vistas.
    ============================================================================ */
 GO
@@ -448,6 +449,103 @@ WHERE u.Compartimiento IS NOT NULL AND LTRIM(RTRIM(u.Compartimiento)) <> '';
 GO
 
 
+/* ----------------------------------------------------------------------------
+   10) vw_TendenciaElemento — DETALLE POR ELEMENTO de la tendencia (PASO 2),
+   PRE-FORMATEADO y LIGERO (hermana de vw_ObservadosDetalle). 1 fila por
+   (Equipo, Compartimiento, Parametro) sobre las 8 últimas no-DDI:
+     - d1..d8 = 8 valores cronológicos (d1=+antigua, d8=última) con chip embebido.
+     - f1..f8 = las 8 fechas (encabezado de la matriz).
+     - LP, LC, Prom, Sigma, Tendencia, NVecesObs, Inf, Grupo, Orden.
+     - EsRelevante=1 si superó su umbral en >=1 muestra (TBN/P INVERSOS: por debajo).
+   PASO 2 por defecto: WHERE EsRelevante=1 (~4-8 filas). Matriz completa: sin ese filtro.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
+WITH s AS (
+    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia,
+           Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
+           Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP,
+           Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
+           Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Mg_ppm, Mg_LP, Mg_LC,
+           B_ppm, P_ppm, V100, TBN, TBN_LP
+    FROM [dbo].[vw_MuestrasRankeadas]
+    WHERE rn_recencia <= 8
+),
+u AS (
+    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia,
+           p.Parametro, p.Grupo, p.Orden, p.Inf, p.Inv,
+           CAST(p.Valor AS decimal(18,2)) AS Valor,
+           CAST(p.LP AS decimal(18,2))    AS LP,
+           CAST(p.LC AS decimal(18,2))    AS LC
+    FROM s
+    CROSS APPLY (VALUES
+        ('Fe',  'Met. Desg.', 1,  0,0, s.Fe_ppm,    s.Fe_LP, s.Fe_LC),
+        ('PQ',  'Met. Desg.', 2,  0,0, s.Indice_PQ, s.PQ_LP, s.PQ_LC),
+        ('Cr',  'Met. Desg.', 3,  0,0, s.Cr_ppm,    s.Cr_LP, s.Cr_LC),
+        ('Ni',  'Met. Desg.', 4,  0,0, s.Ni_ppm,    s.Ni_LP, s.Ni_LC),
+        ('Cu',  'Met. Desg.', 5,  0,0, s.Cu_ppm,    s.Cu_LP, s.Cu_LC),
+        ('Pb',  'Met. Desg.', 6,  0,0, s.Pb_ppm,    s.Pb_LP, NULL),
+        ('Sn',  'Met. Desg.', 7,  0,0, s.Sn_ppm,    s.Sn_LP, NULL),
+        ('Al',  'Met. Desg.', 8,  0,0, s.Al_ppm,    s.Al_LP, s.Al_LC),
+        ('Si',  'Contam.',    9,  0,0, s.Si_ppm,    s.Si_LP, s.Si_LC),
+        ('Ca',  'Contam.',    10, 1,0, s.Ca_ppm,    s.Ca_LP, s.Ca_LC),
+        ('Zn',  'Contam.',    11, 1,0, s.Zn_ppm,    s.Zn_LP, s.Zn_LC),
+        ('K',   'Contam.',    12, 1,0, s.K_ppm,     s.K_LP,  s.K_LC),
+        ('B',   'Adit.',      13, 1,0, s.B_ppm,     NULL,    NULL),
+        ('P',   'Adit.',      14, 0,1, s.P_ppm,     240,     NULL),
+        ('Mg',  'Adit.',      15, 1,0, s.Mg_ppm,    s.Mg_LP, s.Mg_LC),
+        ('V100','Salud',      16, 0,0, s.V100,      NULL,    NULL),
+        ('TBN', 'Salud',      17, 0,1, s.TBN,       s.TBN_LP,NULL)
+    ) AS p(Parametro, Grupo, Orden, Inf, Inv, Valor, LP, LC)
+),
+v AS (
+    SELECT u.*,
+        CONVERT(varchar(24), CAST(u.Valor AS decimal(18,1)))
+        + CASE
+            WHEN u.Valor IS NULL THEN ''
+            WHEN u.Inv = 1 THEN CASE WHEN u.LP IS NOT NULL AND u.Valor > 0 AND u.Valor < u.LP THEN ' 🟨' ELSE '' END
+            ELSE CASE WHEN u.Valor > ISNULL(u.LC, 999999) THEN ' 🟥'
+                      WHEN u.Valor > ISNULL(u.LP, 999999) THEN ' 🟨' ELSE '' END
+          END AS Vstr,
+        CASE
+            WHEN u.Valor IS NULL THEN 0
+            WHEN u.Inv = 1 THEN CASE WHEN u.LP IS NOT NULL AND u.Valor > 0 AND u.Valor < u.LP THEN 1 ELSE 0 END
+            ELSE CASE WHEN u.Valor > ISNULL(u.LP, 999999) THEN 1 ELSE 0 END
+          END AS FueraUmbral
+    FROM u
+)
+SELECT
+    Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
+    MAX(LP) AS LP, MAX(LC) AS LC,
+    MAX(CASE WHEN rn_recencia = 8 THEN Vstr END) AS d1,
+    MAX(CASE WHEN rn_recencia = 7 THEN Vstr END) AS d2,
+    MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d3,
+    MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d4,
+    MAX(CASE WHEN rn_recencia = 4 THEN Vstr END) AS d5,
+    MAX(CASE WHEN rn_recencia = 3 THEN Vstr END) AS d6,
+    MAX(CASE WHEN rn_recencia = 2 THEN Vstr END) AS d7,
+    MAX(CASE WHEN rn_recencia = 1 THEN Vstr END) AS d8,
+    MAX(CASE WHEN rn_recencia = 8 THEN FechaMuestreo END) AS f1,
+    MAX(CASE WHEN rn_recencia = 7 THEN FechaMuestreo END) AS f2,
+    MAX(CASE WHEN rn_recencia = 6 THEN FechaMuestreo END) AS f3,
+    MAX(CASE WHEN rn_recencia = 5 THEN FechaMuestreo END) AS f4,
+    MAX(CASE WHEN rn_recencia = 4 THEN FechaMuestreo END) AS f5,
+    MAX(CASE WHEN rn_recencia = 3 THEN FechaMuestreo END) AS f6,
+    MAX(CASE WHEN rn_recencia = 2 THEN FechaMuestreo END) AS f7,
+    MAX(CASE WHEN rn_recencia = 1 THEN FechaMuestreo END) AS f8,
+    CAST(AVG(Valor) AS decimal(18,1)) AS Prom,
+    CAST(STDEV(Valor) AS decimal(18,1)) AS Sigma,
+    SUM(FueraUmbral) AS NVecesObs,
+    CASE WHEN SUM(FueraUmbral) > 0 THEN 1 ELSE 0 END AS EsRelevante,
+    CASE
+        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) > MAX(CASE WHEN rn_recencia=8 THEN Valor END) THEN '↑'
+        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) < MAX(CASE WHEN rn_recencia=8 THEN Valor END) THEN '↓'
+        ELSE '→'
+    END AS Tendencia
+FROM v
+GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf;
+GO
+
+
 /* ============================================================================
    VALIDACIÓN  (queries de ejemplo; cópialas fuera de este comentario para correrlas)
    ----------------------------------------------------------------------------
@@ -479,7 +577,7 @@ GO
    WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
    ORDER BY NumCrit DESC, Equipo, Compartimiento;
 
-   REVERTIR todo:  DROP VIEW en orden inverso (vw_UltimoAnalisisFlota → vw_ObservadosDetalle →
-   vw_ObservadosResumen → vw_ObservadosFlota → vw_EstadoActualMT → vw_UltimoAnalisisAceite →
-   vw_MuestrasRankeadas → vw_MuestrasEstado → vw_LimitesPorComponente).
+   REVERTIR todo:  DROP VIEW en orden inverso (vw_TendenciaElemento → vw_UltimoAnalisisFlota →
+   vw_ObservadosDetalle → vw_ObservadosResumen → vw_ObservadosFlota → vw_EstadoActualMT →
+   vw_UltimoAnalisisAceite → vw_MuestrasRankeadas → vw_MuestrasEstado → vw_LimitesPorComponente).
    ============================================================================ */
