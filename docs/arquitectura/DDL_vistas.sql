@@ -1,5 +1,5 @@
 /* ============================================================================
-   KomfIA — VISTAS (archivo único: cadena v3.2 + vw_ObservadosFlota v4.2; 13-jun-2026)
+   KomfIA — VISTAS (archivo único v5: cadena completa de 11 vistas; 16-jun-2026)
    Base: bd_kmmp_osconfiabilidad (Azure SQL)
 
    QUÉ AGREGA (para la "matriz única" definida por el área):
@@ -20,7 +20,8 @@
      7) vw_ObservadosResumen (RESUMEN barrido, 1 fila/equipo)  8) vw_ObservadosDetalle (DETALLE barrido, ligero)
      9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc)
     10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d8 + chip)
-    11) vw_HistorialMuestra (HISTORIAL muestra por muestra, 2 meses, pre-formateado por fila).
+    11) vw_HistorialMuestra (HISTORIAL muestra por muestra, 2 meses, pre-formateado por fila)
+    12) vw_DiagnosticoEquipo (DIAGNÓSTICO por equipo, pre-formateado por componente con chip :C/:P).
    Todo CREATE OR ALTER (reversible). Junto con DDL_indices.sql cubren toda la capa de vistas.
    ============================================================================ */
 GO
@@ -51,6 +52,7 @@ SELECT
     MIN([CALCIO - LP])  AS Ca_LP, MIN([CALCIO - LC])  AS Ca_LC,
     MIN([ZINC - LP])    AS Zn_LP, MIN([ZINC - LC])    AS Zn_LC,
     MIN([POTASIO - LP]) AS K_LP,  MIN([POTASIO - LC]) AS K_LC,
+    MIN([SODIO - LP])   AS Na_LP, MIN([SODIO - LC])   AS Na_LC,
     MIN([MAGNESIO - LP])AS Mg_LP, MIN([MAGNESIO - LC])AS Mg_LC,
     MIN([PLOMO - LP])   AS Pb_LP, MIN([ESTAÑO - LP])  AS Sn_LP,
     MIN([PQ - LP])      AS PQ_LP, MIN([PQ - LC])      AS PQ_LC,
@@ -98,7 +100,7 @@ WITH muestras AS (
         LD.[HorasA], LD.[HorasB],            -- candidatos a "Horas del componente" (verificar)
         LD.[CM], LD.[Grado],
         LD.[Fe_ppm], LD.[Cr_ppm], LD.[Ni_ppm], LD.[Cu_ppm], LD.[Pb_ppm], LD.[Sn_ppm],
-        LD.[Si_ppm], LD.[Al_ppm], LD.[Ca_ppm], LD.[Zn_ppm], LD.[K_ppm], LD.[Mg_ppm], LD.[B_ppm], LD.[P_ppm],
+        LD.[Si_ppm], LD.[Al_ppm], LD.[Ca_ppm], LD.[Zn_ppm], LD.[Na_ppm], LD.[K_ppm], LD.[Mg_ppm], LD.[B_ppm], LD.[P_ppm],
         LD.[Indice_PQ], LD.[TBN], LD.[V100], LD.[LaboratoryDataId]
     FROM [Oil].[LaboratoryData] LD
     INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
@@ -153,6 +155,11 @@ SELECT
     CASE WHEN m.K_ppm IS NULL THEN 'SIN DATO'
          WHEN m.K_ppm > ISNULL(lim.K_LC,9999) THEN 'CRITICO'
          WHEN m.K_ppm > ISNULL(lim.K_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_K,
+
+    m.Na_ppm,  lim.Na_LP,  lim.Na_LC,
+    CASE WHEN m.Na_ppm IS NULL THEN 'SIN DATO'
+         WHEN m.Na_ppm > ISNULL(lim.Na_LC,9999) THEN 'CRITICO'
+         WHEN m.Na_ppm > ISNULL(lim.Na_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Na,
 
     m.Mg_ppm,  lim.Mg_LP,  lim.Mg_LC,
     CASE WHEN m.Mg_ppm IS NULL THEN 'SIN DATO'
@@ -292,6 +299,7 @@ WITH b AS (
             CASE WHEN Ca_ppm > ISNULL(Ca_LC,9999) THEN ',Ca:C' WHEN Ca_ppm > ISNULL(Ca_LP,9999) THEN ',Ca:P' ELSE '' END,
             CASE WHEN Zn_ppm > ISNULL(Zn_LC,9999) THEN ',Zn:C' WHEN Zn_ppm > ISNULL(Zn_LP,9999) THEN ',Zn:P' ELSE '' END,
             CASE WHEN K_ppm  > ISNULL(K_LC,9999)  THEN ',K:C'  WHEN K_ppm  > ISNULL(K_LP,9999)  THEN ',K:P'  ELSE '' END,
+            CASE WHEN Na_ppm > ISNULL(Na_LC,9999) THEN ',Na:C' WHEN Na_ppm > ISNULL(Na_LP,9999) THEN ',Na:P' ELSE '' END,
             CASE WHEN Mg_ppm > ISNULL(Mg_LC,9999) THEN ',Mg:C' WHEN Mg_ppm > ISNULL(Mg_LP,9999) THEN ',Mg:P' ELSE '' END
         ), 1, 1, '') AS Infs_Obs,
         ( CASE WHEN Fe_ppm    > ISNULL(Fe_LC,9999) THEN 1 ELSE 0 END
@@ -326,12 +334,13 @@ WITH b AS (
             CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+'(LC'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1)))+'):C inf' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+'(LP'+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1)))+'):P inf' ELSE '' END,
             CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+'(LC'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1)))+'):C inf' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+'(LP'+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1)))+'):P inf' ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+'(LC'+CONVERT(varchar(20),CAST(K_LC AS decimal(18,1)))+'):C inf' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+'(LP'+CONVERT(varchar(20),CAST(K_LP AS decimal(18,1)))+'):P inf' ELSE '' END,
+            CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+'(LC'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1)))+'):C inf' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+'(LP'+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1)))+'):P inf' ELSE '' END,
             CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'(LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1)))+'):C inf' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'(LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1)))+'):P inf' ELSE '' END
         ),1,3,'') AS Detalle,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP, Al_ppm, Al_LP, Al_LC,
         Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC,
-        K_ppm, K_LP, K_LC, Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
+        K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
     FROM [dbo].[vw_MuestrasEstado]
     WHERE EsDDI = 0 AND rn_recencia = 1
 ),
@@ -397,7 +406,7 @@ GO
    (Fe_ppm, Fe_LP, Fe_LC…) a propósito: así el central NO puede armar el esqueleto de
    "último análisis" (4 grupos) — queda OBLIGADO a leer la columna Detalle y pivotar
    la matriz. Se consulta SIEMPRE con SELECT * (la vista ya recorta las columnas).
-   Detalle formato: 'Cu=24.2(LC4):C · Sn=1.6(LP3):P'  (:C=crítico 🟥, :P=precaución 🟨,
+   Detalle formato: 'Cu=24.2(LC4):C · Sn=1.6(LP3):P'  (:C=crítico:C, :P=precaución:P,
    sufijo ' inf'=informativo Ca/Zn/K/Mg).
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosDetalle] AS
@@ -466,10 +475,10 @@ WITH s AS (
            Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
            Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
-           Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Mg_ppm, Mg_LP, Mg_LC,
+           Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC,
            B_ppm, P_ppm, V100, TBN, TBN_LP
     FROM [dbo].[vw_MuestrasRankeadas]
-    WHERE rn_recencia <= 8
+    WHERE rn_recencia <= 6
 ),
 u AS (
     SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia,
@@ -491,11 +500,12 @@ u AS (
         ('Ca',  'Contam.',    10, 1,0, s.Ca_ppm,    s.Ca_LP, s.Ca_LC),
         ('Zn',  'Contam.',    11, 1,0, s.Zn_ppm,    s.Zn_LP, s.Zn_LC),
         ('K',   'Contam.',    12, 1,0, s.K_ppm,     s.K_LP,  s.K_LC),
-        ('B',   'Adit.',      13, 1,0, s.B_ppm,     NULL,    NULL),
-        ('P',   'Adit.',      14, 0,1, s.P_ppm,     240,     NULL),
-        ('Mg',  'Adit.',      15, 1,0, s.Mg_ppm,    s.Mg_LP, s.Mg_LC),
-        ('V100','Salud',      16, 0,0, s.V100,      NULL,    NULL),
-        ('TBN', 'Salud',      17, 0,1, s.TBN,       s.TBN_LP,NULL)
+        ('Na',  'Contam.',    13, 1,0, s.Na_ppm,    s.Na_LP, s.Na_LC),
+        ('B',   'Adit.',      14, 1,0, s.B_ppm,     NULL,    NULL),
+        ('P',   'Adit.',      15, 0,1, s.P_ppm,     240,     NULL),
+        ('Mg',  'Adit.',      16, 1,0, s.Mg_ppm,    s.Mg_LP, s.Mg_LC),
+        ('V100','Salud',      17, 0,0, s.V100,      NULL,    NULL),
+        ('TBN', 'Salud',      18, 0,1, s.TBN,       s.TBN_LP,NULL)
     ) AS p(Parametro, Grupo, Orden, Inf, Inv, Valor, LP, LC)
 ),
 v AS (
@@ -503,9 +513,9 @@ v AS (
         CONVERT(varchar(24), CAST(u.Valor AS decimal(18,1)))
         + CASE
             WHEN u.Valor IS NULL THEN ''
-            WHEN u.Inv = 1 THEN CASE WHEN u.LP IS NOT NULL AND u.Valor > 0 AND u.Valor < u.LP THEN ' 🟨' ELSE '' END
-            ELSE CASE WHEN u.Valor > ISNULL(u.LC, 999999) THEN ' 🟥'
-                      WHEN u.Valor > ISNULL(u.LP, 999999) THEN ' 🟨' ELSE '' END
+            WHEN u.Inv = 1 THEN CASE WHEN u.LP IS NOT NULL AND u.Valor > 0 AND u.Valor < u.LP THEN ':P' ELSE '' END
+            ELSE CASE WHEN u.Valor > ISNULL(u.LC, 999999) THEN ':C'
+                      WHEN u.Valor > ISNULL(u.LP, 999999) THEN ':P' ELSE '' END
           END AS Vstr,
         CASE
             WHEN u.Valor IS NULL THEN 0
@@ -517,29 +527,25 @@ v AS (
 SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
     MAX(LP) AS LP, MAX(LC) AS LC,
-    MAX(CASE WHEN rn_recencia = 8 THEN Vstr END) AS d1,
-    MAX(CASE WHEN rn_recencia = 7 THEN Vstr END) AS d2,
-    MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d3,
-    MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d4,
-    MAX(CASE WHEN rn_recencia = 4 THEN Vstr END) AS d5,
-    MAX(CASE WHEN rn_recencia = 3 THEN Vstr END) AS d6,
-    MAX(CASE WHEN rn_recencia = 2 THEN Vstr END) AS d7,
-    MAX(CASE WHEN rn_recencia = 1 THEN Vstr END) AS d8,
-    MAX(CASE WHEN rn_recencia = 8 THEN FechaMuestreo END) AS f1,
-    MAX(CASE WHEN rn_recencia = 7 THEN FechaMuestreo END) AS f2,
-    MAX(CASE WHEN rn_recencia = 6 THEN FechaMuestreo END) AS f3,
-    MAX(CASE WHEN rn_recencia = 5 THEN FechaMuestreo END) AS f4,
-    MAX(CASE WHEN rn_recencia = 4 THEN FechaMuestreo END) AS f5,
-    MAX(CASE WHEN rn_recencia = 3 THEN FechaMuestreo END) AS f6,
-    MAX(CASE WHEN rn_recencia = 2 THEN FechaMuestreo END) AS f7,
-    MAX(CASE WHEN rn_recencia = 1 THEN FechaMuestreo END) AS f8,
+    MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d1,
+    MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d2,
+    MAX(CASE WHEN rn_recencia = 4 THEN Vstr END) AS d3,
+    MAX(CASE WHEN rn_recencia = 3 THEN Vstr END) AS d4,
+    MAX(CASE WHEN rn_recencia = 2 THEN Vstr END) AS d5,
+    MAX(CASE WHEN rn_recencia = 1 THEN Vstr END) AS d6,
+    MAX(CASE WHEN rn_recencia = 6 THEN FechaMuestreo END) AS f1,
+    MAX(CASE WHEN rn_recencia = 5 THEN FechaMuestreo END) AS f2,
+    MAX(CASE WHEN rn_recencia = 4 THEN FechaMuestreo END) AS f3,
+    MAX(CASE WHEN rn_recencia = 3 THEN FechaMuestreo END) AS f4,
+    MAX(CASE WHEN rn_recencia = 2 THEN FechaMuestreo END) AS f5,
+    MAX(CASE WHEN rn_recencia = 1 THEN FechaMuestreo END) AS f6,
     CAST(AVG(Valor) AS decimal(18,1)) AS Prom,
     CAST(STDEV(Valor) AS decimal(18,1)) AS Sigma,
     SUM(FueraUmbral) AS NVecesObs,
     CASE WHEN SUM(FueraUmbral) > 0 THEN 1 ELSE 0 END AS EsRelevante,
     CASE
-        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) > MAX(CASE WHEN rn_recencia=8 THEN Valor END) THEN '↑'
-        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) < MAX(CASE WHEN rn_recencia=8 THEN Valor END) THEN '↓'
+        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) > MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN '↑'
+        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) < MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN '↓'
         ELSE '→'
     END AS Tendencia
 FROM v
@@ -550,7 +556,7 @@ GO
 /* ----------------------------------------------------------------------------
    11) vw_HistorialMuestra — HISTORIAL muestra por muestra (últimos 2 meses, horneados).
    1 fila por MUESTRA (INCLUYE DDI, flag EsDDI), últimos 2 MESES (ventana horneada en la vista), PRE-FORMATEADA: cada parámetro
-   ya trae su chip (🟥 >LC, 🟨 >LP; informativos Ca/Zn/K/Mg con ' inf'; TBN inverso).
+   ya trae su chip (marcador :C >LC, :P >LP; informativos Ca/Zn/K/Mg con ' inf'; TBN inverso).
    A diferencia de la tendencia (params en filas, 8 fechas), aquí las FECHAS van en
    FILAS (orden descendente al consultar) y los params en columnas -> tabla "cantidad
    de datos", sin estadistica. LIGERA: ventana 2 meses + columnas chip (no LP/LC).
@@ -562,26 +568,63 @@ CREATE OR ALTER VIEW [dbo].[vw_HistorialMuestra] AS
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
     Horometro, HorasDeAceite, CM, EsDDI, Estado_General,
-    CONVERT(varchar(20),CAST(Fe_ppm    AS decimal(18,1))) + CASE Estado_Fe  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Fe,
-    CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1))) + CASE Estado_PQ  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS PQ,
-    CONVERT(varchar(20),CAST(Cr_ppm    AS decimal(18,1))) + CASE Estado_Cr  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Cr,
-    CONVERT(varchar(20),CAST(Ni_ppm    AS decimal(18,1))) + CASE Estado_Ni  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Ni,
-    CONVERT(varchar(20),CAST(Cu_ppm    AS decimal(18,1))) + CASE Estado_Cu  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Cu,
-    CONVERT(varchar(20),CAST(Pb_ppm    AS decimal(18,1))) + CASE Estado_Pb  WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Pb,
-    CONVERT(varchar(20),CAST(Sn_ppm    AS decimal(18,1))) + CASE Estado_Sn  WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Sn,
-    CONVERT(varchar(20),CAST(Al_ppm    AS decimal(18,1))) + CASE Estado_Al  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Al,
-    CONVERT(varchar(20),CAST(Si_ppm    AS decimal(18,1))) + CASE Estado_Si  WHEN 'CRITICO' THEN ' 🟥' WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS Si,
-    CONVERT(varchar(20),CAST(Ca_ppm    AS decimal(18,1))) + CASE Estado_Ca  WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS Ca,
-    CONVERT(varchar(20),CAST(Zn_ppm    AS decimal(18,1))) + CASE Estado_Zn  WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS Zn,
-    CONVERT(varchar(20),CAST(K_ppm     AS decimal(18,1))) + CASE Estado_K   WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS K,
-    CONVERT(varchar(20),CAST(Mg_ppm    AS decimal(18,1))) + CASE Estado_Mg  WHEN 'CRITICO' THEN ' 🟥 inf' WHEN 'PRECAUCION' THEN ' 🟨 inf' ELSE '' END AS Mg,
+    CONVERT(varchar(20),CAST(Fe_ppm    AS decimal(18,1))) + CASE Estado_Fe  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Fe,
+    CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1))) + CASE Estado_PQ  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS PQ,
+    CONVERT(varchar(20),CAST(Cr_ppm    AS decimal(18,1))) + CASE Estado_Cr  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Cr,
+    CONVERT(varchar(20),CAST(Ni_ppm    AS decimal(18,1))) + CASE Estado_Ni  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Ni,
+    CONVERT(varchar(20),CAST(Cu_ppm    AS decimal(18,1))) + CASE Estado_Cu  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Cu,
+    CONVERT(varchar(20),CAST(Pb_ppm    AS decimal(18,1))) + CASE Estado_Pb  WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Pb,
+    CONVERT(varchar(20),CAST(Sn_ppm    AS decimal(18,1))) + CASE Estado_Sn  WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Sn,
+    CONVERT(varchar(20),CAST(Al_ppm    AS decimal(18,1))) + CASE Estado_Al  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Al,
+    CONVERT(varchar(20),CAST(Si_ppm    AS decimal(18,1))) + CASE Estado_Si  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Si,
+    CONVERT(varchar(20),CAST(Ca_ppm    AS decimal(18,1))) + CASE Estado_Ca  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Ca,
+    CONVERT(varchar(20),CAST(Zn_ppm    AS decimal(18,1))) + CASE Estado_Zn  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Zn,
+    CONVERT(varchar(20),CAST(K_ppm     AS decimal(18,1))) + CASE Estado_K   WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS K,
+    CONVERT(varchar(20),CAST(Na_ppm    AS decimal(18,1))) + CASE Estado_Na  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Na,
+    CONVERT(varchar(20),CAST(Mg_ppm    AS decimal(18,1))) + CASE Estado_Mg  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Mg,
     CONVERT(varchar(20),CAST(B_ppm     AS decimal(18,1))) AS B,
     CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
     CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
-    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ' 🟨' ELSE '' END AS TBN
+    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN
 FROM [dbo].[vw_MuestrasEstado]
 WHERE Compartimiento IS NOT NULL
   AND FechaMuestreo >= DATEADD(MONTH, -2, GETDATE());   -- ventana 2 meses HORNEADA (a prueba de error del agente)
+GO
+
+
+
+/* ----------------------------------------------------------------------------
+   12) vw_DiagnosticoEquipo — DIAGNÓSTICO por equipo, PRE-FORMATEADO (anti-corte).
+   1 fila por COMPONENTE (último análisis no-DDI, TODOS los componentes incl. OK),
+   con cada parámetro YA chip-marcado (:C >LC, :P >LP; informativos con ' inf';
+   TBN inverso). + HorasComponente (HsCc). El central solo PIVOTA componente x
+   parametro y PINTA (no computa chips ni carga 58 columnas crudas) -> no se corta.
+   Espejo de vw_HistorialMuestra pero sobre vw_UltimoAnalisisFlota. Consultar por
+   Equipo: SELECT * FROM vw_DiagnosticoEquipo WHERE Equipo='CAxxxx' ORDER BY Compartimiento.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_DiagnosticoEquipo] AS
+SELECT
+    Equipo, Proyecto, Modelo, Compartimiento, CompTipo, FechaMuestreo,
+    Horometro, HorasDeAceite, HorasComponente, CM, Estado_General, Cond_Area,
+    CONVERT(varchar(20),CAST(Fe_ppm    AS decimal(18,1))) + CASE Estado_Fe  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Fe,
+    CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1))) + CASE Estado_PQ  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS PQ,
+    CONVERT(varchar(20),CAST(Cr_ppm    AS decimal(18,1))) + CASE Estado_Cr  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Cr,
+    CONVERT(varchar(20),CAST(Ni_ppm    AS decimal(18,1))) + CASE Estado_Ni  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Ni,
+    CONVERT(varchar(20),CAST(Cu_ppm    AS decimal(18,1))) + CASE Estado_Cu  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Cu,
+    CONVERT(varchar(20),CAST(Pb_ppm    AS decimal(18,1))) + CASE Estado_Pb  WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Pb,
+    CONVERT(varchar(20),CAST(Sn_ppm    AS decimal(18,1))) + CASE Estado_Sn  WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Sn,
+    CONVERT(varchar(20),CAST(Al_ppm    AS decimal(18,1))) + CASE Estado_Al  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Al,
+    CONVERT(varchar(20),CAST(Si_ppm    AS decimal(18,1))) + CASE Estado_Si  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Si,
+    CONVERT(varchar(20),CAST(Ca_ppm    AS decimal(18,1))) + CASE Estado_Ca  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Ca,
+    CONVERT(varchar(20),CAST(Zn_ppm    AS decimal(18,1))) + CASE Estado_Zn  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Zn,
+    CONVERT(varchar(20),CAST(K_ppm     AS decimal(18,1))) + CASE Estado_K   WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS K,
+    CONVERT(varchar(20),CAST(Na_ppm    AS decimal(18,1))) + CASE Estado_Na  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Na,
+    CONVERT(varchar(20),CAST(Mg_ppm    AS decimal(18,1))) + CASE Estado_Mg  WHEN 'CRITICO' THEN ':C inf' WHEN 'PRECAUCION' THEN ':P inf' ELSE '' END AS Mg,
+    CONVERT(varchar(20),CAST(B_ppm     AS decimal(18,1))) AS B,
+    CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
+    CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
+    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN
+FROM [dbo].[vw_UltimoAnalisisFlota];
 GO
 
 

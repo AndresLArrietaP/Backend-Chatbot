@@ -1,7 +1,7 @@
 /* ============================================================================
    KomfIA — VALIDACIÓN EN SSMS  (bd_kmmp_osconfiabilidad, Azure SQL)
    Corre cada BLOQUE por separado (selecciona y F5). Son SOLO lecturas.
-   Objetivo: probar las 11 vistas, el barrido/diagnóstico/tendencia/historial, y — sobre todo — diagnosticar la
+   Objetivo: probar las 12 vistas, el barrido/diagnóstico/tendencia/historial, y — sobre todo — diagnosticar la
    COBERTURA de [Eqpcare].[lc], que es el único cuello para escalar a otros
    proyectos / modelos / componentes.
    Requisito previo: haber corrido DDL_vistas.sql (F5) y DDL_indices.sql.
@@ -9,7 +9,7 @@
 
 
 /* ----------------------------------------------------------------------------
-   BLOQUE 0 — ¿Existen las 11 vistas? (deben aparecer las 11)
+   BLOQUE 0 — ¿Existen las 12 vistas? (deben aparecer las 12)
    ---------------------------------------------------------------------------- */
 SELECT s.name AS esquema, v.name AS vista, v.modify_date
 FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
@@ -17,7 +17,7 @@ WHERE v.name IN (
     'vw_LimitesPorComponente','vw_MuestrasEstado','vw_MuestrasRankeadas',
     'vw_UltimoAnalisisAceite','vw_EstadoActualMT','vw_ObservadosFlota',
     'vw_ObservadosResumen','vw_ObservadosDetalle',
-    'vw_UltimoAnalisisFlota','vw_TendenciaElemento','vw_HistorialMuestra')
+    'vw_UltimoAnalisisFlota','vw_TendenciaElemento','vw_HistorialMuestra','vw_DiagnosticoEquipo')
 ORDER BY v.name;
 GO
 
@@ -260,8 +260,8 @@ GO
    ---------------------------------------------------------------------------- */
 
 -- (14a) PASO 2 por defecto: SOLO parámetros relevantes (~4-8 filas chiquititas).
-SELECT Parametro, Grupo, LP, LC, d1,d2,d3,d4,d5,d6,d7,d8,
-       f1,f2,f3,f4,f5,f6,f7,f8, Prom, Sigma, Tendencia, NVecesObs, Inf
+SELECT Parametro, Grupo, LP, LC, d1,d2,d3,d4,d5,d6,
+       f1,f2,f3,f4,f5,f6, Prom, Sigma, Tendencia, NVecesObs, Inf
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%' AND Compartimiento LIKE '%RH'
   AND EsRelevante = 1
@@ -287,7 +287,7 @@ GO
    BLOQUE 15 — HISTORIAL muestra por muestra (nueva vista vw_HistorialMuestra)
    1 fila por muestra (INCLUYE DDI), últimos 2 meses (horneados en la vista), params pre-formateados con
    chip. El central pinta la tabla con FechaMuestreo DESC (cantidad de datos, sin
-   estadística). LIGERA: ventana 12 meses + columnas chip (no LP/LC).
+   estadística). LIGERA: ventana 2 meses + columnas chip (no LP/LC).
    ---------------------------------------------------------------------------- */
 
 -- (15a) Historial de un componente (lo que consumirá KomfIA, descendente).
@@ -307,10 +307,42 @@ GROUP BY Compartimiento
 ORDER BY Compartimiento;
 GO
 
--- (15c) Latencia (mira elapsed time): debe ser baja por la ventana de 12 meses.
+-- (15c) Latencia (mira elapsed time): debe ser baja por la ventana de 2 meses.
 SET STATISTICS TIME ON;
 SELECT * FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
 WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%LH'
 ORDER BY FechaMuestreo DESC;
 SET STATISTICS TIME OFF;
 GO
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 16 — MARCADORES DE CHIP (:C / :P) en vistas pre-formateadas
+   Tras re-correr DDL_vistas.sql: historial y tendencia ya NO usan emoji, usan
+   marcador texto ':C' (>LC) / ':P' (>LP) — robusto a encoding. El central mapea
+   :C->rojo, :P->amarillo, sufijo ' inf'=informativo. DEBEN verse ':C'/':P', NUNCA '🟥'/'🟨'.
+   ---------------------------------------------------------------------------- */
+-- (16a) Historial: las columnas de metales fuera de umbral deben traer ':C'/':P' (no emoji)
+SELECT TOP 20 Fec=FechaMuestreo, CM, Fe, PQ, Cr, Cu, Si, Zn
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3160' AND Compartimiento LIKE '%HIDRAUL%'
+ORDER BY FechaMuestreo DESC;
+GO
+
+-- (16b) Tendencia: d1..d8 deben traer ':C'/':P' pegados al valor (ej '244.7:C')
+SELECT Parametro, d1, d2, d3, d4, d5, d6, d7, d8
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH' AND EsRelevante=1
+ORDER BY Orden;
+GO
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 17 — DIAGNÓSTICO POR EQUIPO (nueva vista vw_DiagnosticoEquipo)
+   Pre-formateada: 1 fila/componente con cada param ya chip-marcado (:C/:P).
+   El central pivota componente x param y solo pinta -> no se corta.
+   ---------------------------------------------------------------------------- */
+SELECT Compartimiento, FechaMuestreo, HorasComponente, CM, Estado_General,
+       Fe, PQ, Cr, Cu, Si, Ca, Zn, Na, V100, TBN
+FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK)
+WHERE Equipo='CA3177' ORDER BY Compartimiento;
+GO
+-- (17b) Debe traer las ~6 filas de componentes; los críticos con ':C', informativos con ':C inf'.
