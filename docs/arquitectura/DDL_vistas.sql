@@ -473,7 +473,7 @@ GO
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia,
+    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente,
            Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
            Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
@@ -483,7 +483,7 @@ WITH s AS (
     WHERE rn_recencia <= 6
 ),
 u AS (
-    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia,
+    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente,
            p.Parametro, p.Grupo, p.Orden, p.Inf, p.Inv,
            CAST(p.Valor AS decimal(18,2)) AS Valor,
            CAST(p.LP AS decimal(18,2))    AS LP,
@@ -529,6 +529,7 @@ v AS (
 SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
     MAX(LP) AS LP, MAX(LC) AS LC,
+    MAX(CASE WHEN rn_recencia = 1 THEN HorasComponente END) AS HorasComponente,
     MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d1,
     MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d2,
     MAX(CASE WHEN rn_recencia = 4 THEN Vstr END) AS d3,
