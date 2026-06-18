@@ -237,7 +237,9 @@ GO
    columnas nuevas (SELECT * congela columnas al crear la vista).
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_MuestrasRankeadas] AS
-SELECT * FROM [dbo].[vw_MuestrasEstado] WHERE EsDDI = 0;
+SELECT me.*,
+    (SELECT TOP 1 CASE WHEN TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) IS NOT NULL AND me.Horometro >= TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) THEN me.Horometro - TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) ELSE TRY_CONVERT(decimal(12,2), H.[HORAS DE TRABAJO ACUMULADO ]) END FROM [Eqpcare].[HsCc] H WHERE (H.[EQUIPO]=me.Equipo OR (H.[EQUIPO] LIKE 'T[0-9]%' AND me.Equipo='CA'+SUBSTRING(H.[EQUIPO],2,10))) AND H.[SISTEMA]=CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH' WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH' WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC' WHEN me.Compartimiento LIKE '%RUEDA%LH' THEN 'SPINDLE LH' WHEN me.Compartimiento LIKE '%RUEDA%RH' THEN 'SPINDLE RH' WHEN me.Compartimiento LIKE 'MOTOR%' THEN 'MOTOR DIESEL' ELSE me.Compartimiento END ORDER BY H.[FECHA] DESC) AS HorasComponente
+FROM [dbo].[vw_MuestrasEstado] me WHERE me.EsDDI = 0;
 GO
 
 CREATE OR ALTER VIEW [dbo].[vw_UltimoAnalisisAceite] AS
@@ -585,10 +587,11 @@ SELECT
     CONVERT(varchar(20),CAST(B_ppm     AS decimal(18,1))) AS B,
     CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
     CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
-    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN
-FROM [dbo].[vw_MuestrasEstado]
-WHERE Compartimiento IS NOT NULL
-  AND FechaMuestreo >= DATEADD(MONTH, -2, GETDATE());   -- ventana 2 meses HORNEADA (a prueba de error del agente)
+    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN,
+    (SELECT TOP 1 CASE WHEN TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) IS NOT NULL AND me.Horometro >= TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) THEN me.Horometro - TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) ELSE TRY_CONVERT(decimal(12,2), H.[HORAS DE TRABAJO ACUMULADO ]) END FROM [Eqpcare].[HsCc] H WHERE (H.[EQUIPO]=me.Equipo OR (H.[EQUIPO] LIKE 'T[0-9]%' AND me.Equipo='CA'+SUBSTRING(H.[EQUIPO],2,10))) AND H.[SISTEMA]=CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH' WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH' WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC' WHEN me.Compartimiento LIKE '%RUEDA%LH' THEN 'SPINDLE LH' WHEN me.Compartimiento LIKE '%RUEDA%RH' THEN 'SPINDLE RH' WHEN me.Compartimiento LIKE 'MOTOR%' THEN 'MOTOR DIESEL' ELSE me.Compartimiento END ORDER BY H.[FECHA] DESC) AS HorasComponente
+FROM [dbo].[vw_MuestrasEstado] me
+WHERE me.Compartimiento IS NOT NULL
+  AND me.FechaMuestreo >= DATEADD(MONTH, -2, GETDATE());   -- ventana 2 meses HORNEADA (a prueba de error del agente)
 GO
 
 

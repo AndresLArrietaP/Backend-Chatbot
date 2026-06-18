@@ -346,3 +346,23 @@ FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK)
 WHERE Equipo='CA3177' ORDER BY Compartimiento;
 GO
 -- (17b) Debe traer las ~6 filas de componentes; los críticos con ':C', informativos con ':C inf'.
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 18 — Hor. Comp. en tendencia/historial + TENDENCIA DE UN ELEMENTO
+   ---------------------------------------------------------------------------- */
+
+-- (18a) HorasComponente ahora presente en tendencia (rankeadas) e historial:
+SELECT Equipo, Compartimiento, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
+WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%LH' AND rn_recencia<=8
+ORDER BY FechaMuestreo DESC;
+GO
+
+-- (18b) TENDENCIA DE UN ELEMENTO (ej. Sodio) en TODOS los componentes de un equipo
+--       1 fila por componente, d1..d8 = 8 valores cronológicos (chip), f1..f8 = fechas.
+SELECT Compartimiento, Parametro, LP, LC, d1,d2,d3,d4,d5,d6,d7,d8, f1,f8, Tendencia, Inf
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3174' AND Parametro='Na'
+ORDER BY Compartimiento;
+GO
