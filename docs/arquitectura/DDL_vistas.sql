@@ -571,6 +571,25 @@ CREATE OR ALTER VIEW [dbo].[vw_HistorialMuestra] AS
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
     Horometro, HorasDeAceite, CM, EsDDI, Estado_General,
+    /* Met. Obs. = metales fuera de umbral de ESA muestra (determinantes + informativos con ' inf'),
+       reusa Estado_<metal> ya calculados. Para variantes 1/4/5 del historial. */
+    STUFF(CONCAT(
+        CASE Estado_Fe  WHEN 'CRITICO' THEN ',Fe:C'  WHEN 'PRECAUCION' THEN ',Fe:P'  ELSE '' END,
+        CASE Estado_PQ  WHEN 'CRITICO' THEN ',PQ:C'  WHEN 'PRECAUCION' THEN ',PQ:P'  ELSE '' END,
+        CASE Estado_Cr  WHEN 'CRITICO' THEN ',Cr:C'  WHEN 'PRECAUCION' THEN ',Cr:P'  ELSE '' END,
+        CASE Estado_Ni  WHEN 'CRITICO' THEN ',Ni:C'  WHEN 'PRECAUCION' THEN ',Ni:P'  ELSE '' END,
+        CASE Estado_Cu  WHEN 'CRITICO' THEN ',Cu:C'  WHEN 'PRECAUCION' THEN ',Cu:P'  ELSE '' END,
+        CASE Estado_Pb  WHEN 'PRECAUCION' THEN ',Pb:P' ELSE '' END,
+        CASE Estado_Sn  WHEN 'PRECAUCION' THEN ',Sn:P' ELSE '' END,
+        CASE Estado_Al  WHEN 'CRITICO' THEN ',Al:C'  WHEN 'PRECAUCION' THEN ',Al:P'  ELSE '' END,
+        CASE Estado_Si  WHEN 'CRITICO' THEN ',Si:C'  WHEN 'PRECAUCION' THEN ',Si:P'  ELSE '' END,
+        CASE Estado_TBN WHEN 'PRECAUCION' THEN ',TBN:P' ELSE '' END,
+        CASE Estado_Ca  WHEN 'CRITICO' THEN ',Ca:C inf' WHEN 'PRECAUCION' THEN ',Ca:P inf' ELSE '' END,
+        CASE Estado_Zn  WHEN 'CRITICO' THEN ',Zn:C inf' WHEN 'PRECAUCION' THEN ',Zn:P inf' ELSE '' END,
+        CASE Estado_K   WHEN 'CRITICO' THEN ',K:C inf'  WHEN 'PRECAUCION' THEN ',K:P inf'  ELSE '' END,
+        CASE Estado_Na  WHEN 'CRITICO' THEN ',Na:C inf' WHEN 'PRECAUCION' THEN ',Na:P inf' ELSE '' END,
+        CASE Estado_Mg  WHEN 'CRITICO' THEN ',Mg:C inf' WHEN 'PRECAUCION' THEN ',Mg:P inf' ELSE '' END
+    ), 1, 1, '') AS Mets_Obs,
     CONVERT(varchar(20),CAST(Fe_ppm    AS decimal(18,1))) + CASE Estado_Fe  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Fe,
     CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1))) + CASE Estado_PQ  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS PQ,
     CONVERT(varchar(20),CAST(Cr_ppm    AS decimal(18,1))) + CASE Estado_Cr  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Cr,

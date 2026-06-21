@@ -366,3 +366,44 @@ FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3174' AND Parametro='Na'
 ORDER BY Compartimiento;
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 19 — HISTORIAL: 5 variantes (todas sobre vw_HistorialMuestra + Mets_Obs)
+   Cronologico (FechaMuestreo DESC), ventana 2 meses horneada en la vista.
+   ---------------------------------------------------------------------------- */
+
+-- (19.1) GENERAL del equipo: todas las muestras del equipo (cualquier comp.), Met.Obs + Comp.
+SELECT Compartimiento, FechaMuestreo, Horometro, HorasDeAceite, CM, Estado_General, Mets_Obs
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3171'
+ORDER BY FechaMuestreo DESC, Compartimiento;
+GO
+
+-- (19.2) UN METAL en el equipo: el valor del metal por muestra (todos los comp.)
+SELECT Compartimiento, FechaMuestreo, Horometro, HorasDeAceite, CM, Estado_General, Fe
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3171'
+ORDER BY FechaMuestreo DESC, Compartimiento;
+GO
+
+-- (19.3) UN METAL en UN COMPONENTE: valor del metal + Hor. Comp. por muestra
+SELECT FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, Estado_General, Fe
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY FechaMuestreo DESC;
+GO
+
+-- (19.4) UN COMPONENTE: Met.Obs + Hor. Comp. por muestra de ese componente
+SELECT FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, Estado_General, Mets_Obs
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY FechaMuestreo DESC;
+GO
+
+-- (19.5) OBSERVADOS EN FLOTA: muestras observadas del proyecto/modelo (el central agrupa por fecha)
+SELECT FechaMuestreo, Equipo, Compartimiento, CM, Mets_Obs
+FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%' AND Mets_Obs IS NOT NULL
+ORDER BY FechaMuestreo DESC, Equipo, Compartimiento;
+GO
