@@ -1,7 +1,7 @@
 /* ============================================================================
    KomfIA — VALIDACIÓN EN SSMS  (bd_kmmp_osconfiabilidad, Azure SQL)
    Corre cada BLOQUE por separado (selecciona y F5). Son SOLO lecturas.
-   Objetivo: probar las 12 vistas, el barrido/diagnóstico/tendencia/historial, y — sobre todo — diagnosticar la
+   Objetivo: probar las 13 vistas, el barrido/diagnóstico/tendencia/historial, y — sobre todo — diagnosticar la
    COBERTURA de [Eqpcare].[lc], que es el único cuello para escalar a otros
    proyectos / modelos / componentes.
    Requisito previo: haber corrido DDL_vistas.sql (F5) y DDL_indices.sql.
@@ -9,7 +9,7 @@
 
 
 /* ----------------------------------------------------------------------------
-   BLOQUE 0 — ¿Existen las 12 vistas? (deben aparecer las 12)
+   BLOQUE 0 — ¿Existen las 13 vistas? (deben aparecer las 13)
    ---------------------------------------------------------------------------- */
 SELECT s.name AS esquema, v.name AS vista, v.modify_date
 FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
@@ -17,7 +17,8 @@ WHERE v.name IN (
     'vw_LimitesPorComponente','vw_MuestrasEstado','vw_MuestrasRankeadas',
     'vw_UltimoAnalisisAceite','vw_EstadoActualMT','vw_ObservadosFlota',
     'vw_ObservadosResumen','vw_ObservadosDetalle',
-    'vw_UltimoAnalisisFlota','vw_TendenciaElemento','vw_HistorialMuestra','vw_DiagnosticoEquipo')
+    'vw_UltimoAnalisisFlota','vw_TendenciaElemento','vw_HistorialMuestra','vw_DiagnosticoEquipo',
+    'vw_HistorialFlotaObs')
 ORDER BY v.name;
 GO
 

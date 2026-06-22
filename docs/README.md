@@ -16,8 +16,8 @@ docs/
 │   ├── PLAN_PIVOTE_MULTIAGENTE.md / .docx
 │   ├── DocumentacionTecnica_BackendChatbot.docx
 │   ├── DDL_indices.sql               ← índices a crear en la BD
-│   ├── DDL_vistas.sql                ← TODAS las vistas (12): cadena v3.2 + barrido + diagnóstico/tendencia/historial pre-formateados (vw_UltimoAnalisisFlota/DiagnosticoEquipo/TendenciaElemento/HistorialMuestra) + Sodio. Correr de corrido (F5)
-│   └── VALIDACION_SSMS.sql           ← scripts de prueba en SSMS (12 vistas, barrido/diagnóstico/tendencia, COBERTURA de lc). Solo lecturas
+│   ├── DDL_vistas.sql                ← TODAS las vistas (13): cadena v3.2 + barrido + diagnóstico/tendencia/historial pre-formateados (vw_UltimoAnalisisFlota/DiagnosticoEquipo/TendenciaElemento/HistorialMuestra/HistorialFlotaObs) + Sodio. Correr de corrido (F5)
+│   └── VALIDACION_SSMS.sql           ← scripts de prueba en SSMS (13 vistas, barrido/diagnóstico/tendencia/historial, COBERTURA de lc). Solo lecturas
 └── gerencia/
     └── CONFIA_Presentacion_Gerencia.pptx
 ```

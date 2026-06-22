@@ -1,5 +1,5 @@
 /* ============================================================================
-   KomfIA — VISTAS (archivo único v5: cadena completa de 11 vistas; 16-jun-2026)
+   KomfIA — VISTAS (archivo único v5: cadena completa de 13 vistas; 21-jun-2026)
    Base: bd_kmmp_osconfiabilidad (Azure SQL)
 
    QUÉ AGREGA (para la "matriz única" definida por el área):
