@@ -256,8 +256,8 @@ GO
 
 /* ----------------------------------------------------------------------------
    BLOQUE 14 — TENDENCIA POR ELEMENTO (nueva vista vw_TendenciaElemento)
-   1 fila por parámetro, con d1..d8 (8 valores cronológicos + chip embebido) y
-   f1..f8 (fechas). PASO 2 de tendencia: el central solo PINTA d1..d8.
+   1 fila por parámetro, con d1..d6 (6 valores cronológicos + chip embebido) y
+   f1..f6 (fechas). PASO 2 de tendencia: el central solo PINTA d1..d6.
    ---------------------------------------------------------------------------- */
 
 -- (14a) PASO 2 por defecto: SOLO parámetros relevantes (~4-8 filas chiquititas).
@@ -270,14 +270,14 @@ ORDER BY Orden;
 GO
 
 -- (14b) Matriz COMPLETA (los 17 parámetros): la MISMA query SIN "AND EsRelevante = 1".
-SELECT Parametro, Grupo, LP, LC, d1, d8, Prom, Sigma, NVecesObs, EsRelevante, Tendencia
+SELECT Parametro, Grupo, LP, LC, d1, d6, Prom, Sigma, NVecesObs, EsRelevante, Tendencia
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH'
 ORDER BY Orden;
 GO
 
--- (14c) Sanidad: d1=más antigua, d8=la última; f1..f8 en orden cronológico ascendente.
-SELECT Parametro, f1, f8, d1, d8, Tendencia
+-- (14c) Sanidad: d1=más antigua, d6=la última; f1..f6 en orden cronológico ascendente.
+SELECT Parametro, f1, f6, d1, d6, Tendencia
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH' AND Parametro IN ('Fe','PQ')
 ORDER BY Orden;
@@ -329,8 +329,8 @@ WHERE Equipo='CA3160' AND Compartimiento LIKE '%HIDRAUL%'
 ORDER BY FechaMuestreo DESC;
 GO
 
--- (16b) Tendencia: d1..d8 deben traer ':C'/':P' pegados al valor (ej '244.7:C')
-SELECT Parametro, d1, d2, d3, d4, d5, d6, d7, d8
+-- (16b) Tendencia: d1..d6 deben traer ':C'/':P' pegados al valor (ej '244.7:C')
+SELECT Parametro, d1, d2, d3, d4, d5, d6
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3198' AND Compartimiento LIKE '%TRACCION%RH' AND EsRelevante=1
 ORDER BY Orden;
@@ -361,8 +361,8 @@ ORDER BY FechaMuestreo DESC;
 GO
 
 -- (18b) TENDENCIA DE UN ELEMENTO (ej. Sodio) en TODOS los componentes de un equipo
---       1 fila por componente, d1..d8 = 8 valores cronológicos (chip), f1..f8 = fechas.
-SELECT Compartimiento, Parametro, LP, LC, d1,d2,d3,d4,d5,d6,d7,d8, f1,f8, Tendencia, Inf
+--       1 fila por componente, d1..d6 = 6 valores cronológicos (chip), f1..f6 = fechas.
+SELECT Compartimiento, Parametro, LP, LC, d1,d2,d3,d4,d5,d6, f1,f6, Tendencia, Inf
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo='CA3174' AND Parametro='Na'
 ORDER BY Compartimiento;

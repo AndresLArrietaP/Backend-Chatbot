@@ -19,7 +19,7 @@
      4) vw_UltimoAnalisisAceite  5) vw_EstadoActualMT  6) vw_ObservadosFlota (barrido + HorasComponente)
      7) vw_ObservadosResumen (RESUMEN barrido, 1 fila/equipo)  8) vw_ObservadosDetalle (DETALLE barrido, ligero)
      9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc)
-    10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d8 + chip)
+    10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d6 + chip)
     11) vw_HistorialMuestra (HISTORIAL muestra por muestra, 2 meses, pre-formateado por fila)
     12) vw_DiagnosticoEquipo (DIAGNÓSTICO por equipo, pre-formateado con chip :C/:P)
     13) vw_HistorialFlotaObs (HISTORIAL OBSERVADOS DE FLOTA, variante 5, agregado por fecha, 30 días).
@@ -465,16 +465,16 @@ GO
 /* ----------------------------------------------------------------------------
    10) vw_TendenciaElemento — DETALLE POR ELEMENTO de la tendencia (PASO 2),
    PRE-FORMATEADO y LIGERO (hermana de vw_ObservadosDetalle). 1 fila por
-   (Equipo, Compartimiento, Parametro) sobre las 8 últimas no-DDI:
-     - d1..d8 = 8 valores cronológicos (d1=+antigua, d8=última) con chip embebido.
-     - f1..f8 = las 8 fechas (encabezado de la matriz).
+   (Equipo, Compartimiento, Parametro) sobre las 6 últimas no-DDI:
+     - d1..d6 = 6 valores cronológicos (d1=+antigua, d6=última) con chip embebido.
+     - f1..f6 = las 6 fechas (encabezado de la matriz).
      - LP, LC, Prom, Sigma, Tendencia, NVecesObs, Inf, Grupo, Orden.
      - EsRelevante=1 si superó su umbral en >=1 muestra (TBN/P INVERSOS: por debajo).
    PASO 2 por defecto: WHERE EsRelevante=1 (~4-8 filas). Matriz completa: sin ese filtro.
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente,
+    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM,
            Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
            Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
@@ -484,7 +484,7 @@ WITH s AS (
     WHERE rn_recencia <= 6
 ),
 u AS (
-    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente,
+    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente, s.CM,
            p.Parametro, p.Grupo, p.Orden, p.Inf, p.Inv,
            CAST(p.Valor AS decimal(18,2)) AS Valor,
            CAST(p.LP AS decimal(18,2))    AS LP,
@@ -531,6 +531,7 @@ SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
     MAX(LP) AS LP, MAX(LC) AS LC,
     MAX(CASE WHEN rn_recencia = 1 THEN HorasComponente END) AS HorasComponente,
+    MAX(CASE WHEN rn_recencia = 1 THEN CM END) AS CM,
     MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d1,
     MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d2,
     MAX(CASE WHEN rn_recencia = 4 THEN Vstr END) AS d3,
@@ -561,7 +562,7 @@ GO
    11) vw_HistorialMuestra — HISTORIAL muestra por muestra (últimos 2 meses, horneados).
    1 fila por MUESTRA (INCLUYE DDI, flag EsDDI), últimos 2 MESES (ventana horneada en la vista), PRE-FORMATEADA: cada parámetro
    ya trae su chip (marcador :C >LC, :P >LP; informativos Ca/Zn/K/Mg con ' inf'; TBN inverso).
-   A diferencia de la tendencia (params en filas, 8 fechas), aquí las FECHAS van en
+   A diferencia de la tendencia (params en filas, 6 fechas), aquí las FECHAS van en
    FILAS (orden descendente al consultar) y los params en columnas -> tabla "cantidad
    de datos", sin estadistica. LIGERA: ventana 2 meses + columnas chip (no LP/LC).
    Reutiliza vw_MuestrasEstado (Estado_<metal> ya calculado). Se consulta por
