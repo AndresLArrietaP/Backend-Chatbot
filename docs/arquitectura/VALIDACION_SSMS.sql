@@ -407,3 +407,16 @@ FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%' AND Mets_Obs IS NOT NULL
 ORDER BY FechaMuestreo DESC, Equipo, Compartimiento;
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 20 — HISTORIAL OBSERVADOS DE FLOTA (vista vw_HistorialFlotaObs, agregado)
+   1 fila por fecha (30 días), liviano y rápido (sin subconsulta de Hor.Comp).
+   Mira "elapsed time": debe ser MUCHO menor que el vw_HistorialMuestra fleet-wide.
+   ---------------------------------------------------------------------------- */
+SET STATISTICS TIME ON;
+SELECT * FROM [dbo].[vw_HistorialFlotaObs] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+ORDER BY FechaMuestreo DESC;
+SET STATISTICS TIME OFF;
+GO

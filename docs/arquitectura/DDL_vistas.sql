@@ -21,7 +21,8 @@
      9) vw_UltimoAnalisisFlota (DIAGNÓSTICO por equipo: vw_UltimoAnalisisAceite + Hor. Comp. de HsCc)
     10) vw_TendenciaElemento (TENDENCIA: detalle por elemento PASO 2, pre-formateado d1..d8 + chip)
     11) vw_HistorialMuestra (HISTORIAL muestra por muestra, 2 meses, pre-formateado por fila)
-    12) vw_DiagnosticoEquipo (DIAGNÓSTICO por equipo, pre-formateado por componente con chip :C/:P).
+    12) vw_DiagnosticoEquipo (DIAGNÓSTICO por equipo, pre-formateado con chip :C/:P)
+    13) vw_HistorialFlotaObs (HISTORIAL OBSERVADOS DE FLOTA, variante 5, agregado por fecha, 30 días).
    Todo CREATE OR ALTER (reversible). Junto con DDL_indices.sql cubren toda la capa de vistas.
    ============================================================================ */
 GO
@@ -651,6 +652,49 @@ FROM [dbo].[vw_UltimoAnalisisFlota];
 GO
 
 
+/* ----------------------------------------------------------------------------
+   13) vw_HistorialFlotaObs — HISTORIAL DE OBSERVADOS EN FLOTA (variante 5), AGREGADO
+   POR FECHA y LIGERO (solución directa, anti-timeout). 1 fila por (Proyecto,Modelo,
+   Fecha): equipos/componentes/metales observados ese día (distintos). Ventana 30 días
+   (más corta que el historial por-equipo: la flota completa por 2 meses se colgaba).
+   NO trae los 17 params ni Hor. Comp. → no dispara la subconsulta lenta. El central
+   PINTA directo (Fec | NumEquipos | Equip.Obs | Comp.Obs | Met.Obs), NO agrega él.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_HistorialFlotaObs] AS
+WITH obs AS (
+    SELECT Proyecto, Modelo, FechaMuestreo, Equipo, Compartimiento, Mets_Obs
+    FROM [dbo].[vw_HistorialMuestra]
+    WHERE Mets_Obs IS NOT NULL
+      AND FechaMuestreo >= DATEADD(DAY, -30, GETDATE())
+),
+eq AS (
+    SELECT Proyecto, Modelo, FechaMuestreo, COUNT(*) AS NumEquipos,
+           STRING_AGG(Equipo, ', ') WITHIN GROUP (ORDER BY Equipo) AS Equip_Obs
+    FROM (SELECT DISTINCT Proyecto, Modelo, FechaMuestreo, Equipo FROM obs) d
+    GROUP BY Proyecto, Modelo, FechaMuestreo
+),
+cp AS (
+    SELECT Proyecto, Modelo, FechaMuestreo,
+           STRING_AGG(Compartimiento, ' · ') WITHIN GROUP (ORDER BY Compartimiento) AS Comp_Obs
+    FROM (SELECT DISTINCT Proyecto, Modelo, FechaMuestreo, Compartimiento FROM obs) d
+    GROUP BY Proyecto, Modelo, FechaMuestreo
+),
+mt AS (
+    SELECT Proyecto, Modelo, FechaMuestreo,
+           STRING_AGG(Metal, ', ') WITHIN GROUP (ORDER BY Metal) AS Met_Obs
+    FROM (SELECT DISTINCT o.Proyecto, o.Modelo, o.FechaMuestreo,
+                 LTRIM(LEFT(s.value, CHARINDEX(':', s.value + ':') - 1)) AS Metal
+          FROM obs o CROSS APPLY STRING_SPLIT(o.Mets_Obs, ',') s) d
+    GROUP BY Proyecto, Modelo, FechaMuestreo
+)
+SELECT eq.Proyecto, eq.Modelo, eq.FechaMuestreo, eq.NumEquipos,
+       eq.Equip_Obs, cp.Comp_Obs, mt.Met_Obs
+FROM eq
+JOIN cp ON cp.Proyecto=eq.Proyecto AND cp.Modelo=eq.Modelo AND cp.FechaMuestreo=eq.FechaMuestreo
+JOIN mt ON mt.Proyecto=eq.Proyecto AND mt.Modelo=eq.Modelo AND mt.FechaMuestreo=eq.FechaMuestreo;
+GO
+
+
 /* ============================================================================
    VALIDACIÓN  (queries de ejemplo; cópialas fuera de este comentario para correrlas)
    ----------------------------------------------------------------------------
@@ -682,7 +726,7 @@ GO
    WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
    ORDER BY NumCrit DESC, Equipo, Compartimiento;
 
-   REVERTIR todo:  DROP VIEW en orden inverso (vw_HistorialMuestra → vw_TendenciaElemento →
+   REVERTIR todo:  DROP VIEW en orden inverso (vw_HistorialFlotaObs → vw_HistorialMuestra → vw_TendenciaElemento →
    vw_UltimoAnalisisFlota → vw_ObservadosDetalle → vw_ObservadosResumen → vw_ObservadosFlota →
    vw_EstadoActualMT → vw_UltimoAnalisisAceite → vw_MuestrasRankeadas → vw_MuestrasEstado →
    vw_LimitesPorComponente).
