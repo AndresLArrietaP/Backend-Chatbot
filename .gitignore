@@ -20,3 +20,5 @@ CLAUDE.md
 docs/arquitectura/*.docx
 # Presentación de gerencia: pesada y no necesaria en el repo.
 docs/gerencia/
+# PDFs de pruebas: pesados y regenerables desde el .docx (Word/LibreOffice).
+docs/pruebas/*.pdf
