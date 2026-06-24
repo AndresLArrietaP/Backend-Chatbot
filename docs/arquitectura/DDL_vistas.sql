@@ -677,6 +677,10 @@ CREATE OR ALTER VIEW [dbo].[vw_DiagnosticoEquipo] AS
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, CompTipo, FechaMuestreo,
     Horometro, HorasDeAceite, HorasComponente, CM, Estado_General, Cond_Area,
+    -- conteos por equipo (sobre TODOS los componentes) para el encabezado «X de N observados»
+    -- aunque el central filtre Estado_General<>'OK': los window se calculan antes del filtro.
+    COUNT(*) OVER (PARTITION BY Equipo) AS NumCompTotal,
+    SUM(CASE WHEN Estado_General <> 'OK' THEN 1 ELSE 0 END) OVER (PARTITION BY Equipo) AS NumCompObs,
     CONVERT(varchar(20),CAST(Fe_ppm    AS decimal(18,1))) + CASE Estado_Fe  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Fe,
     CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1))) + CASE Estado_PQ  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS PQ,
     CONVERT(varchar(20),CAST(Cr_ppm    AS decimal(18,1))) + CASE Estado_Cr  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Cr,
