@@ -238,9 +238,30 @@ GO
    columnas nuevas (SELECT * congela columnas al crear la vista).
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_MuestrasRankeadas] AS
+WITH hs AS (
+    -- HsCc pre-rankeado: 1 fila (la más reciente) por EQUIPO+SISTEMA. Se escanea UNA vez
+    -- (antes era subconsulta correlacionada por fila → HsCc escaneado 2112x). Alias Eq/Sis/Smr/Hta
+    -- evitan ambiguedad con me.Equipo. Mapeo EQUIPO 'T####'->'CA####' y SISTEMA inglés<->compartimiento.
+    SELECT [EQUIPO] AS Eq, [SISTEMA] AS Sis,
+           TRY_CONVERT(decimal(12,2),[SMR ULTIMO SERVICIO])        AS Smr,
+           TRY_CONVERT(decimal(12,2),[HORAS DE TRABAJO ACUMULADO ]) AS Hta,
+           ROW_NUMBER() OVER (PARTITION BY [EQUIPO],[SISTEMA] ORDER BY [FECHA] DESC) AS rn
+    FROM [Eqpcare].[HsCc]
+)
 SELECT me.*,
-    (SELECT TOP 1 CASE WHEN TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) IS NOT NULL AND me.Horometro >= TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) THEN me.Horometro - TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) ELSE TRY_CONVERT(decimal(12,2), H.[HORAS DE TRABAJO ACUMULADO ]) END FROM [Eqpcare].[HsCc] H WHERE (H.[EQUIPO]=me.Equipo OR (H.[EQUIPO] LIKE 'T[0-9]%' AND me.Equipo='CA'+SUBSTRING(H.[EQUIPO],2,10))) AND H.[SISTEMA]=CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH' WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH' WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC' WHEN me.Compartimiento LIKE '%RUEDA%LH' THEN 'SPINDLE LH' WHEN me.Compartimiento LIKE '%RUEDA%RH' THEN 'SPINDLE RH' WHEN me.Compartimiento LIKE 'MOTOR%' THEN 'MOTOR DIESEL' ELSE me.Compartimiento END ORDER BY H.[FECHA] DESC) AS HorasComponente
-FROM [dbo].[vw_MuestrasEstado] me WHERE me.EsDDI = 0;
+    CASE WHEN H.Smr IS NOT NULL AND me.Horometro >= H.Smr THEN me.Horometro - H.Smr ELSE H.Hta END AS HorasComponente
+FROM [dbo].[vw_MuestrasEstado] me
+LEFT JOIN hs H
+  ON  H.rn = 1
+  AND ( H.Eq = me.Equipo OR (H.Eq LIKE 'T[0-9]%' AND me.Equipo = 'CA'+SUBSTRING(H.Eq,2,10)) )
+  AND H.Sis = CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH'
+                   WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH'
+                   WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC'
+                   WHEN me.Compartimiento LIKE '%RUEDA%LH'    THEN 'SPINDLE LH'
+                   WHEN me.Compartimiento LIKE '%RUEDA%RH'    THEN 'SPINDLE RH'
+                   WHEN me.Compartimiento LIKE 'MOTOR%'       THEN 'MOTOR DIESEL'
+                   ELSE me.Compartimiento END
+WHERE me.EsDDI = 0;
 GO
 
 CREATE OR ALTER VIEW [dbo].[vw_UltimoAnalisisAceite] AS
@@ -569,6 +590,16 @@ GO
    AND Compartimiento LIKE '%..%' ORDER BY FechaMuestreo DESC. (la vista ya acota 2 meses)
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMuestra] AS
+WITH hs AS (
+    -- HsCc pre-rankeado: 1 fila (la más reciente) por EQUIPO+SISTEMA. Se escanea UNA vez
+    -- (antes era subconsulta correlacionada por fila → HsCc escaneado 2112x). Alias Eq/Sis/Smr/Hta
+    -- evitan ambiguedad con me.Equipo. Mapeo EQUIPO 'T####'->'CA####' y SISTEMA inglés<->compartimiento.
+    SELECT [EQUIPO] AS Eq, [SISTEMA] AS Sis,
+           TRY_CONVERT(decimal(12,2),[SMR ULTIMO SERVICIO])        AS Smr,
+           TRY_CONVERT(decimal(12,2),[HORAS DE TRABAJO ACUMULADO ]) AS Hta,
+           ROW_NUMBER() OVER (PARTITION BY [EQUIPO],[SISTEMA] ORDER BY [FECHA] DESC) AS rn
+    FROM [Eqpcare].[HsCc]
+)
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
     Horometro, HorasDeAceite, CM, EsDDI, Estado_General,
@@ -609,8 +640,18 @@ SELECT
     CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
     CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
     CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN,
-    (SELECT TOP 1 CASE WHEN TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) IS NOT NULL AND me.Horometro >= TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) THEN me.Horometro - TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) ELSE TRY_CONVERT(decimal(12,2), H.[HORAS DE TRABAJO ACUMULADO ]) END FROM [Eqpcare].[HsCc] H WHERE (H.[EQUIPO]=me.Equipo OR (H.[EQUIPO] LIKE 'T[0-9]%' AND me.Equipo='CA'+SUBSTRING(H.[EQUIPO],2,10))) AND H.[SISTEMA]=CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH' WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH' WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC' WHEN me.Compartimiento LIKE '%RUEDA%LH' THEN 'SPINDLE LH' WHEN me.Compartimiento LIKE '%RUEDA%RH' THEN 'SPINDLE RH' WHEN me.Compartimiento LIKE 'MOTOR%' THEN 'MOTOR DIESEL' ELSE me.Compartimiento END ORDER BY H.[FECHA] DESC) AS HorasComponente
+    CASE WHEN H.Smr IS NOT NULL AND me.Horometro >= H.Smr THEN me.Horometro - H.Smr ELSE H.Hta END AS HorasComponente
 FROM [dbo].[vw_MuestrasEstado] me
+LEFT JOIN hs H
+  ON  H.rn = 1
+  AND ( H.Eq = me.Equipo OR (H.Eq LIKE 'T[0-9]%' AND me.Equipo = 'CA'+SUBSTRING(H.Eq,2,10)) )
+  AND H.Sis = CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH'
+                   WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH'
+                   WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC'
+                   WHEN me.Compartimiento LIKE '%RUEDA%LH'    THEN 'SPINDLE LH'
+                   WHEN me.Compartimiento LIKE '%RUEDA%RH'    THEN 'SPINDLE RH'
+                   WHEN me.Compartimiento LIKE 'MOTOR%'       THEN 'MOTOR DIESEL'
+                   ELSE me.Compartimiento END
 WHERE me.Compartimiento IS NOT NULL
   AND me.FechaMuestreo >= DATEADD(MONTH, -2, GETDATE());   -- ventana 2 meses HORNEADA (a prueba de error del agente)
 GO
