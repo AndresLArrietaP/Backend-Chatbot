@@ -1,5 +1,5 @@
 /* ============================================================================
-   KomfIA — VISTAS (archivo único v5: cadena completa de 13 vistas; 21-jun-2026)
+   KomfIA — VISTAS (archivo único v5: cadena completa de 13 vistas; 23-jun-2026 (vw_UltimoAnalisisAceite/vw_EstadoActualMT ahora exponen HorasComponente))
    Base: bd_kmmp_osconfiabilidad (Azure SQL)
 
    QUÉ AGREGA (para la "matriz única" definida por el área):
@@ -244,11 +244,14 @@ FROM [dbo].[vw_MuestrasEstado] me WHERE me.EsDDI = 0;
 GO
 
 CREATE OR ALTER VIEW [dbo].[vw_UltimoAnalisisAceite] AS
-SELECT * FROM [dbo].[vw_MuestrasEstado] WHERE EsDDI = 0 AND rn_recencia = 1;
+-- sobre vw_MuestrasRankeadas (no vw_MuestrasEstado) para exponer HorasComponente
+-- (rankeadas ya filtra EsDDI=0). rn_recencia=1 = última muestra en uso por equipo+compartimiento.
+SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE rn_recencia = 1;
 GO
 
 CREATE OR ALTER VIEW [dbo].[vw_EstadoActualMT] AS
-SELECT * FROM [dbo].[vw_MuestrasEstado] WHERE CompTipo = 'TRACCION' AND EsDDI = 0 AND rn_recencia = 1;
+-- sobre vw_MuestrasRankeadas para exponer HorasComponente (rankeadas ya filtra EsDDI=0).
+SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE CompTipo = 'TRACCION' AND rn_recencia = 1;
 GO
 
 

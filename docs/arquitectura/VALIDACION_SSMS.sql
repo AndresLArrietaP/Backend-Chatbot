@@ -421,3 +421,21 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
 ORDER BY FechaMuestreo DESC;
 SET STATISTICS TIME OFF;
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 21 — HorasComponente en vw_UltimoAnalisisAceite y vw_EstadoActualMT
+   Fix BadGateway "Invalid column name HorasComponente": ambas se rebasaron sobre
+   vw_MuestrasRankeadas (que la calcula). Estas dos consultas deben ejecutar SIN error
+   y traer la columna HorasComponente con valor (o NULL si HsCc no cubre el componente).
+   ---------------------------------------------------------------------------- */
+SELECT Equipo, Compartimiento, FechaMuestreo, HorasDeAceite, HorasComponente, CM, Estado_General
+FROM [dbo].[vw_UltimoAnalisisAceite] WITH (NOLOCK)
+WHERE Equipo = 'CA3171' AND Compartimiento LIKE '%TRACCION%LH';
+GO
+
+SELECT TOP 10 Equipo, Compartimiento, FechaMuestreo, HorasDeAceite, HorasComponente, Fe_ppm, Estado_General
+FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+ORDER BY Fe_ppm DESC;
+GO
