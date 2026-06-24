@@ -1,5 +1,5 @@
 /* ============================================================================
-   KomfIA — VISTAS (archivo único v5: cadena completa de 13 vistas; 23-jun-2026 (vw_UltimoAnalisisAceite/vw_EstadoActualMT ahora exponen HorasComponente))
+   KomfIA — VISTAS (archivo único v5: cadena completa de 13 vistas; 23-jun-2026 (HorasComponente vía JOIN pre-rankeado; fundación con VENTANA 12 MESES))
    Base: bd_kmmp_osconfiabilidad (Azure SQL)
 
    QUÉ AGREGA (para la "matriz única" definida por el área):
@@ -107,6 +107,12 @@ WITH muestras AS (
     INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
     INNER JOIN [Mine].[MiningProject]   MP ON MP.[Id] = ME.[MiningProjectId]
     INNER JOIN [Mine].[EquipmentFleet]  EF ON EF.[Id] = ME.[EquipmentFleetId]
+    /* VENTANA 12 MESES (perf): la fundación rankea sobre 1 año en vez de 9 → corta el full-scan
+       del histórico (último de 1 equipo leía la tabla entera, el window function bloquea el pushdown
+       del filtro de equipo). Cubre estado actual/último/tendencia(6 muestras)/historial(2 meses).
+       Tradeoff aceptado: equipos SIN muestra en 12 meses no aparecen en vistas de estado actual
+       (la flota activa se muestrea ~mensual). Para volver al histórico completo: quitar este WHERE. */
+    WHERE LD.[FechaMuestreo] >= DATEADD(MONTH, -12, GETDATE())
 )
 SELECT
     m.Equipo, m.Proyecto, m.Modelo, m.MiningEquipmentId, m.Compartimiento, m.CompTipo, m.EsDDI,
