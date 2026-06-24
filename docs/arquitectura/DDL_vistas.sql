@@ -440,12 +440,8 @@ WITH hs AS (
     FROM [Eqpcare].[HsCc] WITH (NOLOCK)
 )
 SELECT
-    u.*,
-    CASE WHEN TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO]) IS NOT NULL
-          AND u.Horometro >= TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO])
-         THEN u.Horometro - TRY_CONVERT(decimal(12,2), H.[SMR ULTIMO SERVICIO])
-         ELSE TRY_CONVERT(decimal(12,2), H.[HORAS DE TRABAJO ACUMULADO ]) END AS HorasComponente,
-    H.[ESTADO SOS] AS Cond_Area
+    u.*,                               -- u ya trae HorasComponente (vw_UltimoAnalisisAceite <- vw_MuestrasRankeadas)
+    H.[ESTADO SOS] AS Cond_Area        -- el JOIN a HsCc queda SOLO para Cond_Area
 FROM [dbo].[vw_UltimoAnalisisAceite] u
 LEFT JOIN hs H
   ON  H.rn = 1
