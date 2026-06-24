@@ -439,3 +439,46 @@ FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
 ORDER BY Fe_ppm DESC;
 GO
+
+
+/* ============================================================================
+   BLOQUE 22 — VALIDAR LA FUNDACIÓN tras los cambios de perf (re-correr DDL primero)
+   1) ventana 12 meses en vw_MuestrasEstado  2) HorasComponente vía JOIN pre-rankeado.
+   Corre las 4; cada una 2 veces (usa la 2ª, warm).
+   ============================================================================ */
+
+-- 22.1  COBERTURA: ¿la ventana de 12m dejó fuera algún equipo que SÍ debería verse?
+--       Lista equipos cuya ÚLTIMA muestra es > 12 meses (ya NO aparecen en estado actual).
+--       Si solo salen equipos viejos / dados de baja → la ventana es segura. Si sale uno
+--       que esperabas activo → avísame y subimos la ventana.
+SELECT ME.[Code] AS Equipo, MP.[Name] AS Proyecto, MAX(LD.[FechaMuestreo]) AS UltimaMuestra
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]  MP ON MP.[Id] = ME.[MiningProjectId]
+GROUP BY ME.[Code], MP.[Name]
+HAVING MAX(LD.[FechaMuestreo]) < DATEADD(MONTH, -12, GETDATE())
+ORDER BY UltimaMuestra DESC;
+GO
+
+-- 22.2  PISO Y TAMAÑO: la más antigua debe ser ~hoy-12m y las filas MUCHO menos que 104165.
+SELECT COUNT(*) AS Filas, MIN(FechaMuestreo) AS MasAntigua, MAX(FechaMuestreo) AS MasReciente,
+       COUNT(DISTINCT MiningEquipmentId) AS Equipos
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK);
+GO
+
+-- 22.3  HorasComponente (JOIN) sale con valor y SIN error en estado actual MT.
+SELECT TOP 10 Equipo, Compartimiento, FechaMuestreo, HorasDeAceite, HorasComponente, Fe_ppm, Estado_General
+FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+ORDER BY Fe_ppm DESC;
+GO
+
+-- 22.4  LATENCIA post-cambio (warm). Compara «elapsed time» con DIAGNOSTICO_LATENCIA:
+--       L2.2 último de 1 equipo (antes ~5s) y L5 rn=1 fleet-wide (antes 6.4s, HsCc 2112 escaneos).
+SET STATISTICS TIME ON;
+SELECT * FROM [dbo].[vw_UltimoAnalisisAceite] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH';
+SELECT Equipo, Compartimiento, HorasComponente
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK) WHERE rn_recencia = 1;
+SET STATISTICS TIME OFF;
+GO
