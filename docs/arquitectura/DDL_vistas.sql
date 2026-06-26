@@ -113,6 +113,15 @@ WITH muestras AS (
        Tradeoff aceptado: equipos SIN muestra en 12 meses no aparecen en vistas de estado actual
        (la flota activa se muestrea ~mensual). Para volver al histórico completo: quitar este WHERE. */
     WHERE LD.[FechaMuestreo] >= DATEADD(MONTH, -12, GETDATE())
+),
+calc AS (
+    /* dedup por FECHA: rn_dia=1 = muestra "keeper" del día (mayor LaboratoryDataId);
+       date_rank numera FECHAS DISTINTAS (1=más reciente). Así rn_recencia cuenta DÍAS (no filas)
+       y las muestras del mismo día (re-tests) no consumen ranking (la tendencia mostraba "3 de 6"). */
+    SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY MiningEquipmentId, Compartimiento, EsDDI, CAST(FechaMuestreo AS date) ORDER BY LaboratoryDataId DESC) AS rn_dia,
+        DENSE_RANK() OVER (PARTITION BY MiningEquipmentId, Compartimiento, EsDDI ORDER BY CAST(FechaMuestreo AS date) DESC) AS date_rank
+    FROM muestras
 )
 SELECT
     m.Equipo, m.Proyecto, m.Modelo, m.MiningEquipmentId, m.Compartimiento, m.CompTipo, m.EsDDI,
@@ -216,15 +225,12 @@ SELECT
         ELSE 'OK'
     END AS Estado_General,
 
-    CASE WHEN m.EsDDI = 0 THEN
-        ROW_NUMBER() OVER (
-            PARTITION BY m.MiningEquipmentId, m.Compartimiento, m.EsDDI
-            ORDER BY m.FechaMuestreo DESC, m.LaboratoryDataId DESC
-        )
-    END AS rn_recencia,
+    /* rn_recencia = orden por FECHA distinta (1=más reciente), solo la keeper del día;
+       mismo día/re-test -> NULL (no entra a rn=1 ni rn<=6). Historial (sin filtro rn) ve TODO. */
+    CASE WHEN m.EsDDI = 0 AND m.rn_dia = 1 THEN m.date_rank END AS rn_recencia,
 
     m.LaboratoryDataId
-FROM muestras m
+FROM calc m
 LEFT JOIN [dbo].[vw_LimitesPorComponente] lim
     ON lim.ProyKey   = m.ProyKey
    AND lim.ModeloKey = m.ModeloKey

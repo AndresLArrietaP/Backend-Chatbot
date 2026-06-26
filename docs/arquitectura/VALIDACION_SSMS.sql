@@ -482,3 +482,29 @@ SELECT Equipo, Compartimiento, HorasComponente
 FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK) WHERE rn_recencia = 1;
 SET STATISTICS TIME OFF;
 GO
+
+
+
+/* ============================================================================
+   BLOQUE 23 — DEDUP POR FECHA en rn_recencia (re-correr DDL primero)
+   Antes: muestras del mismo día consumían ranking -> tendencia mostraba "3 de 6".
+   Ahora rn_recencia cuenta FECHAS distintas (keeper = mayor LaboratoryDataId/día).
+   ============================================================================ */
+-- 23.1 rn=1 sigue dando 1 fila por equipo+compartimiento (la última fecha). NO debe duplicar.
+SELECT Equipo, Compartimiento, COUNT(*) AS filas_rn1
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
+WHERE rn_recencia = 1
+GROUP BY Equipo, Compartimiento
+HAVING COUNT(*) > 1;   -- debe devolver 0 filas
+GO
+-- 23.2 Tendencia: las 6 deben ser FECHAS DISTINTAS (sin 19-Jun repetido).
+SELECT rn_recencia, FechaMuestreo, Horometro, CM
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH' AND rn_recencia <= 6
+ORDER BY rn_recencia;   -- 6 filas, 6 fechas distintas, sin huecos
+GO
+-- 23.3 Historial SIGUE viendo TODAS las muestras (incluye mismo día) — no se perdió nada.
+SELECT FechaMuestreo, CM, Fe FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY FechaMuestreo DESC;   -- puede haber 2+ del mismo día (correcto)
+GO
