@@ -508,3 +508,44 @@ SELECT FechaMuestreo, CM, Fe FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
 WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH'
 ORDER BY FechaMuestreo DESC;   -- puede haber 2+ del mismo día (correcto)
 GO
+
+
+/* ============================================================================
+   BLOQUE 24 — CA3174 SIN LÍMITES (LP/LC) NI Hor.Comp. (marcha 2026-06-27)
+   Síntoma: "tendencia del Fe del CA3174 MT RH" devolvió valores pero LP/LC y
+   HorasComponente en blanco. LP/LC viene de [lc]; Hor.Comp. de [HsCc]. Que AMBOS
+   fallen juntos apunta a una peculiaridad de CA3174 (Modelo/Proyecto/Compartimiento
+   que no cruza). Correr de 24.1 a 24.5 para aislar la causa.
+   ---------------------------------------------------------------------------- */
+GO
+-- 24.1 ¿Cómo se ve CA3174 en la FUNDACIÓN? (Proyecto/Modelo/Compartimiento/CompTipo reales)
+--      Esperado: Proyecto='Antapaccay', Modelo='980E', CompTipo='TRACCION'.
+SELECT DISTINCT Equipo, Proyecto, Modelo, Compartimiento, CompTipo
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE Equipo='CA3174' AND Compartimiento LIKE '%TRACCION%'
+ORDER BY Compartimiento;
+GO
+-- 24.2 ¿Existe la fila de límites para ese Proyecto×Modelo×CompTipo?
+--      Si Fe_LP sale NULL/!=200 o no hay fila → la combinación de CA3174 NO está en lc.
+SELECT ProyKey, ModeloKey, CompTipo, Fe_LP, Fe_LC
+FROM [dbo].[vw_LimitesPorComponente] WITH (NOLOCK)
+WHERE ProyKey LIKE '%ANTAPACCAY%' AND CompTipo='TRACCION';
+GO
+-- 24.3 ¿Resuelve LP/LC en el ESTADO ACTUAL (triage) de CA3174? (ahí antes sí salía)
+SELECT Equipo, Compartimiento, FechaMuestreo, Fe_ppm, Fe_LP, Fe_LC, Estado_General, HorasComponente
+FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
+WHERE Equipo='CA3174';
+GO
+-- 24.4 La query EXACTA que falló: tendencia Fe del CA3174 MT RH.
+--      Mira si LP/LC/HorasComponente vienen poblados o NULL.
+SELECT Equipo, Compartimiento, Parametro, LP, LC, HorasComponente, CM, d1,d2,d3,d4,d5,d6
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3174' AND Compartimiento LIKE '%TRACCION%' AND Compartimiento LIKE '%RH' AND Parametro='Fe';
+GO
+-- 24.5 ¿HsCc tiene a CA3174 (o 'T3174') con el SISTEMA mapeado? (origen de Hor.Comp.)
+--      Si no aparece WHEEL MOTOR RH → HorasComponente NULL es esperado (gap HsCc).
+SELECT [EQUIPO], [SISTEMA], [SMR ULTIMO SERVICIO], [HORAS DE TRABAJO ACUMULADO ], [FECHA]
+FROM [Eqpcare].[HsCc] WITH (NOLOCK)
+WHERE ([EQUIPO]='CA3174' OR [EQUIPO]='T3174')
+ORDER BY [SISTEMA], [FECHA] DESC;
+GO
