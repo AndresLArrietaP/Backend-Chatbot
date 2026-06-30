@@ -549,3 +549,36 @@ FROM [Eqpcare].[HsCc] WITH (NOLOCK)
 WHERE ([EQUIPO]='CA3174' OR [EQUIPO]='T3174')
 ORDER BY [SISTEMA], [FECHA] DESC;
 GO
+
+
+/* ============================================================================
+   BLOQUE 25 — SPARK (sparkline pre-computado en vw_TendenciaElemento) (2026-06-29)
+   Solución al gráfico RE-PEDIDO que se regeneraba mal: la vista ahora trae una
+   columna Spark (▁▂▃▄▅▆▇█, 1 char por muestra d1..d6 cronológica, normalizada al
+   rango de la propia serie). El central solo la IMPRIME/COPIA (no regenera ASCII).
+   Validar que: (a) el Motor del CA3165 Cu dibuja la subida 4.0->6.8 y la caída
+   final; (b) las series planas salen '▄▄▄▄▄▄'; (c) <6 muestras → '·' en huecos.
+   ---------------------------------------------------------------------------- */
+GO
+-- 25.1 Spark de Cu en CA3165 por componente (Motor debe verse ascendente con caída; planos = barras bajas/iguales)
+SELECT Compartimiento, Parametro, d1, d2, d3, d4, d5, d6, Spark, Tendencia, EsRelevante
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3165' AND Parametro='Cu'
+ORDER BY Compartimiento;
+GO
+-- 25.2 No rompe consumidores existentes: d1..d6 + LP/LC + Spark juntos (detalle por elemento de un equipo)
+SELECT Parametro, LP, LC, d1, d2, d3, d4, d5, d6, Spark, Prom, Sigma
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH' AND EsRelevante=1
+ORDER BY Orden;
+GO
+-- 25.3 Edge: equipo/parámetro con <6 muestras → Spark con '·' en los huecos (no debe dar error)
+SELECT TOP 20 Equipo, Compartimiento, Parametro, d1, d2, d3, d4, d5, d6, Spark
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE d3 IS NULL OR d1 IS NULL
+ORDER BY Equipo, Compartimiento, Orden;
+GO
+-- 25.4 Conteo de columnas / que la vista compila y Spark no es NULL cuando hay >=1 muestra
+SELECT COUNT(*) AS Filas, SUM(CASE WHEN Spark IS NULL THEN 1 ELSE 0 END) AS SparkNulos
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK) WHERE Equipo='CA3165';
+GO

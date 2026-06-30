@@ -559,6 +559,7 @@ v AS (
           END AS FueraUmbral
     FROM u
 )
+, g AS (
 SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
     MAX(LP) AS LP, MAX(LC) AS LC,
@@ -584,9 +585,32 @@ SELECT
         WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) > MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN '↑'
         WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) < MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN '↓'
         ELSE '→'
-    END AS Tendencia
+    END AS Tendencia,
+    MAX(CASE WHEN rn_recencia = 6 THEN Valor END) AS n1,
+    MAX(CASE WHEN rn_recencia = 5 THEN Valor END) AS n2,
+    MAX(CASE WHEN rn_recencia = 4 THEN Valor END) AS n3,
+    MAX(CASE WHEN rn_recencia = 3 THEN Valor END) AS n4,
+    MAX(CASE WHEN rn_recencia = 2 THEN Valor END) AS n5,
+    MAX(CASE WHEN rn_recencia = 1 THEN Valor END) AS n6
 FROM v
-GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf;
+GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf
+)
+SELECT
+    Equipo, Compartimiento, Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM,
+    d1, d2, d3, d4, d5, d6, f1, f2, f3, f4, f5, f6, Prom, Sigma, NVecesObs, EsRelevante, Tendencia,
+    /* Spark: mini-tendencia visual (bloques ▁▂▃▄▅▆▇█) de n1..n6 cronológicos, normalizada al rango de la
+       propia serie. PRE-COMPUTADA para que el central la IMPRIMA/COPIE tal cual (no regenere ASCII).
+       NULL -> '·' (sin muestra esa fecha); serie plana (mx=mn) -> '▄'. */
+    CONCAT(
+        CASE WHEN n1 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n1-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
+        CASE WHEN n2 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n2-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
+        CASE WHEN n3 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n3-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
+        CASE WHEN n4 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n4-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
+        CASE WHEN n5 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n5-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
+        CASE WHEN n6 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n6-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END
+    ) AS Spark
+FROM g
+CROSS APPLY (SELECT MIN(x) AS mn, MAX(x) AS mx FROM (VALUES (n1),(n2),(n3),(n4),(n5),(n6)) t(x)) mm;
 GO
 
 
