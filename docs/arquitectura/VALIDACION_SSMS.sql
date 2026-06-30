@@ -582,3 +582,14 @@ GO
 SELECT COUNT(*) AS Filas, SUM(CASE WHEN Spark IS NULL THEN 1 ELSE 0 END) AS SparkNulos
 FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK) WHERE Equipo='CA3165';
 GO
+
+-- 25.5 Grafico PRE-COMPUTADO: copia la columna Grafico del Motor (debe verse barras con fecha+valor+:C/:P)
+SELECT Compartimiento, Grafico
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3165' AND Parametro='Cu' AND Compartimiento='MOTOR';
+GO
+-- 25.6 Grafico del MT LH del CA3171 para Cr (crítico) — verificar barras + límites en el título
+SELECT Parametro, Grafico
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH' AND Parametro='Cr';
+GO

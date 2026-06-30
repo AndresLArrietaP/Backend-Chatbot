@@ -608,9 +608,25 @@ SELECT
         CASE WHEN n4 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n4-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
         CASE WHEN n5 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n5-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
         CASE WHEN n6 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n6-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END
-    ) AS Spark
+    ) AS Spark,
+    /* Grafico: gráfico de barras horizontal PRE-COMPUTADO (multi-línea) del parámetro en este
+       componente: título con LP/LC + 1 línea por muestra (fecha, valor, barra █ escalada al máx de la
+       serie, marcador :C/:P). El central COPIA tal cual la fila del componente/parámetro RELEVANTE
+       dentro de un bloque ```; ⛔ NUNCA lo regenera. Es el gráfico robusto para «dame el gráfico». */
+    CONCAT(
+        Parametro, N' — ', Compartimiento, N' (ppm)',
+        ISNULL(N'  LP'+CONVERT(varchar(12),CAST(LP AS decimal(18,1))), N''),
+        ISNULL(N' LC'+CONVERT(varchar(12),CAST(LC AS decimal(18,1))), N''),
+        CASE WHEN n1 IS NULL THEN N'' ELSE CONCAT(CHAR(10), RIGHT(N'0'+CONVERT(varchar(2),DAY(f1)),2), N'-', CHOOSE(MONTH(f1), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec'), N' ', RIGHT(N'       '+CONVERT(varchar(12),CAST(n1 AS decimal(18,1))),7), N' ', REPLICATE(N'█', CASE WHEN bb.bs>0 THEN CAST(ROUND(n1/bb.bs*10,0) AS int) ELSE 0 END), CASE WHEN d1 LIKE N'%:C' THEN N' :C' WHEN d1 LIKE N'%:P' THEN N' :P' ELSE N'' END) END,
+        CASE WHEN n2 IS NULL THEN N'' ELSE CONCAT(CHAR(10), RIGHT(N'0'+CONVERT(varchar(2),DAY(f2)),2), N'-', CHOOSE(MONTH(f2), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec'), N' ', RIGHT(N'       '+CONVERT(varchar(12),CAST(n2 AS decimal(18,1))),7), N' ', REPLICATE(N'█', CASE WHEN bb.bs>0 THEN CAST(ROUND(n2/bb.bs*10,0) AS int) ELSE 0 END), CASE WHEN d2 LIKE N'%:C' THEN N' :C' WHEN d2 LIKE N'%:P' THEN N' :P' ELSE N'' END) END,
+        CASE WHEN n3 IS NULL THEN N'' ELSE CONCAT(CHAR(10), RIGHT(N'0'+CONVERT(varchar(2),DAY(f3)),2), N'-', CHOOSE(MONTH(f3), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec'), N' ', RIGHT(N'       '+CONVERT(varchar(12),CAST(n3 AS decimal(18,1))),7), N' ', REPLICATE(N'█', CASE WHEN bb.bs>0 THEN CAST(ROUND(n3/bb.bs*10,0) AS int) ELSE 0 END), CASE WHEN d3 LIKE N'%:C' THEN N' :C' WHEN d3 LIKE N'%:P' THEN N' :P' ELSE N'' END) END,
+        CASE WHEN n4 IS NULL THEN N'' ELSE CONCAT(CHAR(10), RIGHT(N'0'+CONVERT(varchar(2),DAY(f4)),2), N'-', CHOOSE(MONTH(f4), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec'), N' ', RIGHT(N'       '+CONVERT(varchar(12),CAST(n4 AS decimal(18,1))),7), N' ', REPLICATE(N'█', CASE WHEN bb.bs>0 THEN CAST(ROUND(n4/bb.bs*10,0) AS int) ELSE 0 END), CASE WHEN d4 LIKE N'%:C' THEN N' :C' WHEN d4 LIKE N'%:P' THEN N' :P' ELSE N'' END) END,
+        CASE WHEN n5 IS NULL THEN N'' ELSE CONCAT(CHAR(10), RIGHT(N'0'+CONVERT(varchar(2),DAY(f5)),2), N'-', CHOOSE(MONTH(f5), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec'), N' ', RIGHT(N'       '+CONVERT(varchar(12),CAST(n5 AS decimal(18,1))),7), N' ', REPLICATE(N'█', CASE WHEN bb.bs>0 THEN CAST(ROUND(n5/bb.bs*10,0) AS int) ELSE 0 END), CASE WHEN d5 LIKE N'%:C' THEN N' :C' WHEN d5 LIKE N'%:P' THEN N' :P' ELSE N'' END) END,
+        CASE WHEN n6 IS NULL THEN N'' ELSE CONCAT(CHAR(10), RIGHT(N'0'+CONVERT(varchar(2),DAY(f6)),2), N'-', CHOOSE(MONTH(f6), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec'), N' ', RIGHT(N'       '+CONVERT(varchar(12),CAST(n6 AS decimal(18,1))),7), N' ', REPLICATE(N'█', CASE WHEN bb.bs>0 THEN CAST(ROUND(n6/bb.bs*10,0) AS int) ELSE 0 END), CASE WHEN d6 LIKE N'%:C' THEN N' :C' WHEN d6 LIKE N'%:P' THEN N' :P' ELSE N'' END) END
+    ) AS Grafico
 FROM g
-CROSS APPLY (SELECT MIN(x) AS mn, MAX(x) AS mx FROM (VALUES (n1),(n2),(n3),(n4),(n5),(n6)) t(x)) mm;
+CROSS APPLY (SELECT MIN(x) AS mn, MAX(x) AS mx FROM (VALUES (n1),(n2),(n3),(n4),(n5),(n6)) t(x)) mm
+CROSS APPLY (SELECT CASE WHEN ISNULL(LC,0) > ISNULL(mm.mx,0) THEN LC ELSE mm.mx END AS bs) bb;
 GO
 
 
