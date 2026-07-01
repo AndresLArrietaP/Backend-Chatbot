@@ -595,3 +595,30 @@ GO
 -- 25.7 Confirmar que vw_TendenciaElemento ya NO trae Grafico (columnas ligeras + Spark)
 SELECT TOP 1 * FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK) WHERE Equipo='CA3165' AND Parametro='Cu';
 GO
+
+
+/* ============================================================================
+   BLOQUE 26 — SCOPE diagnóstico + filtro de proyecto del triage (marcha 2026-06-30)
+   Dos hallazgos de la marcha: (A) «Diagnóstico del CA3177» trajo los 6 componentes
+   (SELECT * sin AND Estado_General<>'OK') → payload → SystemError. El DEFAULT debe ser
+   SOLO observados. (C) «Triage MT de Antapaccay» filtró por Modelo '%980E%' (sin
+   Proyecto) → coló HT321 de ANTAMINA (también 980E). Por proyecto = SIEMPRE Proyecto.
+   Estos son fixes de INSTRUCCIÓN (las vistas están bien); abajo, queries de referencia.
+   ---------------------------------------------------------------------------- */
+GO
+-- 26.1 Diagnóstico DEFAULT (solo observados) = filas ligeras; vs TODOS (6 comp) = pesado
+SELECT 'observados' AS modo, COUNT(*) AS comps
+FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK) WHERE Equipo='CA3177' AND Estado_General<>'OK'
+UNION ALL
+SELECT 'todos', COUNT(*) FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK) WHERE Equipo='CA3177';
+GO
+-- 26.2 Triage por MODELO (mal: cuela otros proyectos 980E) vs por PROYECTO (correcto)
+SELECT DISTINCT Proyecto, COUNT(*) AS mt_obs
+FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
+WHERE Modelo LIKE '%980E%' AND Estado_General <> 'OK'
+GROUP BY Proyecto;   -- ⚠ si aparece Antamina u otro, confirma la fuga de C
+GO
+SELECT COUNT(*) AS mt_obs_antapaccay
+FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Estado_General <> 'OK';   -- el correcto
+GO
