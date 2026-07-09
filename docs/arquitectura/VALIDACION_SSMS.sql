@@ -622,3 +622,37 @@ SELECT COUNT(*) AS mt_obs_antapaccay
 FROM [dbo].[vw_EstadoActualMT] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Estado_General <> 'OK';   -- el correcto
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 27 — DIAGNÓSTICO: NumCompObs/NumCompTotal YA son columnas de la vista
+   (marcha 2026-07-08). Hallazgo: el agente generó un CTE con CROSS JOIN para
+   "calcular" los conteos: SELECT d.*, c.NumCompTotal, c.NumCompObs FROM Diag d
+   CROSS JOIN Counts c ... — pero Diag = SELECT * FROM vw_DiagnosticoEquipo, que
+   YA expone NumCompTotal/NumCompObs (window PARTITION BY Equipo, pre-filtro).
+   Resultado: NOMBRES DE COLUMNA DUPLICADOS en el result set → Power Automate no
+   serializa el JSON → {"respuesta":""} vacío → el central dijo "todos OK" (falso).
+   El reintento con la forma SIMPLE (abajo) funcionó. Fix de INSTRUCCIÓN
+   (KomfIA_SQL P21): "NumCompObs/Total YA en la vista → NO recalcular vía CTE/JOIN".
+   La vista NO cambia. Abajo: (27.1) confirma que las columnas ya vienen; (27.2)
+   la query CORRECTA; (27.3) demuestra el duplicado que rompe el JSON.
+   ---------------------------------------------------------------------------- */
+GO
+-- 27.1 Las columnas de conteo YA existen en la vista (1 fila/comp; conteo por equipo)
+SELECT Compartimiento, Estado_General, NumCompObs, NumCompTotal
+FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK) WHERE Equipo='CA3177' ORDER BY Compartimiento;
+GO
+-- 27.2 QUERY CORRECTA (simple): observados + conteos, SIN CTE. Debe traer NumComp* poblados.
+SELECT * FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK)
+WHERE Equipo='CA3177' AND Estado_General<>'OK' ORDER BY Compartimiento;
+GO
+-- 27.3 DEMOSTRACIÓN del bug: d.* ya trae NumCompTotal/NumCompObs; añadir c.NumComp* los
+--      DUPLICA. En SSMS corre (columnas repetidas visibles); vía OData/JSON del flujo,
+--      las claves duplicadas colapsan el objeto → respuesta vacía. NO usar esta forma.
+WITH Diag AS (SELECT * FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK) WHERE Equipo='CA3177'),
+     Counts AS (SELECT COUNT(*) AS NumCompTotal,
+                       SUM(CASE WHEN Estado_General<>'OK' THEN 1 ELSE 0 END) AS NumCompObs FROM Diag)
+SELECT d.*, c.NumCompTotal, c.NumCompObs      -- ⚠ NumCompTotal/NumCompObs DUPLICADAS (ya en d.*)
+FROM Diag d CROSS JOIN Counts c
+WHERE d.Estado_General<>'OK' ORDER BY d.Compartimiento;
+GO
