@@ -559,6 +559,26 @@ v AS (
           END AS FueraUmbral
     FROM u
 )
+, sa AS (   -- TODAS las muestras no-DDI (no solo 6) para el ACUMULADO de vida del componente
+    SELECT Equipo, Compartimiento, Fe_ppm, Indice_PQ, Cr_ppm, Ni_ppm, Cu_ppm, Pb_ppm, Sn_ppm, Al_ppm,
+           Si_ppm, Ca_ppm, Zn_ppm, K_ppm, Na_ppm, B_ppm, P_ppm, Mg_ppm, V100, TBN
+    FROM [dbo].[vw_MuestrasRankeadas]   -- ya filtra EsDDI=0 → suma solo muestras de monitoreo
+)
+, acc AS (
+    -- Σ acumulada del metal = suma de su ppm en TODAS las muestras registradas del componente
+    -- (proxy de exposición/desgaste acumulado en la vida del componente) + nº de muestras.
+    SELECT sa.Equipo, sa.Compartimiento, pa.Parametro,
+           CAST(SUM(pa.Valor) AS decimal(18,1)) AS Acumulado,
+           COUNT(pa.Valor) AS NmAcum
+    FROM sa
+    CROSS APPLY (VALUES
+        ('Fe',sa.Fe_ppm),('PQ',sa.Indice_PQ),('Cr',sa.Cr_ppm),('Ni',sa.Ni_ppm),('Cu',sa.Cu_ppm),
+        ('Pb',sa.Pb_ppm),('Sn',sa.Sn_ppm),('Al',sa.Al_ppm),('Si',sa.Si_ppm),('Ca',sa.Ca_ppm),
+        ('Zn',sa.Zn_ppm),('K',sa.K_ppm),('Na',sa.Na_ppm),('B',sa.B_ppm),('P',sa.P_ppm),
+        ('Mg',sa.Mg_ppm),('V100',sa.V100),('TBN',sa.TBN)
+    ) AS pa(Parametro, Valor)
+    GROUP BY sa.Equipo, sa.Compartimiento, pa.Parametro
+)
 , g AS (
 SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
@@ -596,7 +616,7 @@ FROM v
 GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf
 )
 SELECT
-    Equipo, Compartimiento, Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM,
+    g.Equipo, g.Compartimiento, g.Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM,
     d1, d2, d3, d4, d5, d6, f1, f2, f3, f4, f5, f6, Prom, Sigma, NVecesObs, EsRelevante, Tendencia,
     /* Spark: mini-tendencia visual (bloques ▁▂▃▄▅▆▇█) de n1..n6 cronológicos, normalizada al rango de la
        propia serie. PRE-COMPUTADA para que el central la IMPRIMA/COPIE tal cual (no regenere ASCII).
@@ -608,8 +628,10 @@ SELECT
         CASE WHEN n4 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n4-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
         CASE WHEN n5 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n5-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
         CASE WHEN n6 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n6-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END
-    ) AS Spark
+    ) AS Spark,
+    acc.Acumulado, acc.NmAcum   -- Σ acumulada de vida (todas las muestras no-DDI) + nº de muestras sumadas
 FROM g
+LEFT JOIN acc ON acc.Equipo = g.Equipo AND acc.Compartimiento = g.Compartimiento AND acc.Parametro = g.Parametro
 CROSS APPLY (SELECT MIN(x) AS mn, MAX(x) AS mx FROM (VALUES (n1),(n2),(n3),(n4),(n5),(n6)) t(x)) mm;
 GO
 

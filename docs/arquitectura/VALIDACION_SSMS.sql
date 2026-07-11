@@ -656,3 +656,33 @@ SELECT d.*, c.NumCompTotal, c.NumCompObs      -- ⚠ NumCompTotal/NumCompObs DUP
 FROM Diag d CROSS JOIN Counts c
 WHERE d.Estado_General<>'OK' ORDER BY d.Compartimiento;
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 28 — ACUMULADO de vida por metal en vw_TendenciaElemento (pedido gerencia 2026-07-10)
+   Nuevo: columnas Acumulado (Σ del ppm del metal en TODAS las muestras no-DDI del
+   componente) y NmAcum (nº de muestras sumadas). vw_MuestrasRankeadas ya filtra
+   EsDDI=0, así que el acumulado suma solo muestras de monitoreo (no las post-dializado).
+   Es un PROXY de exposición/desgaste acumulado, NO masa real (ppm=concentración).
+   ⚠ Solo tiene sentido para metales de desgaste; para V100/TBN la Σ no es interpretable.
+   Re-correr DDL_vistas.sql (vw_TendenciaElemento) ANTES de este bloque.
+   Validar: (28.1) Acumulado/NmAcum poblados y coherentes; (28.2) NmAcum >= 6 (hay más
+   historia que las 6 mostradas); (28.3) el acumulado NO cambia d1..d6/Prom/Sigma (siguen
+   sobre las 6 últimas); (28.4) que NmAcum = nº real de muestras no-DDI del componente.
+   ---------------------------------------------------------------------------- */
+GO
+-- 28.1 Cr del MT LH del CA3171: tendencia (6) + acumulado de vida
+SELECT Compartimiento, Parametro, d1,d2,d3,d4,d5,d6, Prom, Sigma, Acumulado, NmAcum
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%' AND Compartimiento LIKE '%LH' AND Parametro='Cr';
+GO
+-- 28.2 Cu de todos los componentes del CA3171: cada fila trae su Σ de vida del Cu
+SELECT Compartimiento, Parametro, Prom, Sigma, NVecesObs, Acumulado, NmAcum
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Parametro='Cu' ORDER BY Compartimiento;
+GO
+-- 28.4 Contraste: NmAcum debe igualar el nº de muestras no-DDI del componente en la base rankeada
+SELECT COUNT(*) AS muestras_noDDI_reales
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%' AND Compartimiento LIKE '%LH';   -- comparar vs NmAcum de 28.1
+GO
