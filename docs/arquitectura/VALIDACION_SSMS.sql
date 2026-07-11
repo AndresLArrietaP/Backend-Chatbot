@@ -686,3 +686,22 @@ SELECT COUNT(*) AS muestras_noDDI_reales
 FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
 WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%' AND Compartimiento LIKE '%LH';   -- comparar vs NmAcum de 28.1
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 29 — GRÁFICO de tendencia MÁS GRANDE + baseline visible (pedido gerencia 2026-07-10)
+   vw_TendenciaGrafico regenerada: 12 niveles de alto (antes 7) y 9 de ancho por columna
+   (antes 7). Las líneas LP (------) y LC (······) se dibujan a lo ancho completo y con más
+   resolución vertical → la baseline horizontal se ve clara y grande. Misma consulta (1 comp).
+   Re-correr DDL_vistas.sql (vw_TendenciaElemento primero — es su base — y vw_TendenciaGrafico).
+   Validar en SSMS con resultado a TEXTO (Ctrl+T) para ver el multi-línea alineado.
+   ---------------------------------------------------------------------------- */
+GO
+-- 29.1 Gráfico del Cr del MT LH del CA3171 (debe verse alto 12, ancho 9, con LC/LP a lo ancho)
+SELECT Grafico FROM [dbo].[vw_TendenciaGrafico] WITH (NOLOCK)
+WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH%' AND Parametro='Cr';
+GO
+-- 29.2 Gráfico del Cu del Motor del CA3165 (otro componente/metal)
+SELECT Grafico FROM [dbo].[vw_TendenciaGrafico] WITH (NOLOCK)
+WHERE Equipo='CA3165' AND Compartimiento='MOTOR' AND Parametro='Cu';
+GO
