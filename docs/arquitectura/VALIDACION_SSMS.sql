@@ -705,3 +705,26 @@ GO
 SELECT Grafico FROM [dbo].[vw_TendenciaGrafico] WITH (NOLOCK)
 WHERE Equipo='CA3165' AND Compartimiento='MOTOR' AND Parametro='Cu';
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 30 — DETALLE del barrido con AMBOS límites (LP y LC) (pedido gerencia 2026-07-13)
+   vw_ObservadosFlota.Detalle pasa de mostrar el límite CRUZADO ('Cu=7.7(LC4):C') a mostrar
+   AMBOS ('Cu=7.7(LP3/LC4):C'), para precaución y crítico. Pb/Sn/TBN no tienen LC → solo LP.
+   Robusto a NULL (ISNULL) → nunca desaparece la entrada del metal. Solo cambia el STRING
+   Detalle; NumCrit/NumPrec/Mets_Obs/Infs_Obs y las demás vistas NO cambian.
+   Re-correr DDL_vistas.sql (vw_ObservadosFlota → vw_ObservadosDetalle son la misma base).
+   ---------------------------------------------------------------------------- */
+GO
+-- 30.1 Detalle de Antapaccay 980E: cada metal debe verse 'Metal=valor(LPx/LCy):sev'
+SELECT Equipo, Compartimiento, NumCrit, NumPrec, Detalle
+FROM [dbo].[vw_ObservadosDetalle] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+ORDER BY NumCrit DESC, Equipo, Compartimiento;
+GO
+-- 30.2 Precauciones (NumCrit=0 AND NumPrec>0): confirmar que el límite (LP) sale en el Detalle
+SELECT Equipo, Compartimiento, Detalle
+FROM [dbo].[vw_ObservadosDetalle] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%' AND NumCrit=0 AND NumPrec>0
+ORDER BY Equipo, Compartimiento;
+GO
