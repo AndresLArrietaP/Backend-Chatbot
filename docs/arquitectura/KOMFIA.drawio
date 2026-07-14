@@ -125,7 +125,7 @@
             <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="9uTslz9l__ZjNAjIuWaZ-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="DIAGNÓSTICO DE COMPONENTE (PRECACUCIÓN)" vertex="1">
+        <mxCell id="9uTslz9l__ZjNAjIuWaZ-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="DIAGNÓSTICO DE COMPONENTE (PRECAUCIÓN)" vertex="1">
           <mxGeometry height="60" width="120" x="-346.0000000000002" y="-570" as="geometry" />
         </mxCell>
         <mxCell id="9uTslz9l__ZjNAjIuWaZ-13" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="DIAGNÓSTICO DE COMPONENTE (COMPLETOS)" vertex="1">
@@ -198,7 +198,7 @@
             <mxPoint x="1" as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="9uTslz9l__ZjNAjIuWaZ-35" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="TENDENCIA COMPLETA DEL COMPOENETE" vertex="1">
+        <mxCell id="9uTslz9l__ZjNAjIuWaZ-35" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="TENDENCIA COMPLETA DEL COMPONENTE" vertex="1">
           <mxGeometry height="60" width="120" x="-120" y="-260" as="geometry" />
         </mxCell>
         <mxCell id="9uTslz9l__ZjNAjIuWaZ-43" edge="1" parent="1" source="9uTslz9l__ZjNAjIuWaZ-40" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="9uTslz9l__ZjNAjIuWaZ-42" value="">
@@ -209,7 +209,7 @@
             <mxPoint x="26" as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="9uTslz9l__ZjNAjIuWaZ-40" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="TENDENCIA PRECAUCIONS DE UN METAL" vertex="1">
+        <mxCell id="9uTslz9l__ZjNAjIuWaZ-40" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="TENDENCIA PRECAUCIONES DE UN METAL" vertex="1">
           <mxGeometry height="60" width="120" x="-346" y="-110" as="geometry" />
         </mxCell>
         <mxCell id="9uTslz9l__ZjNAjIuWaZ-42" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="TENDENCIA COMPLETA DE UN METAL" vertex="1">
@@ -226,7 +226,7 @@
             <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="9uTslz9l__ZjNAjIuWaZ-47" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="BARRIDO DE OBSERVAODS" vertex="1">
+        <mxCell id="9uTslz9l__ZjNAjIuWaZ-47" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="BARRIDO DE OBSERVADOS" vertex="1">
           <mxGeometry height="60" width="100" x="-540" y="170" as="geometry" />
         </mxCell>
         <mxCell id="9uTslz9l__ZjNAjIuWaZ-52" edge="1" parent="1" source="9uTslz9l__ZjNAjIuWaZ-49" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="9uTslz9l__ZjNAjIuWaZ-51" value="OFRECE">
@@ -297,7 +297,7 @@
         <mxCell id="9uTslz9l__ZjNAjIuWaZ-64" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="HISTORIAL DE UN METAL PARA UN COMP. DEL EQUIPO" vertex="1">
           <mxGeometry height="80" width="175" x="-375" y="600" as="geometry" />
         </mxCell>
-        <mxCell id="9uTslz9l__ZjNAjIuWaZ-69" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="HISTORIAL DE UN COMPONENTE EN EL EQUIPO ()Campo Met. Observados)" vertex="1">
+        <mxCell id="9uTslz9l__ZjNAjIuWaZ-69" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="HISTORIAL DE UN COMPONENTE EN EL EQUIPO (Campo Met. Observados)" vertex="1">
           <mxGeometry height="60" width="175" x="-375" y="720" as="geometry" />
         </mxCell>
         <mxCell id="9uTslz9l__ZjNAjIuWaZ-73" parent="1" style="whiteSpace=wrap;html=1;rounded=1;" value="HISTORIAL GENERAL DE OBSERVADOS FLOTA (Solo Campo Comp.&amp;nbsp; Equipo y Met. Observados)" vertex="1">
