@@ -376,6 +376,23 @@ WITH b AS (
             CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'')+')'+':C inf' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'')+')'+':P inf' ELSE '' END,
             CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'')+')'+':C inf' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'')+')'+':P inf' ELSE '' END
         ),1,3,'') AS Detalle,
+        STUFF(CONCAT(
+            CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe '+CONVERT(varchar(20),CAST(Fe_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Fe_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN ' · PQ '+CONVERT(varchar(20),CAST(PQ_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(PQ_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN ' · Cr '+CONVERT(varchar(20),CAST(Cr_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Cr_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN ' · Ni '+CONVERT(varchar(20),CAST(Ni_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Ni_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN ' · Cu '+CONVERT(varchar(20),CAST(Cu_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Cu_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Al_ppm>ISNULL(Al_LP,9999) THEN ' · Al '+CONVERT(varchar(20),CAST(Al_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Al_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Si_ppm>ISNULL(Si_LP,9999) THEN ' · Si '+CONVERT(varchar(20),CAST(Si_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Si_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb '+CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1))) ELSE '' END,
+            CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn '+CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1))) ELSE '' END,
+            CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN '+CONVERT(varchar(20),CAST(TBN_LP AS decimal(18,1))) ELSE '' END,
+            CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca '+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn '+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K '+CONVERT(varchar(20),CAST(K_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(K_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na '+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg '+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'') ELSE '' END
+        ),1,3,'') AS LimObs,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP, Al_ppm, Al_LP, Al_LC,
         Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC,
@@ -431,7 +448,11 @@ SELECT
     MAX(FechaMuestreo)  AS FechaUltima,
     MAX(CM)             AS CM,
     STRING_AGG(Compartimiento, ' · ') WITHIN GROUP (ORDER BY NumCrit DESC, Compartimiento) AS Comp_Obs,
-    STRING_AGG(NULLIF(Mets_Obs,''), ' · ') WITHIN GROUP (ORDER BY NumCrit DESC) AS Met_Obs
+    STRING_AGG(NULLIF(Mets_Obs,''), ' · ') WITHIN GROUP (ORDER BY NumCrit DESC) AS Met_Obs,
+    -- Limites: "Comp: metal LP/LC" de los componentes observados del equipo (para el CUADRO DE LÍMITES
+    -- del barrido, disponible YA en PASO 1). El central une por (comp,metal) para armar la matriz.
+    STRING_AGG(NULLIF(Compartimiento + ': ' + LimObs, Compartimiento + ': '), '  |  ')
+        WITHIN GROUP (ORDER BY NumCrit DESC, Compartimiento) AS Limites
 FROM [dbo].[vw_ObservadosFlota]
 WHERE Estado_General <> 'OK'
 GROUP BY Equipo, Proyecto, Modelo;

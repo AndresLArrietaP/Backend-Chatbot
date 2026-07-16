@@ -728,3 +728,27 @@ FROM [dbo].[vw_ObservadosDetalle] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%' AND NumCrit=0 AND NumPrec>0
 ORDER BY Equipo, Compartimiento;
 GO
+
+
+/* ----------------------------------------------------------------------------
+   BLOQUE 31 — CUADRO DE LÍMITES en el barrido desde PASO 1 (pedido 2026-07-15)
+   Para que la matriz de límites (componente×metal, LP/LC) aparezca YA en la primera
+   consulta de barrido (resumen), vw_ObservadosResumen ahora expone la columna Limites
+   ("Comp: metal LP/LC" de los componentes observados del equipo). Se apoya en LimObs,
+   nueva columna ligera de vw_ObservadosFlota (límites de los metales observados, sin
+   valores ni chips). El central UNE por (comp, metal) para armar la matriz.
+   Re-correr DDL_vistas.sql (vw_ObservadosFlota ANTES de vw_ObservadosResumen).
+   ---------------------------------------------------------------------------- */
+GO
+-- 31.1 Resumen de Antapaccay: cada equipo trae Comp_Obs, Met_Obs y ahora Limites
+SELECT Equipo, NumCrit, NumPrec, Comp_Obs, Met_Obs, Limites
+FROM [dbo].[vw_ObservadosResumen] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+ORDER BY NumCrit DESC, NumPrec DESC;
+GO
+-- 31.2 LimObs por equipo+componente en la flota (límites de los metales observados)
+SELECT Equipo, Compartimiento, Mets_Obs, LimObs
+FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+ORDER BY Equipo, Compartimiento;
+GO
