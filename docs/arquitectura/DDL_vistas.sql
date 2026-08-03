@@ -916,26 +916,46 @@ GO
    Validación: VALIDACION_SSMS.sql BLOQUE 32.
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosBarridoMD] AS
-WITH fila AS (
+WITH f AS (
     SELECT
-        Proyecto, Modelo, Compartimiento, Equipo,
+        Proyecto, Modelo, Compartimiento, Equipo, Estado_General, FechaMuestreo, HorasComponente, CM,
         CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END AS sev,
+        /* celda: valor + :sev, SIN límites (limpia); informativos con ' inf' */
+        STUFF(CONCAT(
+            CASE WHEN Fe_ppm>ISNULL(Fe_LC,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':C' WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Indice_PQ>ISNULL(PQ_LC,9999) THEN ' · PQ='+CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1)))+':C' WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN ' · PQ='+CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Cr_ppm>ISNULL(Cr_LC,9999) THEN ' · Cr='+CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+':C' WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN ' · Cr='+CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Ni_ppm>ISNULL(Ni_LC,9999) THEN ' · Ni='+CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+':C' WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN ' · Ni='+CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Cu_ppm>ISNULL(Cu_LC,9999) THEN ' · Cu='+CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+':C' WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN ' · Cu='+CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Al_ppm>ISNULL(Al_LC,9999) THEN ' · Al='+CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+':C' WHEN Al_ppm>ISNULL(Al_LP,9999) THEN ' · Al='+CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Si_ppm>ISNULL(Si_LC,9999) THEN ' · Si='+CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+':C' WHEN Si_ppm>ISNULL(Si_LP,9999) THEN ' · Si='+CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb='+CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn='+CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN='+CONVERT(varchar(20),CAST(TBN AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C inf' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
+            CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C inf' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
+            CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':C inf' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
+            CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':C inf' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
+            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C inf' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P inf' ELSE '' END
+        ),1,3,'') AS chipsCell
+    FROM [dbo].[vw_ObservadosFlota]
+    WHERE Estado_General <> 'OK'
+),
+fila AS (
+    SELECT Proyecto, Modelo, Compartimiento, sev, Equipo,
         CAST(
             N'| ' + Equipo
           + N' | ' + ISNULL(FORMAT(FechaMuestreo, 'dd-MMM'), N'—')
           + N' | ' + ISNULL(CONVERT(nvarchar(12), HorasComponente), N'—')
           + N' | ' + ISNULL(CM, N'—')
-          + N' | ' + CASE Estado_General WHEN 'CRITICO' THEN N'🟥'
-                                         WHEN 'PRECAUCION' THEN N'🟨' ELSE N'' END
-          + N' | ' + ISNULL(REPLACE(REPLACE(Detalle, N':C', N' 🟥'), N':P', N' 🟨'), N'—')
+          + N' | ' + CASE Estado_General WHEN 'CRITICO' THEN N'🟥' WHEN 'PRECAUCION' THEN N'🟨' ELSE N'' END
+          + N' | ' + ISNULL(REPLACE(REPLACE(chipsCell, ':C', N' 🟥'), ':P', N' 🟨'), N'—')
           + N' |'
         AS nvarchar(max)) AS filaMD
-    FROM [dbo].[vw_ObservadosDetalle]
+    FROM f
 ),
 sec AS (
-    SELECT
-        Proyecto, Modelo, Compartimiento,
-        MIN(sev) AS sev,
+    SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
           + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
@@ -945,25 +965,67 @@ sec AS (
     FROM fila
     GROUP BY Proyecto, Modelo, Compartimiento
 ),
+secagg AS (
+    SELECT Proyecto, Modelo,
+        STRING_AGG(seccionMD, NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY sev, Compartimiento) AS SeccionesMD
+    FROM sec
+    GROUP BY Proyecto, Modelo
+),
+lim AS (
+    SELECT Proyecto, Modelo, Compartimiento,
+        MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev,
+        STUFF(CONCAT(
+            MAX(CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe '+CONVERT(varchar(20),CAST(Fe_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Fe_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN ' · PQ '+CONVERT(varchar(20),CAST(PQ_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(PQ_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN ' · Cr '+CONVERT(varchar(20),CAST(Cr_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Cr_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN ' · Ni '+CONVERT(varchar(20),CAST(Ni_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Ni_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN ' · Cu '+CONVERT(varchar(20),CAST(Cu_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Cu_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Al_ppm>ISNULL(Al_LP,9999) THEN ' · Al '+CONVERT(varchar(20),CAST(Al_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Al_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Si_ppm>ISNULL(Si_LP,9999) THEN ' · Si '+CONVERT(varchar(20),CAST(Si_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Si_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb '+CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1))) END),
+            MAX(CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn '+CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1))) END),
+            MAX(CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN '+CONVERT(varchar(20),CAST(TBN_LP AS decimal(18,1))) END),
+            MAX(CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca '+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn '+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K '+CONVERT(varchar(20),CAST(K_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(K_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na '+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'') END),
+            MAX(CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg '+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'') END)
+        ),1,3,'') AS limLinea
+    FROM [dbo].[vw_ObservadosFlota]
+    WHERE Estado_General <> 'OK'
+    GROUP BY Proyecto, Modelo, Compartimiento
+),
+limblk AS (
+    SELECT Proyecto, Modelo,
+        CAST(
+            N'**Límites de referencia (ppm) — por componente**' + NCHAR(10)
+          + STRING_AGG(CONVERT(nvarchar(max), N'- **' + Compartimiento + N':** ' + limLinea), NCHAR(10))
+                WITHIN GROUP (ORDER BY sev, Compartimiento)
+        AS nvarchar(max)) AS LimitesMD
+    FROM lim
+    WHERE limLinea IS NOT NULL
+    GROUP BY Proyecto, Modelo
+),
 cnt AS (
     SELECT Proyecto, Modelo,
-        COUNT(*)                                              AS NumEquipos,
-        SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END)          AS NumEquiposCriticos,
+        COUNT(*)                                                     AS NumEquipos,
+        SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END)                 AS NumEquiposCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumEquiposSoloPrecau
     FROM [dbo].[vw_ObservadosResumen]
     GROUP BY Proyecto, Modelo
 )
 SELECT
-    s.Proyecto, s.Modelo,
+    a.Proyecto, a.Modelo,
     c.NumEquipos, c.NumEquiposCriticos, c.NumEquiposSoloPrecau,
     CAST(
         N'**Detalle — flota observada, agrupado por componente** ('
         + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos: '
         + CAST(c.NumEquiposCriticos AS nvarchar(10)) + N' con crítico, '
         + CAST(c.NumEquiposSoloPrecau AS nvarchar(10)) + N' solo precaución)' + NCHAR(10) + NCHAR(10)
-      + STRING_AGG(s.seccionMD, NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY s.sev, s.Compartimiento)
+      + a.SeccionesMD
+      + NCHAR(10) + NCHAR(10) + l.LimitesMD
     AS nvarchar(max)) AS DetalleTodosMD
-FROM sec s
-JOIN cnt c ON c.Proyecto = s.Proyecto AND ISNULL(c.Modelo, N'') = ISNULL(s.Modelo, N'')
-GROUP BY s.Proyecto, s.Modelo, c.NumEquipos, c.NumEquiposCriticos, c.NumEquiposSoloPrecau;
+FROM secagg a
+JOIN cnt   c ON c.Proyecto = a.Proyecto AND ISNULL(c.Modelo, N'') = ISNULL(a.Modelo, N'')
+JOIN limblk l ON l.Proyecto = a.Proyecto AND ISNULL(l.Modelo, N'') = ISNULL(a.Modelo, N'');
 GO
