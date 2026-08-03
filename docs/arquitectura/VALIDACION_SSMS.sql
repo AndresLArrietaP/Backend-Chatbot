@@ -752,3 +752,23 @@ FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
 ORDER BY Equipo, Compartimiento;
 GO
+
+
+/* ============================================================================
+   BLOQUE 32 — vw_ObservadosBarridoMD (TIER 2 copia verbatim del "detalle de todos")
+   Objetivo: confirmar que la vista entrega el bloque markdown YA armado y las cifras.
+   ⚠ Ver el texto completo: Query > Query Options > Results > Grid/Text >
+      "Maximum Characters Retrieved" súbelo (p.ej. 65535). Con Ctrl+T (modo texto)
+      se lee mejor el markdown multilínea.
+   ---------------------------------------------------------------------------- */
+-- 32.1  Cifras + largo del bloque (1 fila por Proyecto+Modelo)
+SELECT Proyecto, Modelo, NumEquipos, NumEquiposCriticos, NumEquiposSoloPrecau,
+       LEN(DetalleTodosMD) AS LargoMD
+FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+
+-- 32.2  El bloque markdown pre-armado (esto es lo que el central imprimiría VERBATIM)
+SELECT DetalleTodosMD
+FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+GO

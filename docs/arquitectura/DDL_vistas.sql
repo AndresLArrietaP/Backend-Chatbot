@@ -897,3 +897,73 @@ GO
    vw_EstadoActualMT → vw_UltimoAnalisisAceite → vw_MuestrasRankeadas → vw_MuestrasEstado →
    vw_LimitesPorComponente).
    ============================================================================ */
+
+
+/* ============================================================================
+   vw_ObservadosBarridoMD — TIER 2 (render determinístico / copia verbatim).
+   Pre-arma EL BLOQUE MARKDOWN del DETALLE de barrido ("detalle de todos"), el
+   caso lento (~2 min de render del central con flotas grandes). En vez de que el
+   LLM pivotee/escriba la tabla token por token, la VISTA la entrega YA armada y
+   el central la imprime VERBATIM. 1 fila por Proyecto+Modelo.
+     - DetalleTodosMD: bloque markdown completo, agrupado por componente (críticos
+       primero), cada sección con su mini-tabla | Equipo | Fec. | Hor.Comp. | CM |
+       Est. | Observado |. Observado = columna Detalle con :C/:P → 🟥/🟨.
+     - NumEquipos / NumEquiposCriticos / NumEquiposSoloPrecau: cifras para que el
+       central redacte un RESUMEN corto y gerencial (pocos tokens = rápido).
+   ⚠ Contiene emojis (🟥🟨): al crear la vista, ABRIR/EJECUTAR este .sql en SSMS
+   desde el archivo (UTF-8), NO re-tipear ni pegar por un canal que los pierda.
+   Depende de vw_ObservadosDetalle (bloque) y vw_ObservadosResumen (cifras).
+   Validación: VALIDACION_SSMS.sql BLOQUE 32.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_ObservadosBarridoMD] AS
+WITH fila AS (
+    SELECT
+        Proyecto, Modelo, Compartimiento, Equipo,
+        CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END AS sev,
+        CAST(
+            N'| ' + Equipo
+          + N' | ' + ISNULL(FORMAT(FechaMuestreo, 'dd-MMM'), N'—')
+          + N' | ' + ISNULL(CONVERT(nvarchar(12), HorasComponente), N'—')
+          + N' | ' + ISNULL(CM, N'—')
+          + N' | ' + CASE Estado_General WHEN 'CRITICO' THEN N'🟥'
+                                         WHEN 'PRECAUCION' THEN N'🟨' ELSE N'' END
+          + N' | ' + ISNULL(REPLACE(REPLACE(Detalle, N':C', N' 🟥'), N':P', N' 🟨'), N'—')
+          + N' |'
+        AS nvarchar(max)) AS filaMD
+    FROM [dbo].[vw_ObservadosDetalle]
+),
+sec AS (
+    SELECT
+        Proyecto, Modelo, Compartimiento,
+        MIN(sev) AS sev,
+        CAST(
+            N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
+          + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|' + NCHAR(10)
+          + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
+        AS nvarchar(max)) AS seccionMD
+    FROM fila
+    GROUP BY Proyecto, Modelo, Compartimiento
+),
+cnt AS (
+    SELECT Proyecto, Modelo,
+        COUNT(*)                                              AS NumEquipos,
+        SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END)          AS NumEquiposCriticos,
+        SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumEquiposSoloPrecau
+    FROM [dbo].[vw_ObservadosResumen]
+    GROUP BY Proyecto, Modelo
+)
+SELECT
+    s.Proyecto, s.Modelo,
+    c.NumEquipos, c.NumEquiposCriticos, c.NumEquiposSoloPrecau,
+    CAST(
+        N'**Detalle — flota observada, agrupado por componente** ('
+        + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos: '
+        + CAST(c.NumEquiposCriticos AS nvarchar(10)) + N' con crítico, '
+        + CAST(c.NumEquiposSoloPrecau AS nvarchar(10)) + N' solo precaución)' + NCHAR(10) + NCHAR(10)
+      + STRING_AGG(s.seccionMD, NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY s.sev, s.Compartimiento)
+    AS nvarchar(max)) AS DetalleTodosMD
+FROM sec s
+JOIN cnt c ON c.Proyecto = s.Proyecto AND ISNULL(c.Modelo, N'') = ISNULL(s.Modelo, N'')
+GROUP BY s.Proyecto, s.Modelo, c.NumEquipos, c.NumEquiposCriticos, c.NumEquiposSoloPrecau;
+GO
