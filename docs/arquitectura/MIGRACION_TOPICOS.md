@@ -132,10 +132,27 @@ Patrón idéntico al barrido-detalle que ya montaste:
 
 ---
 
+## ⚠️ HANDOFF LIMPIO por módulo (regla crítica — evita la colisión)
+**El viejo camino y el tópico NO pueden coexistir para el MISMO módulo:** si las instrucciones +
+el conocimiento (Formatos/Esquema) todavía describen el módulo, el orquestador a veces usa la **ruta
+generativa vieja en vez del tópico** — y esa ruta está buggeada (reproduce el EJEMPLO de Formatos con
+placeholders `CAxxxx`). Visto 2026-08-03 con "¿qué equipos observados?".
+
+**Secuencia obligatoria por módulo:**
+1. Armar la(s) vista(s) `*MD` del módulo (yo).
+2. Construir su(s) tópico(s) cubriendo **TODAS sus variantes** (tú).
+3. Validar que el módulo funciona 100% por tópicos.
+4. **Recién ahí: QUITAR el módulo de instrucciones (central+SQL) + conocimiento (Formatos+Esquema)** (yo).
+   → desaparece la colisión, muere el bug de placeholders, y se **libera espacio de instrucciones**.
+5. Desplegar lo limpio.
+
+⛔ **No quitar el camino viejo ANTES de que los tópicos cubran todas las variantes** (si no, hueco).
+La coexistencia es SOLO entre módulos distintos (uno migrado, otro aún generativo), NUNCA para el mismo.
+
 ## No romper lo funcional
-- Viejas vistas + `TEST-SQL-V2` + ruta generativa **siguen vivas** durante toda la mudanza.
-- Cada tópico nuevo convive; si uno falla, se **desactiva su descripción** → vuelve al generativo. Cero pérdida.
-- Migramos **de a un módulo**, validando cada uno antes del siguiente.
+- Viejas vistas + `TEST-SQL-V2` + ruta generativa **siguen vivas** para los módulos AÚN NO migrados.
+- Migramos **de a un módulo**, validando cada uno antes del siguiente; y aplicando el handoff limpio de arriba.
+- Fallback: si un tópico falla, se **desactiva su descripción** → vuelve al generativo (mientras su parte vieja siga puesta).
 
 ---
 
