@@ -1037,3 +1037,102 @@ FROM secagg a
 JOIN cnt   c ON c.Proyecto = a.Proyecto AND ISNULL(c.Modelo, N'') = ISNULL(a.Modelo, N'')
 JOIN limtbl l ON l.Proyecto = a.Proyecto AND ISNULL(l.Modelo, N'') = ISNULL(a.Modelo, N'');
 GO
+
+
+/* ============================================================================
+   vw_ObservadosResumenMD — TIER 2, PASO 1 del barrido (columna MD estándar).
+   Pre-arma el bloque markdown del RESUMEN de barrido (1 fila/equipo: Crít/Prec,
+   horómetros, Comp. Observados abreviados, Met. Obs. con chips) + el cuadro de
+   límites. El tópico lo imprime verbatim. Calcada de vw_ObservadosResumen +
+   formato. ⚠ Emojis: abrir/ejecutar el .sql desde archivo (UTF-8).
+   Validación: VALIDACION_SSMS.sql BLOQUE 34.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_ObservadosResumenMD] AS
+WITH r AS (
+    SELECT Proyecto, Modelo, Equipo, NumCrit, NumPrec, Horometro, HorasDeAceite, FechaUltima, CM, Comp_Obs, Met_Obs,
+        CAST(
+            N'| ' + Equipo
+          + N' | ' + CAST(NumCrit AS nvarchar(10))
+          + N' | ' + CAST(NumPrec AS nvarchar(10))
+          + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(Horometro AS decimal(18,0))), N'—')
+          + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(HorasDeAceite AS decimal(18,0))), N'—')
+          + N' | ' + ISNULL(FORMAT(FechaUltima, 'dd-MMM'), N'—')
+          + N' | ' + ISNULL(CM, N'—')
+          + N' | ' + ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(Comp_Obs,'MOTOR DE TRACCION LH','MT LH'),'MOTOR DE TRACCION RH','MT RH'),'RUEDA DELANTERA LH','RD LH'),'RUEDA DELANTERA RH','RD RH'),'SISTEMA HIDRAULICO','Hidr'),'MOTOR','Motor'), N'—')
+          + N' | ' + REPLACE(REPLACE(REPLACE(ISNULL(Met_Obs,N'—'),':C',N' 🟥'),':P',N' 🟨'),',',N' · ')
+          + N' |'
+        AS nvarchar(max)) AS filaMD
+    FROM [dbo].[vw_ObservadosResumen]
+),
+tabla AS (
+    SELECT Proyecto, Modelo,
+        STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY NumCrit DESC, NumPrec DESC, Equipo) AS FilasMD
+    FROM r GROUP BY Proyecto, Modelo
+),
+cnt AS (
+    SELECT Proyecto, Modelo,
+        COUNT(*) AS NumEquipos,
+        SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumCriticos,
+        SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumSoloPrecau
+    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto, Modelo
+),
+compsev AS (
+    SELECT Proyecto, Modelo, Compartimiento,
+        MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev
+    FROM [dbo].[vw_ObservadosFlota] WHERE Estado_General <> 'OK'
+    GROUP BY Proyecto, Modelo, Compartimiento
+),
+metrows AS (
+    SELECT DISTINCT o.Proyecto, o.Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
+    FROM [dbo].[vw_ObservadosFlota] o
+    CROSS APPLY (VALUES
+        (1, 'Fe', CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LP AS decimal(18,1)) END, CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LC AS decimal(18,1)) END),
+        (2, 'PQ', CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CAST(PQ_LP AS decimal(18,1)) END, CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CAST(PQ_LC AS decimal(18,1)) END),
+        (3, 'Cr', CASE WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN CAST(Cr_LP AS decimal(18,1)) END, CASE WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN CAST(Cr_LC AS decimal(18,1)) END),
+        (4, 'Ni', CASE WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN CAST(Ni_LP AS decimal(18,1)) END, CASE WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN CAST(Ni_LC AS decimal(18,1)) END),
+        (5, 'Cu', CASE WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN CAST(Cu_LP AS decimal(18,1)) END, CASE WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN CAST(Cu_LC AS decimal(18,1)) END),
+        (6, 'Al', CASE WHEN Al_ppm>ISNULL(Al_LP,9999) THEN CAST(Al_LP AS decimal(18,1)) END, CASE WHEN Al_ppm>ISNULL(Al_LP,9999) THEN CAST(Al_LC AS decimal(18,1)) END),
+        (7, 'Si', CASE WHEN Si_ppm>ISNULL(Si_LP,9999) THEN CAST(Si_LP AS decimal(18,1)) END, CASE WHEN Si_ppm>ISNULL(Si_LP,9999) THEN CAST(Si_LC AS decimal(18,1)) END),
+        (8, 'Pb', CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN CAST(Pb_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
+        (9, 'Sn', CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN CAST(Sn_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
+        (10, 'TBN', CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN CAST(TBN_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
+        (11, 'Ca', CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CAST(Ca_LP AS decimal(18,1)) END, CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CAST(Ca_LC AS decimal(18,1)) END),
+        (12, 'Zn', CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CAST(Zn_LP AS decimal(18,1)) END, CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CAST(Zn_LC AS decimal(18,1)) END),
+        (13, 'K', CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN CAST(K_LP AS decimal(18,1)) END, CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN CAST(K_LC AS decimal(18,1)) END),
+        (14, 'Na', CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CAST(Na_LP AS decimal(18,1)) END, CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CAST(Na_LC AS decimal(18,1)) END),
+        (15, 'Mg', CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CAST(Mg_LP AS decimal(18,1)) END, CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CAST(Mg_LC AS decimal(18,1)) END)
+    ) m(ord, metal, lp, lc)
+    WHERE o.Estado_General <> 'OK' AND m.lp IS NOT NULL
+),
+limtbl AS (
+    SELECT r2.Proyecto, r2.Modelo,
+        CAST(
+            N'**Límites de referencia (ppm)**' + NCHAR(10)
+          + N'| Componente | Metal | LP | LC |' + NCHAR(10)
+          + N'|---|---|---|---|' + NCHAR(10)
+          + STRING_AGG(CONVERT(nvarchar(max),
+                N'| ' + r2.Compartimiento + N' | ' + r2.metal + N' | '
+              + CONVERT(varchar(20), r2.lp) + N' | ' + ISNULL(CONVERT(varchar(20), r2.lc), N'—') + N' |'
+            ), NCHAR(10)) WITHIN GROUP (ORDER BY s.sev, r2.Compartimiento, r2.ord)
+        AS nvarchar(max)) AS LimitesMD
+    FROM metrows r2
+    JOIN compsev s ON s.Proyecto=r2.Proyecto AND ISNULL(s.Modelo,N'')=ISNULL(r2.Modelo,N'') AND s.Compartimiento=r2.Compartimiento
+    GROUP BY r2.Proyecto, r2.Modelo
+)
+SELECT
+    t.Proyecto, t.Modelo,
+    c.NumEquipos, c.NumCriticos, c.NumSoloPrecau,
+    CAST(
+        N'**Barrido Flota ' + ISNULL(t.Modelo,N'') + N' — ' + t.Proyecto + N' | Estado Actual (No-OK)**' + NCHAR(10)
+      + N'**' + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos con ≥1 componente observado — '
+        + CAST(c.NumCriticos AS nvarchar(10)) + N' con CRÍTICO · '
+        + CAST(c.NumSoloPrecau AS nvarchar(10)) + N' solo PRECAUCIÓN**' + NCHAR(10) + NCHAR(10)
+      + N'| Equipo | 🔴 Crít | 🟡 Prec | Horóm. | Hrs Ace. | Últ. | CM | Comp. Observados | Met. Obs. |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
+      + t.FilasMD
+      + NCHAR(10) + NCHAR(10) + l.LimitesMD
+    AS nvarchar(max)) AS MD
+FROM tabla t
+JOIN cnt    c ON c.Proyecto=t.Proyecto AND ISNULL(c.Modelo,N'')=ISNULL(t.Modelo,N'')
+JOIN limtbl l ON l.Proyecto=t.Proyecto AND ISNULL(l.Modelo,N'')=ISNULL(t.Modelo,N'');
+GO

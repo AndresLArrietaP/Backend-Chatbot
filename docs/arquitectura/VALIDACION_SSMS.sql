@@ -772,3 +772,17 @@ SELECT DetalleTodosMD
 FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
+
+
+/* ============================================================================
+   BLOQUE 34 — vw_ObservadosResumenMD (PASO 1 del barrido, columna MD)
+   ⚠ Sube "Maximum Characters Retrieved" para ver el bloque completo.
+   ---------------------------------------------------------------------------- */
+SELECT Proyecto, Modelo, NumEquipos, NumCriticos, NumSoloPrecau, LEN(MD) AS LargoMD
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+
+SELECT MD
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+GO
