@@ -1301,7 +1301,7 @@ obsmet AS (
             (N'P', P),
             (N'V100', V100)
     ) mm(metal, val)
-    WHERE mm.val LIKE '%:C%' OR mm.val LIKE '%:P%'
+    WHERE (mm.val LIKE '%:C%' OR mm.val LIKE '%:P%') AND Compartimiento LIKE '%TRACCION%'
 ),
 recos AS (
     SELECT DISTINCT om.Equipo, r.ord, r.label, r.indicio
@@ -1315,7 +1315,7 @@ recoblock AS (
     FROM recos GROUP BY Equipo
 )
 SELECT
-    g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal, oa.Observados, rb.Recomendaciones,
+    g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal, oa.Observados, ISNULL(rb.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' — ' + CAST(g.NumCompObs AS nvarchar(10)) + N' de ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes observados**' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ho.cols + N' |' + NCHAR(10)
