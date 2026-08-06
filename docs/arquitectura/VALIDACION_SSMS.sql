@@ -796,3 +796,11 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 SELECT MD_Precaucion FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
+
+
+/* ===== BLOQUE 36 — vw_DiagnosticoMD (diagnóstico 1 equipo) ===== */
+SELECT Equipo, NumCompObs, NumCompTotal, LEN(MD) AS LargoMD, LEN(MD_Completo) AS LargoCompleto
+FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
+SELECT MD          FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
+SELECT MD_Completo FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
+GO
