@@ -804,3 +804,9 @@ FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
 SELECT MD          FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
 SELECT MD_Completo FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
 GO
+
+
+/* ==== BLOQUE 37 — vw_Recomendaciones + bloque determinístico en DiagnosticoMD ==== */
+SELECT * FROM [dbo].[vw_Recomendaciones];
+SELECT Observados, Recomendaciones FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
+GO

@@ -1282,9 +1282,40 @@ obsagg AS (
     SELECT Equipo, STRING_AGG(compAbbr + N': ' + metals, N' · ') WITHIN GROUP (ORDER BY compOrd) AS Observados
     FROM obsmetals WHERE NULLIF(metals, N'') IS NOT NULL
     GROUP BY Equipo
+),
+obsmet AS (
+    SELECT DISTINCT Equipo, mm.metal
+    FROM [dbo].[vw_DiagnosticoEquipo]
+    CROSS APPLY (VALUES
+            (N'Fe', Fe),
+            (N'PQ', PQ),
+            (N'Cr', Cr),
+            (N'Ni', Ni),
+            (N'Cu', Cu),
+            (N'Pb', Pb),
+            (N'Sn', Sn),
+            (N'Al', Al),
+            (N'Si', Si),
+            (N'Ca', Ca),
+            (N'Zn', Zn),
+            (N'P', P),
+            (N'V100', V100)
+    ) mm(metal, val)
+    WHERE mm.val LIKE '%:C%' OR mm.val LIKE '%:P%'
+),
+recos AS (
+    SELECT DISTINCT om.Equipo, r.ord, r.label, r.indicio
+    FROM obsmet om JOIN [dbo].[vw_Recomendaciones] r ON r.metal = om.metal
+),
+recoblock AS (
+    SELECT Equipo,
+        CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
+           + STRING_AGG(CONVERT(nvarchar(max), N'- **' + label + N':** ' + indicio), NCHAR(10)) WITHIN GROUP (ORDER BY ord)
+           + NCHAR(10) + NCHAR(10) + N'Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en el próximo PM. Retirar los 8 tapones magnéticos para inspección y limpieza en busca de particulado anormal. Para mayor información y detalle, contactar a confiabilidad.operaciones@kmmp.com.pe' AS nvarchar(max)) AS Recomendaciones
+    FROM recos GROUP BY Equipo
 )
 SELECT
-    g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal, oa.Observados,
+    g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal, oa.Observados, rb.Recomendaciones,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' — ' + CAST(g.NumCompObs AS nvarchar(10)) + N' de ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes observados**' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ho.cols + N' |' + NCHAR(10)
@@ -1302,5 +1333,28 @@ JOIN hdr_all ha ON ha.Equipo=g.Equipo
 JOIN body_all ba ON ba.Equipo=g.Equipo
 LEFT JOIN hdr_obs ho ON ho.Equipo=g.Equipo
 LEFT JOIN body_obs bo ON bo.Equipo=g.Equipo
-LEFT JOIN obsagg oa ON oa.Equipo=g.Equipo;
+LEFT JOIN obsagg oa ON oa.Equipo=g.Equipo
+LEFT JOIN recoblock rb ON rb.Equipo=g.Equipo;
+GO
+
+
+/* ==== vw_Recomendaciones (diccionario de indicios, para el bloque determinístico) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_Recomendaciones] AS
+/* Diccionario de indicios (verbatim de Recomendaciones_MT.docx). metal -> unidad+indicio.
+   Fe/PQ comparten unidad; Pb/Sn comparten. Extensible: agregar filas por (CompTipo,)metal. */
+SELECT metal, ord, label, indicio
+FROM (VALUES
+    (N'Fe', 1, N'Hierro (Fe) y PQ', N'Alto Hierro y/o PQ entre muestras de aceite puede indicar un problema en los engranajes o cojinetes. De continuar elevada la tendencia, solicitar inspección del piñón solar.'),
+    (N'PQ', 1, N'Hierro (Fe) y PQ', N'Alto Hierro y/o PQ entre muestras de aceite puede indicar un problema en los engranajes o cojinetes. De continuar elevada la tendencia, solicitar inspección del piñón solar.'),
+    (N'Cr', 2, N'Cromo (Cr)', N'Alto Cromo entre muestras de aceite puede indicar un problema en los rodillos y pistas de rodamientos.'),
+    (N'Ni', 3, N'Níquel (Ni)', N'Alto Níquel entre muestras de aceite puede indicar un problema en los engranajes. De continuar elevada la tendencia, solicitar inspección del piñón solar.'),
+    (N'Cu', 4, N'Cobre (Cu)', N'Alto Cobre entre muestras de aceite puede indicar un desgaste en las arandelas de empuje (interna y/o externa) o en el cojinete. Revise la arandela de empuje si encuentra valores altos de Cu/Pb/Sn en conjunto; si encuentra daños o desgaste excesivo, reemplácela de ser necesario.'),
+    (N'Pb', 5, N'Plomo (Pb) y Estaño (Sn)', N'Alto Plomo acompañado de alto Cu y Sn puede indicar un desgaste en las arandelas de empuje (interna y/o externa). Revise la arandela de empuje; si encuentra daños o desgaste excesivo, reemplácela de ser necesario.'),
+    (N'Sn', 5, N'Plomo (Pb) y Estaño (Sn)', N'Alto Plomo acompañado de alto Cu y Sn puede indicar un desgaste en las arandelas de empuje (interna y/o externa). Revise la arandela de empuje; si encuentra daños o desgaste excesivo, reemplácela de ser necesario.'),
+    (N'Si', 6, N'Silicio (Si)', N'Alto Silicio entre muestras de aceite probablemente esté asociado a ingreso de contaminación a la caja de engranajes. Revise la tendencia de Al: si ambas suben en paralelo indicaría presencia de tierra/polvo abrasivo, con correlación en el incremento de Fe/PQ.'),
+    (N'Ca', 7, N'Calcio (Ca)', N'El calcio no es un elemento común en los componentes de la caja de engranajes ni en el aceite. Si el calcio aumenta rápidamente, se ha producido contaminación, generalmente por otro aceite o grasa. En ese caso, detenga el equipo y solicite el cambio de aceite; filtrar el aceite no ayudará a mejorar la condición.'),
+    (N'Zn', 8, N'Zinc (Zn)', N'Alto Zinc puede indicar una de dos situaciones: contaminación del aceite de la caja de engranajes por una sustancia extraña, o un desgaste excesivo de los componentes mecánicos. Si otros elementos como el Fósforo o el Calcio crecen junto con el Zinc, se ha producido contaminación por grasa u otro aceite: detenga el equipo y cambie el aceite de la caja de engranajes; filtrar el aceite no ayudará a mejorar la condición. Si solo el Zn está elevado, puede indicar desgaste excesivo de componentes mecánicos: revise la tendencia de Fe/PQ/Cr y, de ser necesario, programe la inspección del piñón solar.'),
+    (N'P', 9, N'Fósforo (P)', N'El fósforo no es un elemento común en los componentes de la caja de engranajes; está asociado al aditivo EP usado en los aceites ISO 680. Si la concentración de fósforo decae por debajo de 240 ppm, se debe realizar el cambio de aceite; filtrar el aceite no ayudará a mejorar la condición.'),
+    (N'V100', 10, N'Viscosidad V100', N'Baja viscosidad con tendencia decreciente, acompañada de un sobrenivel de aceite, indicaría un posible pase interno de aceite hidráulico a la caja de engranajes: detenga el equipo y solicite el cambio de aceite. Baja viscosidad constante entre muestras indicaría una posible carga con aceite incorrecto: detenga el equipo y solicite el cambio de aceite. En ambos casos, filtrar el aceite no ayudará a mejorar la condición.')
+) v(metal, ord, label, indicio);
 GO
