@@ -1252,9 +1252,39 @@ body_obs AS (
 g AS (
     SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo, MAX(NumCompObs) AS NumCompObs, MAX(NumCompTotal) AS NumCompTotal
     FROM base GROUP BY Equipo
+),
+obsmetals AS (
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 WHEN Compartimiento='MOTOR' THEN 5 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
+        STUFF(CONCAT(
+            CASE WHEN Fe LIKE '%:C%' OR Fe LIKE '%:P%' THEN N', Fe' ELSE N'' END,
+            CASE WHEN PQ LIKE '%:C%' OR PQ LIKE '%:P%' THEN N', PQ' ELSE N'' END,
+            CASE WHEN Cr LIKE '%:C%' OR Cr LIKE '%:P%' THEN N', Cr' ELSE N'' END,
+            CASE WHEN Ni LIKE '%:C%' OR Ni LIKE '%:P%' THEN N', Ni' ELSE N'' END,
+            CASE WHEN Cu LIKE '%:C%' OR Cu LIKE '%:P%' THEN N', Cu' ELSE N'' END,
+            CASE WHEN Pb LIKE '%:C%' OR Pb LIKE '%:P%' THEN N', Pb' ELSE N'' END,
+            CASE WHEN Sn LIKE '%:C%' OR Sn LIKE '%:P%' THEN N', Sn' ELSE N'' END,
+            CASE WHEN Al LIKE '%:C%' OR Al LIKE '%:P%' THEN N', Al' ELSE N'' END,
+            CASE WHEN Si LIKE '%:C%' OR Si LIKE '%:P%' THEN N', Si' ELSE N'' END,
+            CASE WHEN Ca LIKE '%:C%' OR Ca LIKE '%:P%' THEN N', Ca' ELSE N'' END,
+            CASE WHEN Zn LIKE '%:C%' OR Zn LIKE '%:P%' THEN N', Zn' ELSE N'' END,
+            CASE WHEN K LIKE '%:C%' OR K LIKE '%:P%' THEN N', K' ELSE N'' END,
+            CASE WHEN Na LIKE '%:C%' OR Na LIKE '%:P%' THEN N', Na' ELSE N'' END,
+            CASE WHEN Mg LIKE '%:C%' OR Mg LIKE '%:P%' THEN N', Mg' ELSE N'' END,
+            CASE WHEN B LIKE '%:C%' OR B LIKE '%:P%' THEN N', B' ELSE N'' END,
+            CASE WHEN P LIKE '%:C%' OR P LIKE '%:P%' THEN N', P' ELSE N'' END,
+            CASE WHEN V100 LIKE '%:C%' OR V100 LIKE '%:P%' THEN N', V100' ELSE N'' END,
+            CASE WHEN TBN LIKE '%:C%' OR TBN LIKE '%:P%' THEN N', TBN' ELSE N'' END
+        ), 1, 2, N'') AS metals
+    FROM [dbo].[vw_DiagnosticoEquipo]
+    WHERE Estado_General <> 'OK'
+),
+obsagg AS (
+    SELECT Equipo, STRING_AGG(compAbbr + N': ' + metals, N' · ') WITHIN GROUP (ORDER BY compOrd) AS Observados
+    FROM obsmetals WHERE NULLIF(metals, N'') IS NOT NULL
+    GROUP BY Equipo
 )
 SELECT
-    g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal,
+    g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal, oa.Observados,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' — ' + CAST(g.NumCompObs AS nvarchar(10)) + N' de ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes observados**' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ho.cols + N' |' + NCHAR(10)
@@ -1271,5 +1301,6 @@ FROM g
 JOIN hdr_all ha ON ha.Equipo=g.Equipo
 JOIN body_all ba ON ba.Equipo=g.Equipo
 LEFT JOIN hdr_obs ho ON ho.Equipo=g.Equipo
-LEFT JOIN body_obs bo ON bo.Equipo=g.Equipo;
+LEFT JOIN body_obs bo ON bo.Equipo=g.Equipo
+LEFT JOIN obsagg oa ON oa.Equipo=g.Equipo;
 GO
