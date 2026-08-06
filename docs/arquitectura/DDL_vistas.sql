@@ -941,7 +941,7 @@ WITH f AS (
     WHERE Estado_General <> 'OK'
 ),
 fila AS (
-    SELECT Proyecto, Modelo, Compartimiento, sev, Equipo,
+    SELECT Proyecto, Modelo, Compartimiento, sev, Equipo, Estado_General,
         CAST(
             N'| ' + Equipo
           + N' | ' + ISNULL(FORMAT(FechaMuestreo, 'dd-MMM'), N'—')
@@ -953,7 +953,7 @@ fila AS (
         AS nvarchar(max)) AS filaMD
     FROM f
 ),
-sec AS (
+t_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
@@ -964,17 +964,47 @@ sec AS (
     FROM fila
     GROUP BY Proyecto, Modelo, Compartimiento
 ),
-secagg AS (
+t_agg AS (
     SELECT Proyecto, Modelo,
-        STRING_AGG(seccionMD, NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY sev, Compartimiento) AS SeccionesMD
-    FROM sec
-    GROUP BY Proyecto, Modelo
+        STRING_AGG(seccionMD, NCHAR(10)+NCHAR(10)) WITHIN GROUP (ORDER BY sev, Compartimiento) AS Secciones
+    FROM t_sec GROUP BY Proyecto, Modelo
+),
+c_sec AS (
+    SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
+        CAST(
+            N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
+          + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|' + NCHAR(10)
+          + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
+        AS nvarchar(max)) AS seccionMD
+    FROM fila WHERE Estado_General='CRITICO'
+    GROUP BY Proyecto, Modelo, Compartimiento
+),
+c_agg AS (
+    SELECT Proyecto, Modelo,
+        STRING_AGG(seccionMD, NCHAR(10)+NCHAR(10)) WITHIN GROUP (ORDER BY sev, Compartimiento) AS Secciones
+    FROM c_sec GROUP BY Proyecto, Modelo
+),
+p_sec AS (
+    SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
+        CAST(
+            N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
+          + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|' + NCHAR(10)
+          + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
+        AS nvarchar(max)) AS seccionMD
+    FROM fila WHERE Estado_General='PRECAUCION'
+    GROUP BY Proyecto, Modelo, Compartimiento
+),
+p_agg AS (
+    SELECT Proyecto, Modelo,
+        STRING_AGG(seccionMD, NCHAR(10)+NCHAR(10)) WITHIN GROUP (ORDER BY sev, Compartimiento) AS Secciones
+    FROM p_sec GROUP BY Proyecto, Modelo
 ),
 compsev AS (
     SELECT Proyecto, Modelo, Compartimiento,
-        MIN(CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END) AS sev
-    FROM [dbo].[vw_ObservadosFlota]
-    WHERE Estado_General <> 'OK'
+        MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev
+    FROM [dbo].[vw_ObservadosFlota] WHERE Estado_General <> 'OK'
     GROUP BY Proyecto, Modelo, Compartimiento
 ),
 metrows AS (
@@ -1011,31 +1041,40 @@ limtbl AS (
             ), NCHAR(10)) WITHIN GROUP (ORDER BY s.sev, r.Compartimiento, r.ord)
         AS nvarchar(max)) AS LimitesMD
     FROM metrows r
-    JOIN compsev s ON s.Proyecto = r.Proyecto AND ISNULL(s.Modelo, N'') = ISNULL(r.Modelo, N'') AND s.Compartimiento = r.Compartimiento
+    JOIN compsev s ON s.Proyecto=r.Proyecto AND ISNULL(s.Modelo,N'')=ISNULL(r.Modelo,N'') AND s.Compartimiento=r.Compartimiento
     GROUP BY r.Proyecto, r.Modelo
 ),
 cnt AS (
     SELECT Proyecto, Modelo,
-        COUNT(*)                                                     AS NumEquipos,
-        SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END)                 AS NumEquiposCriticos,
+        COUNT(*) AS NumEquipos,
+        SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumEquiposCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumEquiposSoloPrecau
-    FROM [dbo].[vw_ObservadosResumen]
-    GROUP BY Proyecto, Modelo
+    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto, Modelo
 )
 SELECT
-    a.Proyecto, a.Modelo,
+    ta.Proyecto, ta.Modelo,
     c.NumEquipos, c.NumEquiposCriticos, c.NumEquiposSoloPrecau,
     CAST(
-        N'**Detalle — flota observada, agrupado por componente** ('
-        + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos: '
-        + CAST(c.NumEquiposCriticos AS nvarchar(10)) + N' con crítico, '
-        + CAST(c.NumEquiposSoloPrecau AS nvarchar(10)) + N' solo precaución)' + NCHAR(10) + NCHAR(10)
-      + a.SeccionesMD
-      + NCHAR(10) + NCHAR(10) + l.LimitesMD
-    AS nvarchar(max)) AS DetalleTodosMD
-FROM secagg a
-JOIN cnt   c ON c.Proyecto = a.Proyecto AND ISNULL(c.Modelo, N'') = ISNULL(a.Modelo, N'')
-JOIN limtbl l ON l.Proyecto = a.Proyecto AND ISNULL(l.Modelo, N'') = ISNULL(a.Modelo, N'');
+        N'**Detalle de todos — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + ta.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
+    AS nvarchar(max)) AS MD,
+    CAST(
+        N'**Detalle de todos — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + ta.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
+    AS nvarchar(max)) AS DetalleTodosMD,
+    CAST(
+        N'**Detalle — SOLO CRÍTICOS — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + ca.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
+    AS nvarchar(max))  AS MD_Criticos,
+    CAST(
+        N'**Detalle — SOLO PRECAUCIÓN — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + pa.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
+    AS nvarchar(max))  AS MD_Precaucion
+FROM t_agg ta
+JOIN cnt    c ON c.Proyecto=ta.Proyecto AND ISNULL(c.Modelo,N'')=ISNULL(ta.Modelo,N'')
+JOIN limtbl l ON l.Proyecto=ta.Proyecto AND ISNULL(l.Modelo,N'')=ISNULL(ta.Modelo,N'')
+LEFT JOIN c_agg ca ON ca.Proyecto=ta.Proyecto AND ISNULL(ca.Modelo,N'')=ISNULL(ta.Modelo,N'')
+LEFT JOIN p_agg pa ON pa.Proyecto=ta.Proyecto AND ISNULL(pa.Modelo,N'')=ISNULL(ta.Modelo,N'');
 GO
 
 

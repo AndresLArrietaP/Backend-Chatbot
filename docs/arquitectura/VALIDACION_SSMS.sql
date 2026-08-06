@@ -786,3 +786,13 @@ SELECT MD
 FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
+
+
+/* ============================================================================
+   BLOQUE 35 — barrido filtrado (MD_Criticos / MD_Precaucion)
+   ---------------------------------------------------------------------------- */
+SELECT MD_Criticos   FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+SELECT MD_Precaucion FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+GO
