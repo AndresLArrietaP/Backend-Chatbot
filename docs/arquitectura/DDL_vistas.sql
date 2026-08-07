@@ -1586,6 +1586,8 @@ meta AS (
 )
 SELECT
     h.Equipo, h.compAbbr,
+    CAST(NULL AS nvarchar(max)) AS Observados,      -- contrato fijo (no aplica en PASO 1)
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones, -- contrato fijo (no aplica en PASO 1)
     CAST(
         N'**Tendencia — ' + h.Equipo + N' · ' + h.compAbbr + N'** · últimas ' + CAST(h.Ncols AS nvarchar(10)) + N' muestras' + NCHAR(10) + NCHAR(10)
       + N'| Campo | ' + h.cols + N' |' + NCHAR(10)

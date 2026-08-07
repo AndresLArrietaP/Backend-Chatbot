@@ -4,9 +4,17 @@ Molde ya probado (barrido + diagnóstico): **vista `*MD` (pre-arma tabla + Recom
 determinísticas + `Observados`) → flujo (`SELECT … AS MD …`) → tópico (Mensaje `{md}` + nodo
 análisis SIN conocimiento con entrada `{md}` + Mensaje `{recomendaciones}`)**.
 
-## Los 4 flujos reutilizables (config una sola vez)
-Cada flujo: **Query** `SELECT ⟦columna⟧ AS MD[, Observados, Recomendaciones] FROM ⟦vista⟧ WHERE …`
-· **Salidas** `md` (+ `observados`, `recomendaciones` donde aplique).
+## CONTRATO DE COLUMNAS (clave para que sea dinámico)
+**TODA vista `*MD` expone SIEMPRE las mismas 3 columnas:** `MD`, `Observados`, `Recomendaciones`
+(+ variantes opcionales como `MD_Completo`). Cuando un módulo no usa observados/recomendaciones
+(tendencia P1, historial, gráfico), la vista las devuelve como `CAST(NULL AS nvarchar(max))`.
+→ Así el **query del flujo NUNCA cambia**; solo cambias el valor de la entrada `vista` en cada tópico.
+El tópico simplemente **no imprime** las salidas que no usa. ⛔ NO editar el query por módulo
+(rompería los módulos que ya usan ese flujo).
+
+## Los 4 flujos reutilizables (config una sola vez — query FIJO)
+Cada flujo: **Query** `SELECT ⟦columna⟧ AS MD, Observados, Recomendaciones FROM ⟦vista⟧ WHERE …`
+· **Salidas** `md`, `observados`, `recomendaciones` (siempre las 3; el tópico usa las que necesite).
 Descripciones de salidas (SIEMPRE): `md`="Bloque markdown ya armado; se imprime tal cual." ·
 `observados`="Componentes:metales observados; insumo del análisis." · `recomendaciones`="Bloque de
 recomendaciones verbatim (solo observados con indicio) + cierre; se imprime tal cual."
