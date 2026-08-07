@@ -1717,3 +1717,35 @@ SELECT b.Equipo, b.compAbbr,
 FROM base b
 LEFT JOIN gobs go ON go.Equipo=b.Equipo AND go.Compartimiento=b.Compartimiento;
 GO
+
+
+/* ==== vw_TendenciaMetalMD (tendencia de un metal en todos los componentes) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaMetalMD] AS
+WITH te AS (
+    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, Spark, Orden,
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento='MOTOR' THEN 5 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr
+    FROM [dbo].[vw_TendenciaElemento]
+),
+rows_ AS (
+    SELECT Equipo, Parametro, compOrd,
+        CAST(N'| ' + compAbbr + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
+           + N' | ' + ISNULL(Tendencia, N'—') + N' | ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'·') + N' |' AS nvarchar(max)) AS rowMD
+    FROM te
+),
+body AS (
+    SELECT Equipo, Parametro,
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS bodyMD
+    FROM rows_ GROUP BY Equipo, Parametro
+)
+SELECT
+    b.Equipo, N'(todos)' AS compAbbr, b.Parametro,
+    CAST(NULL AS nvarchar(max)) AS Observados,       -- contrato fijo
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,  -- contrato fijo
+    CAST(
+        N'**Tendencia de ' + CONVERT(nvarchar(20), b.Parametro) + N' — ' + b.Equipo + N' (todos los componentes)**' + NCHAR(10) + NCHAR(10)
+      + N'| Componente | LP | LC | Última | Tend. | Σvida | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|' + NCHAR(10)
+      + b.bodyMD
+    AS nvarchar(max)) AS MD
+FROM body b;
+GO
