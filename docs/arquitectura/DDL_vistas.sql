@@ -2018,3 +2018,83 @@ SELECT b.Equipo, N'(todos)' AS compAbbr, b.Parametro,
     AS nvarchar(max)) AS MD
 FROM body b;
 GO
+
+
+/* ==== vw_TriageMD (triage MT de flota — caso de uso principal) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TriageMD] AS
+WITH base AS (
+    SELECT Equipo, Proyecto, Compartimiento, Estado_General, HorasComponente, FechaMuestreo,
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' ELSE N'—' END AS estadoChip, CASE WHEN Estado_General LIKE '%CRITIC%' THEN 1 WHEN Estado_General LIKE '%PRECAUC%' THEN 2 ELSE 3 END AS estadoOrd
+    FROM [dbo].[vw_DiagnosticoEquipo]
+    WHERE Compartimiento LIKE '%TRACCION%'
+),
+obsdet AS (   -- metales observados por MT (value:marker :C/:P)
+    SELECT b.Equipo, b.Proyecto, b.Compartimiento, mm.metal
+    FROM base b
+    JOIN [dbo].[vw_DiagnosticoEquipo] d ON d.Equipo=b.Equipo AND d.Compartimiento=b.Compartimiento
+    CROSS APPLY (VALUES
+            (N'Fe', Fe),
+            (N'PQ', PQ),
+            (N'Cr', Cr),
+            (N'Ni', Ni),
+            (N'Cu', Cu),
+            (N'Pb', Pb),
+            (N'Sn', Sn),
+            (N'Al', Al),
+            (N'Si', Si),
+            (N'Ca', Ca),
+            (N'Zn', Zn),
+            (N'P', P),
+            (N'V100', V100)
+    ) mm(metal, val)
+    WHERE mm.val LIKE '%:C%' OR mm.val LIKE '%:P%'
+),
+metcell AS (   -- "Fe, Cu" por MT observado
+    SELECT Equipo, Compartimiento, STRING_AGG(CONVERT(nvarchar(20),metal), N', ') AS metals
+    FROM obsdet GROUP BY Equipo, Compartimiento
+),
+rows_ AS (
+    SELECT b.Equipo, b.Proyecto, b.estadoOrd,
+        CAST(N'| ' + b.Equipo + N' | ' + b.compAbbr + N' | ' + b.estadoChip + N' | ' + ISNULL(mc.metals, N'—')
+           + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(b.HorasComponente AS decimal(18,0))),N'—')
+           + N' | ' + ISNULL(FORMAT(b.FechaMuestreo,'dd-MMM-yy'),N'—') + N' |' AS nvarchar(max)) AS rowMD
+    FROM base b LEFT JOIN metcell mc ON mc.Equipo=b.Equipo AND mc.Compartimiento=b.Compartimiento
+    WHERE b.Estado_General NOT LIKE '%OK%' AND b.Estado_General NOT LIKE '%NORMAL%'
+),
+body AS (
+    SELECT Proyecto, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY estadoOrd, Equipo) AS bodyMD
+    FROM rows_ GROUP BY Proyecto
+),
+cnt AS (
+    SELECT Proyecto, COUNT(*) AS Ntot,
+        SUM(CASE WHEN Estado_General NOT LIKE '%OK%' AND Estado_General NOT LIKE '%NORMAL%' THEN 1 ELSE 0 END) AS Nobs
+    FROM base GROUP BY Proyecto
+),
+recos AS (   -- por metal: indicio + equipos observados
+    SELECT od.Proyecto, r.ord, r.label, r.indicio, STRING_AGG(CONVERT(nvarchar(20), od.Equipo), N', ') AS equipos
+    FROM (SELECT DISTINCT Proyecto, Equipo, metal FROM obsdet) od
+    JOIN [dbo].[vw_Recomendaciones] r ON r.metal = od.metal
+    GROUP BY od.Proyecto, r.ord, r.label, r.indicio
+),
+recoblock AS (
+    SELECT Proyecto,
+        CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
+           + STRING_AGG(CONVERT(nvarchar(max), N'- **' + label + N':** ' + indicio + N' _(equipos: ' + equipos + N')_'), NCHAR(10)) WITHIN GROUP (ORDER BY ord)
+           + NCHAR(10) + NCHAR(10) + N'Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en el próximo PM. Retirar los 8 tapones magnéticos para inspección y limpieza en busca de particulado anormal. Para mayor información y detalle, contactar a confiabilidad.operaciones@kmmp.com.pe' AS nvarchar(max)) AS Recomendaciones
+    FROM recos GROUP BY Proyecto
+)
+SELECT
+    c.Proyecto, N'(todos)' AS Modelo,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    ISNULL(rb.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Ningún Motor de Tracción observado en la flota — sin recomendaciones aplicables.') AS Recomendaciones,
+    CAST(
+        N'**Triage Motores de Tracción — ' + c.Proyecto + N'** · ' + CAST(c.Nobs AS nvarchar(10)) + N' de ' + CAST(c.Ntot AS nvarchar(10)) + N' MT observados' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN bd.bodyMD IS NOT NULL THEN
+            N'| Equipo | MT | Estado | Metales Obs. | Hrs Comp | Últ. |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|' + NCHAR(10) + bd.bodyMD
+        ELSE N'_Ninguno observado — todos los Motores de Tracción del proyecto dentro de límite._' END
+    AS nvarchar(max)) AS MD
+FROM cnt c
+LEFT JOIN body bd ON bd.Proyecto=c.Proyecto
+LEFT JOIN recoblock rb ON rb.Proyecto=c.Proyecto;
+GO

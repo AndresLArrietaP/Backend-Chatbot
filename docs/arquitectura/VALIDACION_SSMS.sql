@@ -869,3 +869,8 @@ GO
 SELECT MD FROM [dbo].[vw_HistorialEquipoMD] WITH (NOLOCK) WHERE Equipo LIKE '%CA3171%';
 SELECT MD FROM [dbo].[vw_HistorialFlotaMD]  WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
+
+/* ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ==== */
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
