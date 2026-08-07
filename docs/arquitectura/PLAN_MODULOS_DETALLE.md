@@ -83,11 +83,12 @@ Sist. Hidr., Motor). Traduce apodos." · `parametro`="Metal/parámetro (ej. Fe, 
   · **Regla general:** una variante que el modelo no puede inferir de la frase (como `columna`) NO se
   expone como entrada — se fija en la Acción; así el tópico no interroga al usuario.
 
-### 5. Tendencia de un metal (todos los componentes)  ·  vista `vw_TendenciaMetalMD` (yo)
-- **Formato:** 1 fila por COMPONENTE × fechas en columnas + Σvida + Spark (horizontal). Firma: **equipo +
-  parametro**. **Flujo:** `MD_metal` (sin compartimiento). **Tópico "Tendencia de un metal":** Descripción
-  *"Tendencia de UN metal en todos los componentes de un equipo. «tendencia del cobre del X», «cómo ha
-  variado el Fe del X». Rellena equipo, parametro. NO arrastres componente del turno previo."*
+### 5. Tendencia de un metal (todos los componentes)  ·  vista `vw_TendenciaMetalMD` (yo) ✅
+- **Formato:** 1 fila por COMPONENTE (narrow, 7 col): `| Componente | LP | LC | Última | Tend. | Σvida | Spark |`.
+  Firma: **equipo + parametro**. **Flujo:** `MD_metal` con **`compartimiento = todos`** (texto fijo — la vista
+  expone `compAbbr = '(todos)'`, así `compAbbr LIKE '%todos%'` matchea). ⚠ NO dejar compartimiento vacío/`--`
+  (LIKE no matchea → 0 filas → BadGateway/first-null). **Tópico "Tendencia de un metal":** entradas equipo +
+  parametro; en la Acción compartimiento fijo=`todos`. Molde con análisis universal.
 
 ### 6. Gráfico de tendencia  ·  vista `vw_TendenciaGrafico` (YA existe, columna `Grafico`)
 - **Formato:** gráfico ASCII vertical pre-armado (ya lo trae la vista). Firma: **equipo + compartimiento
