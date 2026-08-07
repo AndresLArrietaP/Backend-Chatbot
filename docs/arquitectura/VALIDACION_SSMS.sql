@@ -874,3 +874,35 @@ GO
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
+
+/* ==== BLOQUE 50 — CORROBORAR límites gerencia (docs/gerencia/Limites.xlsx) vs [Eqpcare].[lc] ====
+   Origen gerencia = matriz Proyecto x Componente x Modelo, ~60 parámetros (Fe,Al,Cu,Pb,Sn,Cr,Ni,Si,
+   Na,K,Zn,P,B,Ca,Mg,PQ,TBN,Visc,ISO...). HALLAZGO: Pb/Sn SÍ tienen LC (Antapaccay MT: Pb LC=5, Sn LC=5).
+   Objetivo: (a) ver qué columnas/valores tiene realmente Eqpcare.lc; (b) detectar faltantes vs gerencia. */
+GO
+-- 50.1 Columnas reales de [Eqpcare].[lc] (¿existen [PLOMO - LC], [ESTAÑO - LC], [TIPO], [MODELO]?)
+SELECT ORDINAL_POSITION, COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA='Eqpcare' AND TABLE_NAME='lc'
+ORDER BY ORDINAL_POSITION;
+GO
+-- 50.2 Límites de Motor de Tracción por proyecto (contrastar 1:1 con Limites.xlsx filas MT)
+--      Antapaccay MT: Fe 200/230, Pb 3/5, Sn 3/5, Cu 10/15, Cr 2/3, Ni 2/3, Si 75/80, PQ 130/150
+SELECT [Proyecto], [COMPONENTE],
+       [FIERRO - LP],[FIERRO - LC],[PLOMO - LP],[PLOMO - LC],[ESTAÑO - LP],[ESTAÑO - LC],
+       [COBRE - LP],[COBRE - LC],[CROMO - LP],[CROMO - LC],[NIQUEL - LP],[NIQUEL - LC],
+       [SILICIO - LP],[SILICIO - LC],[PQ - LP],[PQ - LC],[TBN - LP],[TBN - LC]
+FROM [Eqpcare].[lc] WITH (NOLOCK)
+WHERE [COMPONENTE] LIKE '%TRACCION%'
+ORDER BY [Proyecto], [COMPONENTE];
+GO
+-- 50.3 ¿Eqpcare.lc trae [PLOMO - LC] / [ESTAÑO - LC] poblados? (si NULL/ausente → falta cargar del Excel)
+--      Si estas columnas NO existen: la fundación vw_MuestrasEstado NO puede derivar Pb_LC/Sn_LC.
+SELECT [Proyecto], [COMPONENTE], [PLOMO - LP], [PLOMO - LC], [ESTAÑO - LP], [ESTAÑO - LC]
+FROM [Eqpcare].[lc] WITH (NOLOCK)
+WHERE [COMPONENTE] LIKE '%TRACCION%' AND [Proyecto]='ANTAPACCAY';
+GO
+-- 50.4 Vista fundación: ¿expone Pb_LC / Sn_LC? (hoy NO — solo Pb_LP/Sn_LP). Confirmar el gap.
+SELECT TOP 1 * FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE Compartimiento LIKE '%TRACCION%';   -- inspeccionar columnas Pb_/Sn_ en el grid
+GO
