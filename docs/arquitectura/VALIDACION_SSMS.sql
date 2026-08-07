@@ -811,8 +811,7 @@ SELECT * FROM [dbo].[vw_Recomendaciones];
 SELECT Observados, Recomendaciones FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
 GO
 
-
-/* ==== BLOQUE 38 — vw_UltimoAnalisisMD ==== */
-SELECT Observados, Recomendaciones FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK) WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH';
-SELECT MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK) WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH';
+/* ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ==== */
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO

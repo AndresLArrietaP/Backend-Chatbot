@@ -1392,7 +1392,7 @@ omall AS (
           WHERE ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) z
     GROUP BY Equipo, Compartimiento
 )
-SELECT u.Equipo, u.Proyecto, u.Modelo, u.Compartimiento,
+SELECT u.Equipo, u.Proyecto, u.Modelo, u.Compartimiento, u.compAbbr,
     ISNULL(u.compAbbr + N': ' + oaz.metals, u.compAbbr + N': (sin observados)') AS Observados,
     ISNULL(rc.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
     CAST(

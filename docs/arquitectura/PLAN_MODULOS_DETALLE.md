@@ -15,8 +15,12 @@ recomendaciones verbatim (solo observados con indicio) + cierre; se imprime tal 
 |---|---|---|---|
 | **MD_flota** | vista, proyecto, modelo, columna | `Proyecto LIKE '%⟦proyecto⟧%' AND Modelo LIKE '%⟦modelo⟧%'` | barrido✅, triage, historial-flota, conteo |
 | **MD_equipo** ✅ | vista, equipo, columna | `Equipo LIKE '%⟦equipo⟧%'` | diagnóstico✅, condición, historial-equipo |
-| **MD_equipo_comp** | vista, equipo, compartimiento, columna | `Equipo LIKE '%⟦equipo⟧%' AND Compartimiento LIKE '%⟦compartimiento⟧%'` | último-comp, tendencia P1/detalle, historial-comp |
-| **MD_metal** | vista, equipo, compartimiento, parametro, columna | `Equipo LIKE '%⟦equipo⟧%' [AND Compartimiento LIKE '%⟦compartimiento⟧%'] AND Parametro='⟦parametro⟧'` | tendencia de un metal, gráfico |
+| **MD_equipo_comp** | vista, equipo, compartimiento, columna | `Equipo LIKE '%⟦equipo⟧%' AND compAbbr LIKE '%⟦compartimiento⟧%'` | último-comp, tendencia P1/detalle, historial-comp |
+| **MD_metal** | vista, equipo, compartimiento, parametro, columna | `Equipo LIKE '%⟦equipo⟧%' [AND compAbbr LIKE '%⟦compartimiento⟧%'] AND Parametro='⟦parametro⟧'` | tendencia de un metal, gráfico |
+
+> ⚠ **Filtrar por `compAbbr`, NO por `Compartimiento`.** En BD el valor real es `MOTOR DE TRACCION LH`;
+> el orquestador manda la **abreviatura** (`MT LH`, `Sist. Hidr.`, `Motor`, `RD LH/RH`). Cada vista con
+> compartimiento **expone la columna `compAbbr`** con esas abreviaturas (disjuntas → "Motor" no cae en MT).
 
 **Descripciones de variables de tema** (rellenables por IA):
 `equipo`="Código del equipo (ej. CA3177)." · `compartimiento`="Componente/compartimiento (ej. MT LH,
