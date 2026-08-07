@@ -331,8 +331,8 @@ WITH b AS (
             CASE WHEN Cr_ppm    > ISNULL(Cr_LC,9999) THEN ',Cr:C' WHEN Cr_ppm    > ISNULL(Cr_LP,9999) THEN ',Cr:P' ELSE '' END,
             CASE WHEN Ni_ppm    > ISNULL(Ni_LC,9999) THEN ',Ni:C' WHEN Ni_ppm    > ISNULL(Ni_LP,9999) THEN ',Ni:P' ELSE '' END,
             CASE WHEN Cu_ppm    > ISNULL(Cu_LC,9999) THEN ',Cu:C' WHEN Cu_ppm    > ISNULL(Cu_LP,9999) THEN ',Cu:P' ELSE '' END,
-            CASE WHEN Pb_ppm    > ISNULL(Pb_LP,9999) THEN ',Pb:P' ELSE '' END,
-            CASE WHEN Sn_ppm    > ISNULL(Sn_LP,9999) THEN ',Sn:P' ELSE '' END,
+            CASE WHEN Pb_ppm    > ISNULL(Pb_LC,9999) THEN ',Pb:C' WHEN Pb_ppm    > ISNULL(Pb_LP,9999) THEN ',Pb:P' ELSE '' END,
+            CASE WHEN Sn_ppm    > ISNULL(Sn_LC,9999) THEN ',Sn:C' WHEN Sn_ppm    > ISNULL(Sn_LP,9999) THEN ',Sn:P' ELSE '' END,
             CASE WHEN Al_ppm    > ISNULL(Al_LC,9999) THEN ',Al:C' WHEN Al_ppm    > ISNULL(Al_LP,9999) THEN ',Al:P' ELSE '' END,
             CASE WHEN Si_ppm    > ISNULL(Si_LC,9999) THEN ',Si:C' WHEN Si_ppm    > ISNULL(Si_LP,9999) THEN ',Si:P' ELSE '' END,
             CASE WHEN TBN_LP IS NOT NULL AND TBN > 0 AND TBN < TBN_LP THEN ',TBN:P' ELSE '' END
@@ -351,14 +351,16 @@ WITH b AS (
         + CASE WHEN Ni_ppm    > ISNULL(Ni_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Cu_ppm    > ISNULL(Cu_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Al_ppm    > ISNULL(Al_LC,9999) THEN 1 ELSE 0 END
-        + CASE WHEN Si_ppm    > ISNULL(Si_LC,9999) THEN 1 ELSE 0 END) AS NumCrit,
+        + CASE WHEN Si_ppm    > ISNULL(Si_LC,9999) THEN 1 ELSE 0 END
+        + CASE WHEN Pb_ppm    > ISNULL(Pb_LC,9999) THEN 1 ELSE 0 END
+        + CASE WHEN Sn_ppm    > ISNULL(Sn_LC,9999) THEN 1 ELSE 0 END) AS NumCrit,
         ( CASE WHEN Fe_ppm    > ISNULL(Fe_LP,9999) AND Fe_ppm    <= ISNULL(Fe_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Indice_PQ > ISNULL(PQ_LP,9999) AND Indice_PQ <= ISNULL(PQ_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Cr_ppm    > ISNULL(Cr_LP,9999) AND Cr_ppm    <= ISNULL(Cr_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Ni_ppm    > ISNULL(Ni_LP,9999) AND Ni_ppm    <= ISNULL(Ni_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Cu_ppm    > ISNULL(Cu_LP,9999) AND Cu_ppm    <= ISNULL(Cu_LC,9999) THEN 1 ELSE 0 END
-        + CASE WHEN Pb_ppm    > ISNULL(Pb_LP,9999) THEN 1 ELSE 0 END
-        + CASE WHEN Sn_ppm    > ISNULL(Sn_LP,9999) THEN 1 ELSE 0 END
+        + CASE WHEN Pb_ppm    > ISNULL(Pb_LP,9999) AND Pb_ppm    <= ISNULL(Pb_LC,9999) THEN 1 ELSE 0 END
+        + CASE WHEN Sn_ppm    > ISNULL(Sn_LP,9999) AND Sn_ppm    <= ISNULL(Sn_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Al_ppm    > ISNULL(Al_LP,9999) AND Al_ppm    <= ISNULL(Al_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Si_ppm    > ISNULL(Si_LP,9999) AND Si_ppm    <= ISNULL(Si_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN TBN_LP IS NOT NULL AND TBN > 0 AND TBN < TBN_LP THEN 1 ELSE 0 END) AS NumPrec,
@@ -398,7 +400,7 @@ WITH b AS (
             CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg '+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'') ELSE '' END
         ),1,3,'') AS LimObs,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
-        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP, Al_ppm, Al_LP, Al_LC,
+        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC,
         Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC,
         K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
     FROM [dbo].[vw_MuestrasEstado]

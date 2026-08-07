@@ -927,3 +927,18 @@ GO
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
+
+/* ==== BLOQUE 52 — VALIDAR Pb/Sn LC en BARRIDO (vw_ObservadosFlota) ====
+   Re-correr en orden: vw_ObservadosFlota -> vw_ObservadosResumen -> vw_ObservadosResumenMD / vw_ObservadosBarridoMD. */
+GO
+-- 52.1 ¿Mets_Obs ahora incluye Pb:C / Sn:C donde el ppm supera LC?
+SELECT TOP 20 Equipo, Compartimiento, NumCrit, NumPrec, Mets_Obs
+FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK)
+WHERE Proyecto='Antapaccay' AND Compartimiento LIKE '%TRACCION%'
+  AND (Mets_Obs LIKE '%Pb:C%' OR Mets_Obs LIKE '%Sn:C%')
+ORDER BY NumCrit DESC;
+GO
+-- 52.2 Barrido resumen de Antapaccay 980E (los Pb/Sn crít deben contar en 🔴 Crít, no en 🟡 Prec)
+SELECT MD FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
+GO
