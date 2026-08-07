@@ -96,8 +96,12 @@ Sist. Hidr., Motor). Traduce apodos." · `parametro`="Metal/parámetro (ej. Fe, 
   **Opción A (recomendada):** tópico determinístico «Gráfico», Mensaje que imprime **entre ` ``` `** el
   `{grafico}`. **Opción B (tu idea):** dejarlo a **KomfIA SQL** (generativo) — solo si el ``` da problemas
   en el canal. Empezamos por A (el gráfico ya es pre-armado, no lo re-escribe nadie).
-- **Flujo:** `MD_metal`, vista=`vw_TendenciaGrafico`, columna=`Grafico` (alias AS MD). **Tópico "Gráfico
-  de tendencia":** Mensaje con el bloque ` ``` {md} ``` `.
+- **Flujo:** `MD_metal`, vista=`vw_TendenciaGraficoMD` (el fence ` ``` ` ya viene dentro del MD).
+  **Tópico "Gráfico de tendencia":** Mensaje `{md}` (verbatim). ✅ El ``` renderiza monospace correcto.
+  · **INTERDEPENDENCIA:** la descripción debe cubrir 2 casos — (a) metal nombrado, (b) seguimiento tras
+  tendencia («ahora la gráfica») tomando equipo/compartimiento del contexto. Y la variable `parametro`
+  se pone en **"Preguntar si no se encuentra"** ("¿De qué metal? Cr, Fe, Cu…") → así NO cae a KomfIA SQL
+  cuando piden "la gráfica" sin metal. Sin esto, el fallback a KomfIA SQL devuelve JSON crudo.
 
 ### 7. Historial (5 variantes)  ·  vistas `vw_HistorialMD` + `vw_HistorialFlotaMD` (yo)
 - **Formato:** filas cronológicas (fecha en FILAS, ⛔ no columnas). 5 variantes por firma:
