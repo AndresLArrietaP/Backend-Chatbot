@@ -57,7 +57,9 @@ SELECT
     MIN([MAGNESIO - LP])AS Mg_LP, MIN([MAGNESIO - LC])AS Mg_LC,
     MIN([PLOMO - LP])   AS Pb_LP, MIN([PLOMO - LC])   AS Pb_LC, MIN([ESTAÑO - LP])  AS Sn_LP, MIN([ESTAÑO - LC])  AS Sn_LC,
     MIN([PQ - LP])      AS PQ_LP, MIN([PQ - LC])      AS PQ_LC,
-    MAX([TBN - LP])     AS TBN_LP
+    MAX([TBN - LP])     AS TBN_LP,
+    MIN([VISC - LCI])   AS V100_LCI, MIN([VISC - LCS])  AS V100_LCS,
+    MIN([VISC - LPI])   AS V100_LPI, MIN([VISC - LPS])  AS V100_LPS
 FROM [Eqpcare].[lc]
 GROUP BY
     UPPER(LTRIM(RTRIM([Proyecto]))),
@@ -201,7 +203,11 @@ SELECT
     CASE WHEN m.TBN IS NULL THEN 'SIN DATO'
          WHEN m.TBN < ISNULL(lim.TBN_LP,0) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_TBN,
 
-    m.B_ppm, m.P_ppm, m.V100,
+    m.B_ppm, m.P_ppm, m.V100, lim.V100_LCI, lim.V100_LCS,
+    CASE WHEN m.V100 IS NULL THEN 'SIN DATO'
+         WHEN (lim.V100_LCI IS NOT NULL AND m.V100 < lim.V100_LCI) OR (lim.V100_LCS IS NOT NULL AND m.V100 > lim.V100_LCS) THEN 'CRITICO'
+         WHEN (lim.V100_LPI IS NOT NULL AND m.V100 < lim.V100_LPI) OR (lim.V100_LPS IS NOT NULL AND m.V100 > lim.V100_LPS) THEN 'PRECAUCION'
+         ELSE 'OK' END AS Estado_V100,
 
     /* Estado_General: SIN CAMBIOS respecto a v3 (Ca/Zn/B/P informativos; el triage no se altera) */
     CASE
@@ -214,6 +220,7 @@ SELECT
           OR m.Pb_ppm    > ISNULL(lim.Pb_LC,9999)
           OR m.Sn_ppm    > ISNULL(lim.Sn_LC,9999)
           OR m.Indice_PQ > ISNULL(lim.PQ_LC,9999)
+          OR (lim.V100_LCI IS NOT NULL AND m.V100 < lim.V100_LCI) OR (lim.V100_LCS IS NOT NULL AND m.V100 > lim.V100_LCS)
         THEN 'CRITICO'
         WHEN m.Fe_ppm    > ISNULL(lim.Fe_LP,9999)
           OR m.Cr_ppm    > ISNULL(lim.Cr_LP,9999)
@@ -225,6 +232,7 @@ SELECT
           OR m.Sn_ppm    > ISNULL(lim.Sn_LP,9999)
           OR m.Indice_PQ > ISNULL(lim.PQ_LP,9999)
           OR (lim.TBN_LP IS NOT NULL AND m.TBN > 0 AND m.TBN < lim.TBN_LP)
+          OR (lim.V100_LPI IS NOT NULL AND m.V100 < lim.V100_LPI) OR (lim.V100_LPS IS NOT NULL AND m.V100 > lim.V100_LPS)
         THEN 'PRECAUCION'
         ELSE 'OK'
     END AS Estado_General,

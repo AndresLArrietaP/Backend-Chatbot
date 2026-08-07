@@ -942,3 +942,21 @@ GO
 SELECT MD FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
+
+/* ==== BLOQUE 53 — VALIDAR salud (V100/viscosidad) en la fundación ====
+   Re-correr: vw_LimitesPorComponente -> vw_MuestrasEstado. V100 fuera de rango [LCI,LCS] = CRITICO. */
+GO
+-- 53.1 ¿Estado_V100 marca crítico/precaución donde V100 sale del rango? (Antapaccay MT: LCI=70.1 LCS=85.7)
+SELECT TOP 30 Proyecto, Equipo, Compartimiento, V100, V100_LCI, V100_LCS, Estado_V100, Estado_General
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE Estado_V100 IN ('CRITICO','PRECAUCION')
+ORDER BY Estado_V100, Proyecto, Equipo;
+GO
+-- 53.2 IMPACTO: ¿cuántos componentes NUEVOS pasan a observado SOLO por V100?
+--      (Estado_General<>OK pero ningún metal de desgaste fuera — el disparo es la viscosidad)
+SELECT COUNT(*) AS SoloPorV100
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia=1 AND Estado_V100<>'OK'
+  AND Fe_ppm<=ISNULL(Fe_LP,9999) AND Cr_ppm<=ISNULL(Cr_LP,9999) AND Cu_ppm<=ISNULL(Cu_LP,9999)
+  AND Pb_ppm<=ISNULL(Pb_LP,9999) AND Sn_ppm<=ISNULL(Sn_LP,9999);
+GO
