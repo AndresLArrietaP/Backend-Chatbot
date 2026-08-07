@@ -55,7 +55,7 @@ SELECT
     MIN([POTASIO - LP]) AS K_LP,  MIN([POTASIO - LC]) AS K_LC,
     MIN([SODIO - LP])   AS Na_LP, MIN([SODIO - LC])   AS Na_LC,
     MIN([MAGNESIO - LP])AS Mg_LP, MIN([MAGNESIO - LC])AS Mg_LC,
-    MIN([PLOMO - LP])   AS Pb_LP, MIN([ESTAÑO - LP])  AS Sn_LP,
+    MIN([PLOMO - LP])   AS Pb_LP, MIN([PLOMO - LC])   AS Pb_LC, MIN([ESTAÑO - LP])  AS Sn_LP, MIN([ESTAÑO - LC])  AS Sn_LC,
     MIN([PQ - LP])      AS PQ_LP, MIN([PQ - LC])      AS PQ_LC,
     MAX([TBN - LP])     AS TBN_LP
 FROM [Eqpcare].[lc]
@@ -182,12 +182,14 @@ SELECT
          WHEN m.Mg_ppm > ISNULL(lim.Mg_LC,9999) THEN 'CRITICO'
          WHEN m.Mg_ppm > ISNULL(lim.Mg_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Mg,
 
-    m.Pb_ppm,  lim.Pb_LP,
+    m.Pb_ppm,  lim.Pb_LP, lim.Pb_LC,
     CASE WHEN m.Pb_ppm IS NULL THEN 'SIN DATO'
+         WHEN m.Pb_ppm > ISNULL(lim.Pb_LC,9999) THEN 'CRITICO'
          WHEN m.Pb_ppm > ISNULL(lim.Pb_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Pb,
 
-    m.Sn_ppm,  lim.Sn_LP,
+    m.Sn_ppm,  lim.Sn_LP, lim.Sn_LC,
     CASE WHEN m.Sn_ppm IS NULL THEN 'SIN DATO'
+         WHEN m.Sn_ppm > ISNULL(lim.Sn_LC,9999) THEN 'CRITICO'
          WHEN m.Sn_ppm > ISNULL(lim.Sn_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Sn,
 
     m.Indice_PQ, lim.PQ_LP, lim.PQ_LC,
@@ -209,6 +211,8 @@ SELECT
           OR m.Cu_ppm    > ISNULL(lim.Cu_LC,9999)
           OR m.Si_ppm    > ISNULL(lim.Si_LC,9999)
           OR m.Al_ppm    > ISNULL(lim.Al_LC,9999)
+          OR m.Pb_ppm    > ISNULL(lim.Pb_LC,9999)
+          OR m.Sn_ppm    > ISNULL(lim.Sn_LC,9999)
           OR m.Indice_PQ > ISNULL(lim.PQ_LC,9999)
         THEN 'CRITICO'
         WHEN m.Fe_ppm    > ISNULL(lim.Fe_LP,9999)
@@ -529,7 +533,7 @@ CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
 WITH s AS (
     SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM,
            Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
-           Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP,
+           Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
            Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC,
            B_ppm, P_ppm, V100, TBN, TBN_LP
@@ -549,8 +553,8 @@ u AS (
         ('Cr',  'Met. Desg.', 3,  0,0, s.Cr_ppm,    s.Cr_LP, s.Cr_LC),
         ('Ni',  'Met. Desg.', 4,  0,0, s.Ni_ppm,    s.Ni_LP, s.Ni_LC),
         ('Cu',  'Met. Desg.', 5,  0,0, s.Cu_ppm,    s.Cu_LP, s.Cu_LC),
-        ('Pb',  'Met. Desg.', 6,  0,0, s.Pb_ppm,    s.Pb_LP, NULL),
-        ('Sn',  'Met. Desg.', 7,  0,0, s.Sn_ppm,    s.Sn_LP, NULL),
+        ('Pb',  'Met. Desg.', 6,  0,0, s.Pb_ppm,    s.Pb_LP, s.Pb_LC),
+        ('Sn',  'Met. Desg.', 7,  0,0, s.Sn_ppm,    s.Sn_LP, s.Sn_LC),
         ('Al',  'Met. Desg.', 8,  0,0, s.Al_ppm,    s.Al_LP, s.Al_LC),
         ('Si',  'Contam.',    9,  0,0, s.Si_ppm,    s.Si_LP, s.Si_LC),
         ('Ca',  'Contam.',    10, 1,0, s.Ca_ppm,    s.Ca_LP, s.Ca_LC),
@@ -1374,7 +1378,7 @@ WITH u AS (
 om AS (
     SELECT Equipo, Compartimiento, mm.metal
     FROM [dbo].[vw_UltimoAnalisisAceite]
-    CROSS APPLY (VALUES (N'Fe',Fe_ppm,Fe_LP,Fe_LC),(N'PQ',Indice_PQ,PQ_LP,PQ_LC),(N'Cr',Cr_ppm,Cr_LP,Cr_LC),(N'Ni',Ni_ppm,Ni_LP,Ni_LC),(N'Cu',Cu_ppm,Cu_LP,Cu_LC),(N'Pb',Pb_ppm,Pb_LP,NULL),(N'Sn',Sn_ppm,Sn_LP,NULL),(N'Al',Al_ppm,Al_LP,Al_LC),(N'Si',Si_ppm,Si_LP,Si_LC),(N'Ca',Ca_ppm,Ca_LP,Ca_LC),(N'Zn',Zn_ppm,Zn_LP,Zn_LC),(N'K',K_ppm,K_LP,K_LC),(N'Na',Na_ppm,Na_LP,Na_LC),(N'Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
+    CROSS APPLY (VALUES (N'Fe',Fe_ppm,Fe_LP,Fe_LC),(N'PQ',Indice_PQ,PQ_LP,PQ_LC),(N'Cr',Cr_ppm,Cr_LP,Cr_LC),(N'Ni',Ni_ppm,Ni_LP,Ni_LC),(N'Cu',Cu_ppm,Cu_LP,Cu_LC),(N'Pb',Pb_ppm,Pb_LP,Pb_LC),(N'Sn',Sn_ppm,Sn_LP,Sn_LC),(N'Al',Al_ppm,Al_LP,Al_LC),(N'Si',Si_ppm,Si_LP,Si_LC),(N'Ca',Ca_ppm,Ca_LP,Ca_LC),(N'Zn',Zn_ppm,Zn_LP,Zn_LC),(N'K',K_ppm,K_LP,K_LC),(N'Na',Na_ppm,Na_LP,Na_LC),(N'Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
     WHERE (ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) AND Compartimiento LIKE '%TRACCION%'
 ),
 reco AS (
@@ -1390,7 +1394,7 @@ omall AS (
     SELECT Equipo, Compartimiento, STRING_AGG(metal, N', ') AS metals
     FROM (SELECT Equipo, Compartimiento, mm.metal
           FROM [dbo].[vw_UltimoAnalisisAceite]
-          CROSS APPLY (VALUES (N'Fe',Fe_ppm,Fe_LP,Fe_LC),(N'PQ',Indice_PQ,PQ_LP,PQ_LC),(N'Cr',Cr_ppm,Cr_LP,Cr_LC),(N'Ni',Ni_ppm,Ni_LP,Ni_LC),(N'Cu',Cu_ppm,Cu_LP,Cu_LC),(N'Pb',Pb_ppm,Pb_LP,NULL),(N'Sn',Sn_ppm,Sn_LP,NULL),(N'Al',Al_ppm,Al_LP,Al_LC),(N'Si',Si_ppm,Si_LP,Si_LC),(N'Ca',Ca_ppm,Ca_LP,Ca_LC),(N'Zn',Zn_ppm,Zn_LP,Zn_LC),(N'K',K_ppm,K_LP,K_LC),(N'Na',Na_ppm,Na_LP,Na_LC),(N'Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
+          CROSS APPLY (VALUES (N'Fe',Fe_ppm,Fe_LP,Fe_LC),(N'PQ',Indice_PQ,PQ_LP,PQ_LC),(N'Cr',Cr_ppm,Cr_LP,Cr_LC),(N'Ni',Ni_ppm,Ni_LP,Ni_LC),(N'Cu',Cu_ppm,Cu_LP,Cu_LC),(N'Pb',Pb_ppm,Pb_LP,Pb_LC),(N'Sn',Sn_ppm,Sn_LP,Sn_LC),(N'Al',Al_ppm,Al_LP,Al_LC),(N'Si',Si_ppm,Si_LP,Si_LC),(N'Ca',Ca_ppm,Ca_LP,Ca_LC),(N'Zn',Zn_ppm,Zn_LP,Zn_LC),(N'K',K_ppm,K_LP,K_LC),(N'Na',Na_ppm,Na_LP,Na_LC),(N'Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
           WHERE ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) z
     GROUP BY Equipo, Compartimiento
 )
@@ -1409,8 +1413,8 @@ SELECT u.Equipo, u.Proyecto, u.Modelo, u.Compartimiento, u.compAbbr,
             N'| Cr | ' + ISNULL(CONVERT(varchar(20),CAST(Cr_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Cr_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Cr_ppm>ISNULL(Cr_LC,9999) THEN CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+N' 🟥' WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
             N'| Ni | ' + ISNULL(CONVERT(varchar(20),CAST(Ni_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Ni_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Ni_ppm>ISNULL(Ni_LC,9999) THEN CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+N' 🟥' WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
             N'| Cu | ' + ISNULL(CONVERT(varchar(20),CAST(Cu_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Cu_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Cu_ppm>ISNULL(Cu_LC,9999) THEN CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+N' 🟥' WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
-            N'| Pb | ' + ISNULL(CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1))), N'—') + N' | ' + N'—' + N' | ' + ISNULL(CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1))) END, N'—') + N' |' + NCHAR(10) +
-            N'| Sn | ' + ISNULL(CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1))), N'—') + N' | ' + N'—' + N' | ' + ISNULL(CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1))) END, N'—') + N' |' + NCHAR(10) +
+            N'| Pb | ' + ISNULL(CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Pb_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Pb_ppm>ISNULL(Pb_LC,9999) THEN CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+N' 🟥' WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
+            N'| Sn | ' + ISNULL(CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Sn_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Sn_ppm>ISNULL(Sn_LC,9999) THEN CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+N' 🟥' WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
             N'| Al | ' + ISNULL(CONVERT(varchar(20),CAST(Al_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Al_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Al_ppm>ISNULL(Al_LC,9999) THEN CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+N' 🟥' WHEN Al_ppm>ISNULL(Al_LP,9999) THEN CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
             N'| Si | ' + ISNULL(CONVERT(varchar(20),CAST(Si_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Si_LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(CASE WHEN Si_ppm>ISNULL(Si_LC,9999) THEN CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+N' 🟥' WHEN Si_ppm>ISNULL(Si_LP,9999) THEN CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+N'' END, N'—') + N' |' + NCHAR(10) +
             N'| **Contam.** | | | |' + NCHAR(10) +
@@ -1822,7 +1826,7 @@ CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalMD] AS
 WITH s AS (
     SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_recencia, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
-        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
+        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
         Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
     FROM [dbo].[vw_MuestrasRankeadas]
@@ -1838,8 +1842,8 @@ u AS (
             (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
             (N'Ni',Ni_ppm,Ni_LP,Ni_LC),
             (N'Cu',Cu_ppm,Cu_LP,Cu_LC),
-            (N'Pb',Pb_ppm,Pb_LP,NULL),
-            (N'Sn',Sn_ppm,Sn_LP,NULL),
+            (N'Pb',Pb_ppm,Pb_LP,Pb_LC),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC),
             (N'Al',Al_ppm,Al_LP,Al_LC),
             (N'Si',Si_ppm,Si_LP,Si_LC),
             (N'Ca',Ca_ppm,Ca_LP,Ca_LC),
@@ -1970,7 +1974,7 @@ CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalEquipoMD] AS
 WITH s0 AS (
     SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm,Fe_LP,Fe_LC,Indice_PQ,PQ_LP,PQ_LC,Cr_ppm,Cr_LP,Cr_LC,Ni_ppm,Ni_LP,Ni_LC,Cu_ppm,Cu_LP,Cu_LC,
-        Pb_ppm,Pb_LP,Sn_ppm,Sn_LP,Al_ppm,Al_LP,Al_LC,Si_ppm,Si_LP,Si_LC,Ca_ppm,Ca_LP,Ca_LC,Zn_ppm,Zn_LP,Zn_LC,
+        Pb_ppm,Pb_LP,Pb_LC,Sn_ppm,Sn_LP,Sn_LC,Al_ppm,Al_LP,Al_LC,Si_ppm,Si_LP,Si_LC,Ca_ppm,Ca_LP,Ca_LC,Zn_ppm,Zn_LP,Zn_LC,
         K_ppm,K_LP,K_LC,Na_ppm,Na_LP,Na_LC,Mg_ppm,Mg_LP,Mg_LC,B_ppm,P_ppm,V100,TBN,TBN_LP,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC) AS grn
     FROM [dbo].[vw_MuestrasRankeadas]
@@ -1986,8 +1990,8 @@ u AS (
             (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
             (N'Ni',Ni_ppm,Ni_LP,Ni_LC),
             (N'Cu',Cu_ppm,Cu_LP,Cu_LC),
-            (N'Pb',Pb_ppm,Pb_LP,NULL),
-            (N'Sn',Sn_ppm,Sn_LP,NULL),
+            (N'Pb',Pb_ppm,Pb_LP,Pb_LC),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC),
             (N'Al',Al_ppm,Al_LP,Al_LC),
             (N'Si',Si_ppm,Si_LP,Si_LC),
             (N'Ca',Ca_ppm,Ca_LP,Ca_LC),
