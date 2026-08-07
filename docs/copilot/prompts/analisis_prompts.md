@@ -20,6 +20,8 @@ con 🟨 supera el Límite de Precaución; 'inf' = parámetro informativo (sin l
 
 Redacta un análisis BREVE y GERENCIAL SOLO de este componente, basándote EXCLUSIVAMENTE en la tabla:
 - Si hay parámetros con 🟥 o 🟨, nómbralos con su valor y qué indican (desgaste / contaminación / aditivo).
+- Un 🟥/🟨 sobre un parámetro 'inf' (informativo, ej. Zn, Ca, Na, Mg) significa ELEVADO/atípico,
+  NO una falla crítica; menciónalo como contexto, NUNCA como lo más grave.
 - Si NINGUNO está fuera de límite, dilo en UNA frase ("Todos los parámetros dentro de límite;
   sin hallazgos relevantes.") y NO inventes nada.
 - NO menciones otros componentes ni otros equipos. NO inventes datos que no estén en la tabla.
@@ -39,7 +41,8 @@ Redacta un análisis GERENCIAL basándote EXCLUSIVAMENTE en la matriz:
 - Prioriza lo 🟥 (crítico) sobre lo 🟨. Nombra parámetro, componente y valor.
 - Detecta PATRONES reales entre columnas (ej. "Cu elevado en varios componentes → sistémico"),
   pero SOLO si los datos lo respaldan; no lo fuerces.
-- Los 'inf' NO son criticidad: menciónalos como contexto, nunca como lo más crítico.
+- Los 'inf' (informativos: Zn, Ca, Na, Mg) NO son criticidad aunque tengan 🟥/🟨: son ELEVADO/atípico,
+  menciónalos como contexto, NUNCA como lo más crítico.
 - Si un componente no tiene chips, no lo cites como problema.
 - Máximo 5-6 viñetas, tono directo, gerencial.
 
