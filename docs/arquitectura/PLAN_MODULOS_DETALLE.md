@@ -96,12 +96,14 @@ Sist. Hidr., Motor). Traduce apodos." · `parametro`="Metal/parámetro (ej. Fe, 
   **Opción A (recomendada):** tópico determinístico «Gráfico», Mensaje que imprime **entre ` ``` `** el
   `{grafico}`. **Opción B (tu idea):** dejarlo a **KomfIA SQL** (generativo) — solo si el ``` da problemas
   en el canal. Empezamos por A (el gráfico ya es pre-armado, no lo re-escribe nadie).
-- **Flujo:** `MD_metal`, vista=`vw_TendenciaGraficoMD` (el fence ` ``` ` ya viene dentro del MD).
-  **Tópico "Gráfico de tendencia":** Mensaje `{md}` (verbatim). ✅ El ``` renderiza monospace correcto.
-  · **INTERDEPENDENCIA:** la descripción debe cubrir 2 casos — (a) metal nombrado, (b) seguimiento tras
-  tendencia («ahora la gráfica») tomando equipo/compartimiento del contexto. Y la variable `parametro`
-  se pone en **"Preguntar si no se encuentra"** ("¿De qué metal? Cr, Fe, Cu…") → así NO cae a KomfIA SQL
-  cuando piden "la gráfica" sin metal. Sin esto, el fallback a KomfIA SQL devuelve JSON crudo.
+- **Dos vistas + branch (NO preguntar):** ✅ El ``` renderiza monospace correcto.
+  - Metal nombrado → `vw_TendenciaGraficoMD` (1 gráfica) · flujo `MD_metal` · firma equipo+comp+parametro.
+  - Sin metal (default) → `vw_TendenciaGraficoObsMD` = **la o LAS gráficas de los metales observados**
+    (EsRelevante=1, ej. Cr+Zn) · flujo `MD_equipo_comp` · firma equipo+comp. Si no hay observados → mensaje.
+  **Tópico "Gráfico de tendencia":** `parametro` NO requerido (no preguntar). **Condición:** si `parametro`
+  vacío → Acción con `vw_TendenciaGraficoObsMD`; si tiene metal → `vw_TendenciaGraficoMD`. Mensaje `{md}`.
+  · La descripción debe cubrir «gráfica del Cromo…» Y el seguimiento «la gráfica / las gráficas / ahora la
+  gráfica» (equipo/compartimiento del contexto) para NO caer en "intención desconocida" ni KomfIA SQL.
 
 ### 7. Historial (5 variantes)  ·  vistas `vw_HistorialMD` + `vw_HistorialFlotaMD` (yo)
 - **Formato:** filas cronológicas (fecha en FILAS, ⛔ no columnas). 5 variantes por firma:

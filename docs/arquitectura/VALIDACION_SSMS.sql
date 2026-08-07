@@ -837,3 +837,10 @@ GO
 SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
 GO
+
+/* ==== BLOQUE 43 — vw_TendenciaGraficoObsMD (default: gráficas de observados; firma equipo+compAbbr) ==== */
+SELECT MD FROM [dbo].[vw_TendenciaGraficoObsMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- debe traer Cr y Zn
+SELECT MD FROM [dbo].[vw_TendenciaGraficoObsMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';   -- sin observados -> mensaje
+GO

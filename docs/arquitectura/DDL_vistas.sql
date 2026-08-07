@@ -1690,3 +1690,30 @@ SELECT
     CAST(N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```' AS nvarchar(max)) AS MD
 FROM [dbo].[vw_TendenciaGrafico] g;
 GO
+
+
+/* ==== vw_TendenciaGraficoObsMD (gráficas de los metales observados; default del gráfico) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaGraficoObsMD] AS
+WITH base AS (
+    SELECT DISTINCT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr FROM [dbo].[vw_TendenciaElemento]
+),
+gobs AS (   -- concatena las gráficas de los parámetros relevantes (fuera de umbral), cada una en su ```
+    SELECT te.Equipo, te.Compartimiento,
+        STRING_AGG(CONVERT(nvarchar(max), N'```' + NCHAR(10) + gr.Grafico + NCHAR(10) + N'```'), NCHAR(10)+NCHAR(10))
+            WITHIN GROUP (ORDER BY te.Orden) AS graphs
+    FROM [dbo].[vw_TendenciaElemento] te
+    JOIN [dbo].[vw_TendenciaGrafico] gr
+      ON gr.Equipo=te.Equipo AND gr.Compartimiento=te.Compartimiento AND gr.Parametro=te.Parametro
+    WHERE te.EsRelevante=1
+    GROUP BY te.Equipo, te.Compartimiento
+)
+SELECT b.Equipo, b.compAbbr,
+    CAST(NULL AS nvarchar(max)) AS Observados,       -- contrato fijo
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,  -- contrato fijo
+    CAST(
+        N'**Gráficas de metales observados — ' + b.Equipo + N' · ' + b.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
+      + ISNULL(go.graphs, N'_No hay metales fuera de límite en este componente. Dime qué metal quieres graficar (ej. Cr, Fe, Cu)._')
+    AS nvarchar(max)) AS MD
+FROM base b
+LEFT JOIN gobs go ON go.Equipo=b.Equipo AND go.Compartimiento=b.Compartimiento;
+GO
