@@ -1372,7 +1372,7 @@ WITH u AS (
 om AS (
     SELECT Equipo, Compartimiento, mm.metal
     FROM [dbo].[vw_UltimoAnalisisAceite]
-    CROSS APPLY (VALUES ('Fe',Fe_ppm,Fe_LP,Fe_LC),('PQ',Indice_PQ,PQ_LP,PQ_LC),('Cr',Cr_ppm,Cr_LP,Cr_LC),('Ni',Ni_ppm,Ni_LP,Ni_LC),('Cu',Cu_ppm,Cu_LP,Cu_LC),('Pb',Pb_ppm,Pb_LP,NULL),('Sn',Sn_ppm,Sn_LP,NULL),('Al',Al_ppm,Al_LP,Al_LC),('Si',Si_ppm,Si_LP,Si_LC),('Ca',Ca_ppm,Ca_LP,Ca_LC),('Zn',Zn_ppm,Zn_LP,Zn_LC),('K',K_ppm,K_LP,K_LC),('Na',Na_ppm,Na_LP,Na_LC),('Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
+    CROSS APPLY (VALUES (N'Fe',Fe_ppm,Fe_LP,Fe_LC),(N'PQ',Indice_PQ,PQ_LP,PQ_LC),(N'Cr',Cr_ppm,Cr_LP,Cr_LC),(N'Ni',Ni_ppm,Ni_LP,Ni_LC),(N'Cu',Cu_ppm,Cu_LP,Cu_LC),(N'Pb',Pb_ppm,Pb_LP,NULL),(N'Sn',Sn_ppm,Sn_LP,NULL),(N'Al',Al_ppm,Al_LP,Al_LC),(N'Si',Si_ppm,Si_LP,Si_LC),(N'Ca',Ca_ppm,Ca_LP,Ca_LC),(N'Zn',Zn_ppm,Zn_LP,Zn_LC),(N'K',K_ppm,K_LP,K_LC),(N'Na',Na_ppm,Na_LP,Na_LC),(N'Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
     WHERE (ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) AND Compartimiento LIKE '%TRACCION%'
 ),
 reco AS (
@@ -1388,7 +1388,7 @@ omall AS (
     SELECT Equipo, Compartimiento, STRING_AGG(metal, N', ') AS metals
     FROM (SELECT Equipo, Compartimiento, mm.metal
           FROM [dbo].[vw_UltimoAnalisisAceite]
-          CROSS APPLY (VALUES ('Fe',Fe_ppm,Fe_LP,Fe_LC),('PQ',Indice_PQ,PQ_LP,PQ_LC),('Cr',Cr_ppm,Cr_LP,Cr_LC),('Ni',Ni_ppm,Ni_LP,Ni_LC),('Cu',Cu_ppm,Cu_LP,Cu_LC),('Pb',Pb_ppm,Pb_LP,NULL),('Sn',Sn_ppm,Sn_LP,NULL),('Al',Al_ppm,Al_LP,Al_LC),('Si',Si_ppm,Si_LP,Si_LC),('Ca',Ca_ppm,Ca_LP,Ca_LC),('Zn',Zn_ppm,Zn_LP,Zn_LC),('K',K_ppm,K_LP,K_LC),('Na',Na_ppm,Na_LP,Na_LC),('Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
+          CROSS APPLY (VALUES (N'Fe',Fe_ppm,Fe_LP,Fe_LC),(N'PQ',Indice_PQ,PQ_LP,PQ_LC),(N'Cr',Cr_ppm,Cr_LP,Cr_LC),(N'Ni',Ni_ppm,Ni_LP,Ni_LC),(N'Cu',Cu_ppm,Cu_LP,Cu_LC),(N'Pb',Pb_ppm,Pb_LP,NULL),(N'Sn',Sn_ppm,Sn_LP,NULL),(N'Al',Al_ppm,Al_LP,Al_LC),(N'Si',Si_ppm,Si_LP,Si_LC),(N'Ca',Ca_ppm,Ca_LP,Ca_LC),(N'Zn',Zn_ppm,Zn_LP,Zn_LC),(N'K',K_ppm,K_LP,K_LC),(N'Na',Na_ppm,Na_LP,Na_LC),(N'Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
           WHERE ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) z
     GROUP BY Equipo, Compartimiento
 )
