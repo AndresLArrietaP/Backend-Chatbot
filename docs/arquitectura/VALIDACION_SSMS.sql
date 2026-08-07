@@ -820,3 +820,8 @@ GO
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%';
 GO
+
+/* ==== BLOQUE 40 — vw_TendenciaP1MD (firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
+SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';
+GO

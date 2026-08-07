@@ -1542,3 +1542,57 @@ JOIN body bd ON bd.Equipo=g.Equipo
 LEFT JOIN obsall oa ON oa.Equipo=g.Equipo
 LEFT JOIN recoblock rb ON rb.Equipo=g.Equipo;
 GO
+
+
+/* ==== vw_TendenciaP1MD (PASO 1 de tendencia: general x fechas) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaP1MD] AS
+WITH base AS (
+    SELECT Equipo, Proyecto, Modelo, Compartimiento, rn_recencia,
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
+        ISNULL(FORMAT(FechaMuestreo,'dd-MMM'), N'—') AS colLabel
+    FROM [dbo].[vw_MuestrasRankeadas]
+    WHERE rn_recencia <= 6
+),
+unpv AS (
+    SELECT b.Equipo, b.compAbbr, b.rn_recencia, v.ord, v.etq, v.val
+    FROM [dbo].[vw_MuestrasRankeadas] d
+    JOIN base b ON b.Equipo=d.Equipo AND b.Compartimiento=d.Compartimiento AND b.rn_recencia=d.rn_recencia
+    CROSS APPLY (VALUES
+            (1, N'Horómetro', ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—')),
+            (2, N'Hrs Aceite', ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—')),
+            (3, N'Hrs Comp', ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—')),
+            (4, N'CM', ISNULL(CM, N'—')),
+            (5, N'Estado', CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END)
+    ) v(ord, etq, val)
+),
+hdr AS (
+    SELECT Equipo, compAbbr, COUNT(*) AS Ncols,
+        STRING_AGG(colLabel, N' | ') WITHIN GROUP (ORDER BY rn_recencia DESC) AS cols
+    FROM (SELECT DISTINCT Equipo, compAbbr, rn_recencia, colLabel FROM base) z
+    GROUP BY Equipo, compAbbr
+),
+rows_ AS (
+    SELECT Equipo, compAbbr, ord, etq,
+        CAST(N'| ' + etq + N' | ' + STRING_AGG(val, N' | ') WITHIN GROUP (ORDER BY rn_recencia DESC) + N' |' AS nvarchar(max)) AS rowMD
+    FROM unpv GROUP BY Equipo, compAbbr, ord, etq
+),
+body AS (
+    SELECT Equipo, compAbbr,
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY ord) AS bodyMD
+    FROM rows_ GROUP BY Equipo, compAbbr
+),
+meta AS (
+    SELECT DISTINCT Equipo, compAbbr, MAX(Modelo) OVER (PARTITION BY Equipo) AS Modelo FROM base
+)
+SELECT
+    h.Equipo, h.compAbbr,
+    CAST(
+        N'**Tendencia — ' + h.Equipo + N' · ' + h.compAbbr + N'** · últimas ' + CAST(h.Ncols AS nvarchar(10)) + N' muestras' + NCHAR(10) + NCHAR(10)
+      + N'| Campo | ' + h.cols + N' |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', h.Ncols) + NCHAR(10)
+      + bd.bodyMD + NCHAR(10) + NCHAR(10)
+      + N'_¿Deseas el **detalle por elemento** (metales × fechas) o la **gráfica** de un metal?_'
+    AS nvarchar(max)) AS MD
+FROM hdr h
+JOIN body bd ON bd.Equipo=h.Equipo AND bd.compAbbr=h.compAbbr;
+GO
