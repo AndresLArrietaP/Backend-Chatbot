@@ -1054,6 +1054,7 @@ cnt AS (
 SELECT
     ta.Proyecto, ta.Modelo,
     c.NumEquipos, c.NumEquiposCriticos, c.NumEquiposSoloPrecau,
+    CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
         N'**Detalle de todos — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
       + ta.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
@@ -1161,6 +1162,7 @@ limtbl AS (
 SELECT
     t.Proyecto, t.Modelo,
     c.NumEquipos, c.NumCriticos, c.NumSoloPrecau,
+    CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
         N'**Barrido Flota ' + ISNULL(t.Modelo,N'') + N' — ' + t.Proyecto + N' | Estado Actual (No-OK)**' + NCHAR(10)
       + N'**' + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos con ≥1 componente observado — '
