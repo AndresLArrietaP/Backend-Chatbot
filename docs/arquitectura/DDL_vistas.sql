@@ -220,7 +220,6 @@ SELECT
           OR m.Pb_ppm    > ISNULL(lim.Pb_LC,9999)
           OR m.Sn_ppm    > ISNULL(lim.Sn_LC,9999)
           OR m.Indice_PQ > ISNULL(lim.PQ_LC,9999)
-          OR (lim.V100_LCI IS NOT NULL AND m.V100 > 0 AND m.V100 < lim.V100_LCI) OR (lim.V100_LCS IS NOT NULL AND m.V100 > lim.V100_LCS)
         THEN 'CRITICO'
         WHEN m.Fe_ppm    > ISNULL(lim.Fe_LP,9999)
           OR m.Cr_ppm    > ISNULL(lim.Cr_LP,9999)
@@ -232,7 +231,6 @@ SELECT
           OR m.Sn_ppm    > ISNULL(lim.Sn_LP,9999)
           OR m.Indice_PQ > ISNULL(lim.PQ_LP,9999)
           OR (lim.TBN_LP IS NOT NULL AND m.TBN > 0 AND m.TBN < lim.TBN_LP)
-          OR (lim.V100_LPI IS NOT NULL AND m.V100 > 0 AND m.V100 < lim.V100_LPI) OR (lim.V100_LPS IS NOT NULL AND m.V100 > lim.V100_LPS)
         THEN 'PRECAUCION'
         ELSE 'OK'
     END AS Estado_General,
