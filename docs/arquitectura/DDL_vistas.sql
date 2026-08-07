@@ -1624,10 +1624,10 @@ body_all AS (
             WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM rowcte GROUP BY Equipo, Compartimiento
 ),
-rellist AS (   -- lista compacta de parámetros relevantes (no tabla ancha)
+body_rel AS (   -- tabla SOLO de los parámetros relevantes (sin cabeceras de grupo, filas limpias)
     SELECT Equipo, Compartimiento,
-        STRING_AGG(CONVERT(nvarchar(max), N'- **' + CONVERT(nvarchar(20),Parametro) + N'**' + CASE WHEN Inf=1 THEN N' (inf)' ELSE N'' END + N' — última ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' · tendencia ' + ISNULL(Tendencia,N'—') + N' · Σvida ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' · ' + ISNULL(Spark,N'·')), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS lst
-    FROM te WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
+    FROM rowcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
 ),
 /* Observados y Recomendaciones sobre la ÚLTIMA muestra (d6), MT-scoped */
 obslast AS (
@@ -1663,13 +1663,16 @@ SELECT
       + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
       + ba.bodyMD
     AS nvarchar(max)) AS MD,
-    CAST(   -- opt-in (columna=MD_Relevantes): LISTA compacta, no tabla ancha
+    CAST(   -- opt-in (columna=MD_Relevantes): TABLA solo si hay relevantes; si no, solo el mensaje
         N'**Tendencia — parámetros relevantes · ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
-      + ISNULL(rl.lst, N'_Sin parámetros fuera de umbral — el componente opera en condición normal._')
+      + CASE WHEN br.bodyMD IS NOT NULL THEN
+            N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
+          + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10) + br.bodyMD
+        ELSE N'_Sin parámetros fuera de umbral — el componente opera en condición normal._' END
     AS nvarchar(max)) AS MD_Relevantes
 FROM datehdr d
 JOIN body_all ba ON ba.Equipo=d.Equipo AND ba.Compartimiento=d.Compartimiento
-LEFT JOIN rellist rl ON rl.Equipo=d.Equipo AND rl.Compartimiento=d.Compartimiento
+LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimiento
 LEFT JOIN obsall oa ON oa.Equipo=d.Equipo AND oa.Compartimiento=d.Compartimiento
 LEFT JOIN recoblock rb ON rb.Equipo=d.Equipo AND rb.Compartimiento=d.Compartimiento;
 GO
