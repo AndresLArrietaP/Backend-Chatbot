@@ -1636,7 +1636,7 @@ obslast AS (
     FROM te WHERE (te.d6 LIKE '%:C%' OR te.d6 LIKE '%:P%')
 ),
 obsall AS (
-    SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr, STRING_AGG(Parametro, N', ') AS metals
+    SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr, STRING_AGG(CONVERT(nvarchar(20), Parametro), N', ') AS metals
     FROM obslast GROUP BY Equipo, Compartimiento
 ),
 recos AS (
