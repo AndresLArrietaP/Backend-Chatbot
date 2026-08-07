@@ -69,12 +69,14 @@ Sist. Hidr., Motor). Traduce apodos." · `parametro`="Metal/parámetro (ej. Fe, 
   (sin nombrar metal). «tendencia del MT LH del X», «cómo ha evolucionado el hidráulico del X». Rellena
   equipo, compartimiento. NO usar si nombran un metal (eso es tendencia de un metal)."* Nodos: Mensaje `{md}`.
 
-### 4. Tendencia detalle por elemento  ·  vista `vw_TendenciaMD` (yo)
-- **Formato:** params en filas (grupos) × **8 fechas** en columnas + **LP|LC** + **Σvida** (acumulado) +
-  Spark. Firma: **equipo + compartimiento**, columna `MD` (relevantes) / `MD_Completo` (todos).
-- **Flujo:** `MD_equipo_comp`. **Tópico "Tendencia detalle":** se activa tras la oferta del paso 1
-  («detalle por elemento», «matriz completa»). Variables equipo, compartimiento, columna. + análisis (sin
-  conocimiento) + recomendaciones (evalúa ÚLTIMA muestra).
+### 4. Tendencia detalle por elemento  ·  vista `vw_TendenciaMD` (yo) ✅
+- **Formato:** params en filas (grupos) × **6 fechas** en columnas + **LP|LC** + **Σvida** (acumulado) +
+  Spark. Firma: **equipo + compartimiento**. Variantes: **`MD` = TODOS los parámetros (DEFAULT)** /
+  **`MD_Relevantes` = solo fuera de umbral (opt-in)**. ⚠ El default es la COMPLETA (lo que se espera de
+  "detalle de todos"); relevantes solo si lo piden explícito. NO existe `MD_Completo`.
+- **Flujo:** `MD_equipo_comp` (query fijo). **Tópico "Tendencia detalle":** se activa tras la oferta del
+  paso 1. Molde completo (análisis universal + recomendaciones sobre ÚLTIMA muestra). El **prompt de
+  análisis es el ÚNICO universal** (no uno de tendencia). Tabla ancha (11 col) → scroll horizontal.
 
 ### 5. Tendencia de un metal (todos los componentes)  ·  vista `vw_TendenciaMetalMD` (yo)
 - **Formato:** 1 fila por COMPONENTE × fechas en columnas + Σvida + Spark (horizontal). Firma: **equipo +
