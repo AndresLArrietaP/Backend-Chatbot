@@ -623,9 +623,9 @@ SELECT
     SUM(FueraUmbral) AS NVecesObs,
     CASE WHEN SUM(FueraUmbral) > 0 THEN 1 ELSE 0 END AS EsRelevante,
     CASE
-        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) > MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN '↑'
-        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) < MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN '↓'
-        ELSE '→'
+        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) > MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN N'↑'
+        WHEN MAX(CASE WHEN rn_recencia=1 THEN Valor END) < MAX(CASE WHEN rn_recencia=6 THEN Valor END) THEN N'↓'
+        ELSE N'→'
     END AS Tendencia,
     MAX(CASE WHEN rn_recencia = 6 THEN Valor END) AS n1,
     MAX(CASE WHEN rn_recencia = 5 THEN Valor END) AS n2,
@@ -1629,6 +1629,11 @@ body_rel AS (   -- tabla SOLO de los parámetros relevantes (sin cabeceras de gr
         STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM rowcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
 ),
+statbody AS (   -- Resumen estadístico por parámetro (Prom, σ, Σvida, Nº fuera)
+    SELECT Equipo, Compartimiento,
+        STRING_AGG(CAST(N'| ' + CONVERT(nvarchar(20),Parametro) + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))),N'—') + N' | ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
+    FROM te GROUP BY Equipo, Compartimiento
+),
 /* Observados y Recomendaciones sobre la ÚLTIMA muestra (d6), MT-scoped */
 obslast AS (
     SELECT te.Equipo, te.Compartimiento, te.compAbbr, te.Parametro
@@ -1661,7 +1666,10 @@ SELECT
         N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (todos los parámetros)' + NCHAR(10) + NCHAR(10)
       + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
-      + ba.bodyMD
+      + ba.bodyMD + NCHAR(10) + NCHAR(10)
+      + N'**Resumen estadístico**' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | Prom. | σ | Σvida | Nº fuera |' + NCHAR(10)
+      + N'|---|---|---|---|---|' + NCHAR(10) + st.bodyMD
     AS nvarchar(max)) AS MD,
     CAST(   -- opt-in (columna=MD_Relevantes): TABLA solo si hay relevantes; si no, solo el mensaje
         N'**Tendencia — parámetros relevantes · ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
@@ -1673,6 +1681,7 @@ SELECT
 FROM datehdr d
 JOIN body_all ba ON ba.Equipo=d.Equipo AND ba.Compartimiento=d.Compartimiento
 LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimiento
+LEFT JOIN statbody st ON st.Equipo=d.Equipo AND st.Compartimiento=d.Compartimiento
 LEFT JOIN obsall oa ON oa.Equipo=d.Equipo AND oa.Compartimiento=d.Compartimiento
 LEFT JOIN recoblock rb ON rb.Equipo=d.Equipo AND rb.Compartimiento=d.Compartimiento;
 GO
@@ -1722,30 +1731,35 @@ GO
 /* ==== vw_TendenciaMetalMD (tendencia de un metal en todos los componentes) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaMetalMD] AS
 WITH te AS (
-    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, Spark, Orden,
+    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, Spark, Orden, Prom, Sigma, NVecesObs,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento='MOTOR' THEN 5 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr
     FROM [dbo].[vw_TendenciaElemento]
 ),
-rows_ AS (
+qrows AS (
     SELECT Equipo, Parametro, compOrd,
         CAST(N'| ' + compAbbr + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
-           + N' | ' + ISNULL(Tendencia, N'—') + N' | ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'·') + N' |' AS nvarchar(max)) AS rowMD
+           + N' | ' + ISNULL(Tendencia, N'—') + N' | ' + ISNULL(Spark, N'·') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
-body AS (
-    SELECT Equipo, Parametro,
-        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS bodyMD
-    FROM rows_ GROUP BY Equipo, Parametro
-)
+srows AS (
+    SELECT Equipo, Parametro, compOrd,
+        CAST(N'| ' + compAbbr + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))),N'—')
+           + N' | ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)) AS rowMD
+    FROM te
+),
+qbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM qrows GROUP BY Equipo, Parametro),
+sbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM srows GROUP BY Equipo, Parametro)
 SELECT
-    b.Equipo, N'(todos)' AS compAbbr, b.Parametro,
-    CAST(NULL AS nvarchar(max)) AS Observados,       -- contrato fijo
-    CAST(NULL AS nvarchar(max)) AS Recomendaciones,  -- contrato fijo
+    q.Equipo, N'(todos)' AS compAbbr, q.Parametro,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
-        N'**Tendencia de ' + CONVERT(nvarchar(20), b.Parametro) + N' — ' + b.Equipo + N' (todos los componentes)**' + NCHAR(10) + NCHAR(10)
-      + N'| Componente | LP | LC | Última | Tend. | Σvida | Spark |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|---|' + NCHAR(10)
-      + b.bodyMD
+        N'**Tendencia de ' + CONVERT(nvarchar(20), q.Parametro) + N' — ' + q.Equipo + N' (todos los componentes)**' + NCHAR(10) + NCHAR(10)
+      + N'| Componente | LP | LC | Última | Tend. | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|' + NCHAR(10) + q.b + NCHAR(10) + NCHAR(10)
+      + N'**Resumen estadístico**' + NCHAR(10) + NCHAR(10)
+      + N'| Componente | Prom. | σ | Σvida | Nº fuera |' + NCHAR(10)
+      + N'|---|---|---|---|---|' + NCHAR(10) + s.b
     AS nvarchar(max)) AS MD
-FROM body b;
+FROM qbody q JOIN sbody s ON s.Equipo=q.Equipo AND s.Parametro=q.Parametro;
 GO
