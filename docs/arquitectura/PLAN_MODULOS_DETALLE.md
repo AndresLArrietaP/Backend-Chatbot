@@ -74,9 +74,14 @@ Sist. Hidr., Motor). Traduce apodos." · `parametro`="Metal/parámetro (ej. Fe, 
   Spark. Firma: **equipo + compartimiento**. Variantes: **`MD` = TODOS los parámetros (DEFAULT)** /
   **`MD_Relevantes` = solo fuera de umbral (opt-in)**. ⚠ El default es la COMPLETA (lo que se espera de
   "detalle de todos"); relevantes solo si lo piden explícito. NO existe `MD_Completo`.
-- **Flujo:** `MD_equipo_comp` (query fijo). **Tópico "Tendencia detalle":** se activa tras la oferta del
-  paso 1. Molde completo (análisis universal + recomendaciones sobre ÚLTIMA muestra). El **prompt de
-  análisis es el ÚNICO universal** (no uno de tendencia). Tabla ancha (11 col) → scroll horizontal.
+- **Flujo:** `MD_equipo_comp` (query fijo). **Tópico "Tendencia detalle":** entradas SOLO
+  `equipo` + `compartimiento` (independiente, no necesita P1). En la Acción, `columna` = **texto fijo
+  `MD`** (NO variable del modelo) → siempre matriz completa, sin pedir nada al usuario. Molde completo
+  (análisis universal + recomendaciones sobre ÚLTIMA muestra). Tabla ancha (11 col) → scroll horizontal.
+  `MD_Relevantes` queda en la vista sin usar (si se quiere a futuro, montar formato compacto, NO la
+  matriz ancha de 2 filas que se ve mal).
+  · **Regla general:** una variante que el modelo no puede inferir de la frase (como `columna`) NO se
+  expone como entrada — se fija en la Acción; así el tópico no interroga al usuario.
 
 ### 5. Tendencia de un metal (todos los componentes)  ·  vista `vw_TendenciaMetalMD` (yo)
 - **Formato:** 1 fila por COMPONENTE × fechas en columnas + Σvida + Spark (horizontal). Firma: **equipo +
