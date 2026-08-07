@@ -826,13 +826,6 @@ SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';
 GO
 
-/* ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPLETA (default)
-SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
-GO
-
 /* ==== BLOQUE 42 — vw_TendenciaGraficoMD (firma equipo+compAbbr+parametro, flujo MD_metal) ==== */
 SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
@@ -848,4 +841,16 @@ GO
 /* ==== BLOQUE 44 — vw_TendenciaMetalMD (firma equipo+parametro, flujo MD_metal comp vacío) ==== */
 SELECT MD FROM [dbo].[vw_TendenciaMetalMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%%' AND Parametro='Cu';
+GO
+
+/* ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPLETA (default)
+SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
+GO
+
+/* ==== BLOQUE 45 — vw_HistorialMD (firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
+SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
