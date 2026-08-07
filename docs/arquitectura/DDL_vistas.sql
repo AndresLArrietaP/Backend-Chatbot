@@ -1598,3 +1598,81 @@ SELECT
 FROM hdr h
 JOIN body bd ON bd.Equipo=h.Equipo AND bd.compAbbr=h.compAbbr;
 GO
+
+
+/* ==== vw_TendenciaMD (tendencia DETALLE: params x fechas + Σvida + Spark) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaMD] AS
+WITH te AS (
+    SELECT *, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr FROM [dbo].[vw_TendenciaElemento]
+),
+rowcte AS (
+    SELECT Equipo, Compartimiento, compAbbr, Grupo, Orden, EsRelevante,
+        CAST(N'| ' + Parametro + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | '
+           + ISNULL(REPLACE(REPLACE(CAST(d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'—') + N' |' AS nvarchar(max)) AS rowMD
+    FROM te
+),
+datehdr AS (
+    SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr,
+        ISNULL(FORMAT(MAX(f1),'dd-MMM'),N'—') AS h1, ISNULL(FORMAT(MAX(f2),'dd-MMM'),N'—') AS h2,
+        ISNULL(FORMAT(MAX(f3),'dd-MMM'),N'—') AS h3, ISNULL(FORMAT(MAX(f4),'dd-MMM'),N'—') AS h4,
+        ISNULL(FORMAT(MAX(f5),'dd-MMM'),N'—') AS h5, ISNULL(FORMAT(MAX(f6),'dd-MMM'),N'—') AS h6
+    FROM [dbo].[vw_TendenciaElemento] GROUP BY Equipo, Compartimiento
+),
+body_all AS (
+    SELECT Equipo, Compartimiento,
+        STRING_AGG(CAST(CASE WHEN Orden IN (1,9,14,17) THEN N'| **' + Grupo + N'** |' + REPLICATE(N' |', 10) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
+            WITHIN GROUP (ORDER BY Orden) AS bodyMD
+    FROM rowcte GROUP BY Equipo, Compartimiento
+),
+body_rel AS (
+    SELECT Equipo, Compartimiento,
+        STRING_AGG(CAST(CASE WHEN Orden IN (1,9,14,17) THEN N'| **' + Grupo + N'** |' + REPLICATE(N' |', 10) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
+            WITHIN GROUP (ORDER BY Orden) AS bodyMD
+    FROM rowcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
+),
+/* Observados y Recomendaciones sobre la ÚLTIMA muestra (d6), MT-scoped */
+obslast AS (
+    SELECT te.Equipo, te.Compartimiento, te.compAbbr, te.Parametro
+    FROM te WHERE (te.d6 LIKE '%:C%' OR te.d6 LIKE '%:P%')
+),
+obsall AS (
+    SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr, STRING_AGG(Parametro, N', ') AS metals
+    FROM obslast GROUP BY Equipo, Compartimiento
+),
+recos AS (
+    SELECT DISTINCT ol.Equipo, ol.Compartimiento, r.ord, r.label, r.indicio
+    FROM obslast ol JOIN [dbo].[vw_Recomendaciones] r ON r.metal = ol.Parametro
+    WHERE ol.Compartimiento LIKE '%TRACCION%'
+),
+recoblock AS (
+    SELECT Equipo, Compartimiento,
+        CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
+           + STRING_AGG(CONVERT(nvarchar(max), N'- **' + label + N':** ' + indicio), NCHAR(10)) WITHIN GROUP (ORDER BY ord)
+           + NCHAR(10) + NCHAR(10) + N'Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en el próximo PM. Retirar los 8 tapones magnéticos para inspección y limpieza en busca de particulado anormal. Para mayor información y detalle, contactar a confiabilidad.operaciones@kmmp.com.pe' AS nvarchar(max)) AS Recomendaciones
+    FROM recos GROUP BY Equipo, Compartimiento
+)
+SELECT
+    d.Equipo, d.compAbbr,
+    ISNULL(oa.compAbbr + N': ' + oa.metals, d.compAbbr + N': (última muestra sin observados)') AS Observados,
+    ISNULL(rb.Recomendaciones,
+        CASE WHEN d.compAbbr LIKE 'MT %'
+             THEN N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite en la última muestra — sin recomendaciones aplicables por ahora.'
+             ELSE N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Nada que comentar sobre el Motor de Tracción para este componente.' END) AS Recomendaciones,
+    CAST(
+        N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (parámetros relevantes)' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
+      + ISNULL(br.bodyMD, N'_Sin parámetros fuera de umbral en la última muestra — pide la **matriz completa** para verlos todos._')
+    AS nvarchar(max)) AS MD,
+    CAST(
+        N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (todos los parámetros)' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
+      + ba.bodyMD
+    AS nvarchar(max)) AS MD_Completo
+FROM datehdr d
+JOIN body_all ba ON ba.Equipo=d.Equipo AND ba.Compartimiento=d.Compartimiento
+LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimiento
+LEFT JOIN obsall oa ON oa.Equipo=d.Equipo AND oa.Compartimiento=d.Compartimiento
+LEFT JOIN recoblock rb ON rb.Equipo=d.Equipo AND rb.Compartimiento=d.Compartimiento;
+GO
