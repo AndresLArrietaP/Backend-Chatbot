@@ -1403,7 +1403,7 @@ SELECT u.Equipo, u.Proyecto, u.Modelo, u.Compartimiento, u.compAbbr,
     ISNULL(rc.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
     CAST(
         N'**Último análisis — ' + u.Equipo + N' · ' + u.compAbbr + N'**' + NCHAR(10)
-      + N'*Mod. ' + ISNULL(u.Modelo,N'—') + N' · Hor. ' + ISNULL(CONVERT(varchar(20),CAST(u.Horometro AS decimal(18,0))),N'—')
+      + N'*Mod. ' + ISNULL(u.Modelo,N'—') + N' · Lubric. ' + ISNULL(u.Grado,N'—') + N' · Hor. ' + ISNULL(CONVERT(varchar(20),CAST(u.Horometro AS decimal(18,0))),N'—')
       + N' · Hor.Comp. ' + ISNULL(CONVERT(varchar(20),CAST(u.HorasComponente AS decimal(18,0))),N'—')
       + N' · CM ' + ISNULL(u.CM,N'—') + N' · ' + ISNULL(FORMAT(u.FechaMuestreo,'dd-MMM-yy'),N'—') + N'*' + NCHAR(10) + NCHAR(10)
       + N'| Par. | LP | LC | Valor |' + NCHAR(10) + N'|---|---|---|---|' + NCHAR(10)
@@ -1696,14 +1696,20 @@ GO
 /* ==== vw_TendenciaGraficoMD (wrapper del gráfico ASCII en fence, contrato MD) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaGraficoMD] AS
 SELECT
-    g.Equipo,
-    CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
-    g.Parametro,
-    CAST(NULL AS nvarchar(max)) AS Observados,       -- contrato fijo (no aplica en gráfico)
-    CAST(NULL AS nvarchar(max)) AS Recomendaciones,  -- contrato fijo (no aplica en gráfico)
-    /* El grafico ASCII VA en bloque de codigo (monospace) — al reves que las tablas. Se imprime tal cual. */
-    CAST(N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```' AS nvarchar(max)) AS MD
-FROM [dbo].[vw_TendenciaGrafico] g;
+    g.Equipo, CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END AS compAbbr, g.Parametro,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Tendencia de ' + CONVERT(nvarchar(20), g.Parametro) + N' — ' + g.Equipo + N' · ' + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END + N'**' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Σvida | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
+      + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
+        + N' | ' + CASE WHEN te.Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(te.Spark, N'·') + N' |' + NCHAR(10) + NCHAR(10)
+      + N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```'
+    AS nvarchar(max)) AS MD
+FROM [dbo].[vw_TendenciaGrafico] g
+JOIN [dbo].[vw_TendenciaElemento] te
+  ON te.Equipo=g.Equipo AND te.Compartimiento=g.Compartimiento AND te.Parametro=g.Parametro;
 GO
 
 

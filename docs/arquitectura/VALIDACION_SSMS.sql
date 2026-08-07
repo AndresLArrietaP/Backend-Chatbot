@@ -821,11 +821,6 @@ SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';
 GO
 
-/* ==== BLOQUE 42 — vw_TendenciaGraficoMD (firma equipo+compAbbr+parametro, flujo MD_metal) ==== */
-SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
-GO
-
 /* ==== BLOQUE 43 — vw_TendenciaGraficoObsMD (default: gráficas de observados; firma equipo+compAbbr) ==== */
 SELECT MD FROM [dbo].[vw_TendenciaGraficoObsMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- debe traer Cr y Zn
@@ -892,11 +887,6 @@ SELECT TOP 1 * FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
 WHERE Compartimiento LIKE '%TRACCION%';   -- inspeccionar columnas Pb_/Sn_ en el grid
 GO
 
-/* ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ==== */
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
-GO
-
 /* ==== BLOQUE 46 — vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal) ==== */
 SELECT MD FROM [dbo].[vw_HistorialMetalMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
@@ -926,4 +916,14 @@ GO
 -- 51.3 Último análisis de un MT: la tabla ya trae LC de Pb/Sn (no '—') y chip si supera
 SELECT MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3163%' AND compAbbr LIKE '%MT RH%';   -- CA3163 tenía Pb,Zn observados en triage
+GO
+
+/* ==== BLOQUE 42 — vw_TendenciaGraficoMD (tabla del metal + gráfico ASCII combinados) ==== */
+SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
+GO
+
+/* ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ==== */
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
