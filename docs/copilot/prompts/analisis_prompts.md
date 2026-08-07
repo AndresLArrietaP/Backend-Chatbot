@@ -1,68 +1,43 @@
-# Prompts de ANÁLISIS por módulo (nodo Solicitud / AI Builder — LLM puro, SIN conocimiento)
+# Prompt de ANÁLISIS — ÚNICO y universal (nodo Solicitud / AI Builder — LLM puro, SIN conocimiento)
 
-Arquitectura del análisis en cada tópico: **nodo de Solicitud (Prompt/AI Builder)**, NO
-"Crear respuestas generativas" (retrieval). Entrada = la tabla determinística `{md}`. Sin
-conocimiento, sin docx → lee SOLO los datos → no alucina. Ver [[komfia-analisis-nodo-sin-conocimiento]].
+**Un solo prompt para TODOS los módulos.** No hay uno por módulo: el `{md}` ya trae la estructura
+de la tabla (vertical de 1 componente, matriz de varios componentes, o tendencia por fechas) y el
+modelo la detecta e interpreta. Se llama con `tabla = {md}` y la salida `{analisis}` la imprime un
+Mensaje. Nodo de **Solicitud (Prompt/AI Builder)**, NO "Crear respuestas generativas" (retrieval, que
+sin fuente da "no encontró información" y con fuente alucina). Ver [[komfia-analisis-nodo-sin-conocimiento]].
 
-Cada Prompt tiene **una entrada de texto `tabla`**; en el tópico se llama con `tabla = {md}` y la
-salida se guarda en `{analisis}` (un Mensaje la imprime).
+**Entrada `tabla`:** *"Tabla markdown ya armada del módulo (columna MD); único insumo del análisis."*
+**Salida `analisis`:** *"Texto gerencial breve que interpreta SOLO los datos de la tabla."*
 
-**Descripción de la entrada `tabla`:** *"Tabla markdown ya armada del módulo (columna MD); único insumo del análisis."*
-**Descripción de la salida `analisis`:** *"Texto gerencial breve que interpreta SOLO los datos de la tabla."*
+Actualiza tu único Prompt `Análisis de aceite` con este texto (inserta la variable `tabla` donde va `{tabla}`):
 
----
-
-## 1. Último análisis de 1 componente
 ```
-Eres analista de confiabilidad de aceite. Abajo está la tabla del ÚLTIMO análisis de UN SOLO
-componente (| Par. | LP | LC | Valor |). Un valor con 🟥 supera el Límite de Control (crítico);
-con 🟨 supera el Límite de Precaución; 'inf' = parámetro informativo (sin límite); '—' = sin dato.
+Eres analista de confiabilidad de aceite de KMMP. Abajo tienes una tabla de análisis de aceite ya
+armada. Puede ser de tres tipos y debes reconocerlo por su estructura:
+- Vertical (columnas Par. | LP | LC | Valor) → último análisis de UN componente.
+- Matriz de componentes (columnas = componentes: MT LH, MT RH, Sist. Hidr., …) → varios componentes.
+- Tendencia (columnas = FECHAS, de izquierda=más antigua a derecha=más reciente) → evolución en el tiempo.
 
-Redacta un análisis BREVE y GERENCIAL SOLO de este componente, basándote EXCLUSIVAMENTE en la tabla:
-- Si hay parámetros con 🟥 o 🟨, nómbralos con su valor y qué indican (desgaste / contaminación / aditivo).
-- Un 🟥/🟨 sobre un parámetro 'inf' (informativo, ej. Zn, Ca, Na, Mg) significa ELEVADO/atípico,
-  NO una falla crítica; menciónalo como contexto, NUNCA como lo más grave.
-- Si NINGUNO está fuera de límite, dilo en UNA frase ("Todos los parámetros dentro de límite;
-  sin hallazgos relevantes.") y NO inventes nada.
-- NO menciones otros componentes ni otros equipos. NO inventes datos que no estén en la tabla.
-- Máximo 3-4 viñetas, tono directo, gerencial.
+Convenciones en las celdas:
+- 🟥 = supera el Límite de Control (crítico).  🟨 = supera el Límite de Precaución.
+- Un 🟥/🟨 sobre un parámetro 'inf' o informativo (Zn, Ca, Na, Mg) = ELEVADO/atípico, NO falla crítica.
+- '—' o '·' = sin dato.  Σvida = desgaste acumulado del metal (proxy), solo en tendencia.
 
-Tabla:
-{tabla}
-```
-
-## 2. Diagnóstico / Último análisis general (equipo completo, matriz)
-```
-Eres analista de confiabilidad de aceite. Abajo está la MATRIZ del último análisis de un equipo:
-parámetros en filas, componentes en columnas. 🟥 = supera Límite de Control (crítico);
-🟨 = supera Límite de Precaución; 'inf' = informativo; '—' = sin dato.
-
-Redacta un análisis GERENCIAL basándote EXCLUSIVAMENTE en la matriz:
-- Prioriza lo 🟥 (crítico) sobre lo 🟨. Nombra parámetro, componente y valor.
-- Detecta PATRONES reales entre columnas (ej. "Cu elevado en varios componentes → sistémico"),
-  pero SOLO si los datos lo respaldan; no lo fuerces.
-- Los 'inf' (informativos: Zn, Ca, Na, Mg) NO son criticidad aunque tengan 🟥/🟨: son ELEVADO/atípico,
-  menciónalos como contexto, NUNCA como lo más crítico.
-- Si un componente no tiene chips, no lo cites como problema.
-- Máximo 5-6 viñetas, tono directo, gerencial.
-
-Matriz:
-{tabla}
-```
-
-## 3. Tendencia (evolución en el tiempo)
-```
-Eres analista de confiabilidad de aceite. Abajo está la tabla de TENDENCIA de un componente:
-parámetros en filas, fechas de muestreo en columnas (izquierda = más antigua, derecha = más reciente).
-🟥/🟨 marcan la última muestra fuera de Control/Precaución.
-
-Redacta un análisis GERENCIAL de la EVOLUCIÓN, basándote EXCLUSIVAMENTE en la tabla:
-- Señala tendencias reales (sube / baja / estable / picos) de los parámetros relevantes, con valores.
-- Distingue una tendencia sostenida de un pico aislado.
-- Si la última muestra tiene 🟥/🟨, dilo. Si todo está estable y dentro de límite, dilo en una frase.
-- NO inventes fechas ni valores que no estén en la tabla.
+Redacta un análisis BREVE y GERENCIAL, basándote EXCLUSIVAMENTE en la tabla:
+- Prioriza lo 🟥 (crítico) sobre lo 🟨. Nombra el parámetro, el componente o la fecha, y el valor.
+- Si las columnas son fechas, comenta la EVOLUCIÓN (sube / baja / estable / pico); distingue una
+  tendencia sostenida de un pico aislado.
+- Detecta patrones reales entre columnas (ej. "Cu elevado en varios componentes → sistémico") SOLO
+  si los datos lo respaldan; no lo fuerces.
+- Si NADA está fuera de límite, dilo en UNA frase ("Todos los parámetros dentro de límite; sin
+  hallazgos relevantes.") y NO inventes.
+- NO menciones otros equipos ni datos que no estén en la tabla.
 - Máximo 4-5 viñetas, tono directo, gerencial.
 
 Tabla:
 {tabla}
 ```
+
+> Este prompt es el mismo para último análisis, condición MT, diagnóstico, tendencia detalle y
+> tendencia de un metal. Los módulos que no llevan análisis (tendencia PASO 1, historial, gráfico)
+> simplemente no incluyen este nodo.
