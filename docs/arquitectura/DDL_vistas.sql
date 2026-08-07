@@ -1616,7 +1616,7 @@ datehdr AS (
         ISNULL(FORMAT(MAX(f1),'dd-MMM'),N'—') AS h1, ISNULL(FORMAT(MAX(f2),'dd-MMM'),N'—') AS h2,
         ISNULL(FORMAT(MAX(f3),'dd-MMM'),N'—') AS h3, ISNULL(FORMAT(MAX(f4),'dd-MMM'),N'—') AS h4,
         ISNULL(FORMAT(MAX(f5),'dd-MMM'),N'—') AS h5, ISNULL(FORMAT(MAX(f6),'dd-MMM'),N'—') AS h6
-    FROM [dbo].[vw_TendenciaElemento] GROUP BY Equipo, Compartimiento
+    FROM te GROUP BY Equipo, Compartimiento
 ),
 body_all AS (
     SELECT Equipo, Compartimiento,
