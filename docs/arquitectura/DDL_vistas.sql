@@ -1813,3 +1813,67 @@ SELECT
     AS nvarchar(max)) AS MD
 FROM body b;
 GO
+
+
+/* ==== vw_HistorialMetalMD (historial de un metal en un componente) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalMD] AS
+WITH s AS (
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_recencia, FechaMuestreo, Horometro, HorasComponente,
+        Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
+        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Sn_ppm, Sn_LP, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
+        Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
+        Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
+    FROM [dbo].[vw_MuestrasRankeadas]
+    WHERE rn_recencia <= 12
+),
+u AS (
+    SELECT s.Equipo, s.Compartimiento, s.compAbbr, s.rn_recencia, s.FechaMuestreo, s.Horometro, s.HorasComponente,
+        CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
+        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC
+    FROM s CROSS APPLY (VALUES
+            (N'Fe',Fe_ppm,Fe_LP,Fe_LC),
+            (N'PQ',Indice_PQ,PQ_LP,PQ_LC),
+            (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
+            (N'Ni',Ni_ppm,Ni_LP,Ni_LC),
+            (N'Cu',Cu_ppm,Cu_LP,Cu_LC),
+            (N'Pb',Pb_ppm,Pb_LP,NULL),
+            (N'Sn',Sn_ppm,Sn_LP,NULL),
+            (N'Al',Al_ppm,Al_LP,Al_LC),
+            (N'Si',Si_ppm,Si_LP,Si_LC),
+            (N'Ca',Ca_ppm,Ca_LP,Ca_LC),
+            (N'Zn',Zn_ppm,Zn_LP,Zn_LC),
+            (N'K',K_ppm,K_LP,K_LC),
+            (N'Na',Na_ppm,Na_LP,Na_LC),
+            (N'Mg',Mg_ppm,Mg_LP,Mg_LC),
+            (N'B',B_ppm,NULL,NULL),
+            (N'P',P_ppm,NULL,NULL),
+            (N'V100',V100,NULL,NULL),
+            (N'TBN',TBN,TBN_LP,NULL)
+    ) m(metal, Valor, LP, LC)
+),
+rows_ AS (
+    SELECT Equipo, Compartimiento, compAbbr, Parametro, rn_recencia,
+        CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CASE WHEN u.Valor > ISNULL(u.LC,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟥' WHEN u.Valor > ISNULL(u.LP,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟨' ELSE CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1))) END, N'—') + N' |' AS nvarchar(max)) AS rowMD
+    FROM u
+),
+body AS (
+    SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr, Parametro,
+        MAX(u.LP) AS LP, MAX(u.LC) AS LC, COUNT(*) AS N,
+        STRING_AGG(r.rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY r.rn_recencia) AS bodyMD
+    FROM rows_ r JOIN u ON u.Equipo=r.Equipo AND u.Compartimiento=r.Compartimiento AND u.Parametro=r.Parametro AND u.rn_recencia=r.rn_recencia
+    GROUP BY Equipo, Compartimiento, Parametro
+)
+SELECT
+    b.Equipo, b.compAbbr, b.Parametro,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Historial de ' + b.Parametro + N' — ' + b.Equipo + N' · ' + b.compAbbr + N'**'
+      + N' · LP ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LP AS decimal(18,1))),N'—')
+      + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LC AS decimal(18,1))),N'—')
+      + N' · ' + CAST(b.N AS nvarchar(10)) + N' muestras (recientes arriba)' + NCHAR(10) + NCHAR(10)
+      + N'| Fecha | Horóm. | Hrs Comp | Valor |' + NCHAR(10)
+      + N'|---|---|---|---|' + NCHAR(10) + b.bodyMD
+    AS nvarchar(max)) AS MD
+FROM body b;
+GO

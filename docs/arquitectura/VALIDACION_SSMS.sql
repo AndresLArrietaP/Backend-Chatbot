@@ -854,3 +854,8 @@ GO
 SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
+
+/* ==== BLOQUE 46 — vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal) ==== */
+SELECT MD FROM [dbo].[vw_HistorialMetalMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
+GO
