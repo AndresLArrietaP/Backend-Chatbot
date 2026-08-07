@@ -806,59 +806,59 @@ SELECT MD_Completo FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3
 GO
 
 
-/* ==== BLOQUE 37 — vw_Recomendaciones + bloque determinístico en DiagnosticoMD ==== */
+-- ==== BLOQUE 37 — vw_Recomendaciones + bloque determinístico en DiagnosticoMD ====
 SELECT * FROM [dbo].[vw_Recomendaciones];
 SELECT Observados, Recomendaciones FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
 GO
 
-/* ==== BLOQUE 39 — vw_CondicionMT_MD (firma equipo, flujo MD_equipo) ==== */
+-- ==== BLOQUE 39 — vw_CondicionMT_MD (firma equipo, flujo MD_equipo) ====
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%';
 GO
 
-/* ==== BLOQUE 40 — vw_TendenciaP1MD (firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
+-- ==== BLOQUE 40 — vw_TendenciaP1MD (firma equipo+compAbbr, flujo MD_equipo_comp) ====
 SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';
 GO
 
-/* ==== BLOQUE 43 — vw_TendenciaGraficoObsMD (default: gráficas de observados; firma equipo+compAbbr) ==== */
+-- ==== BLOQUE 43 — vw_TendenciaGraficoObsMD (default: gráficas de observados; firma equipo+compAbbr) ====
 SELECT MD FROM [dbo].[vw_TendenciaGraficoObsMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- debe traer Cr y Zn
 SELECT MD FROM [dbo].[vw_TendenciaGraficoObsMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';   -- sin observados -> mensaje
 GO
 
-/* ==== BLOQUE 44 — vw_TendenciaMetalMD (firma equipo+parametro, flujo MD_metal comp vacío) ==== */
+-- ==== BLOQUE 44 — vw_TendenciaMetalMD (firma equipo+parametro, flujo MD_metal comp vacío) ====
 SELECT MD FROM [dbo].[vw_TendenciaMetalMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%%' AND Parametro='Cu';
 GO
 
-/* ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
+-- ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ====
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPLETA (default)
 SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
 GO
 
-/* ==== BLOQUE 45 — vw_HistorialMD (firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
+-- ==== BLOQUE 45 — vw_HistorialMD (firma equipo+compAbbr, flujo MD_equipo_comp) ====
 SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
 
-/* ==== BLOQUE 47 — vw_HistorialEquipoMD (equipo) + vw_HistorialFlotaMD (proyecto) ==== */
+-- ==== BLOQUE 47 — vw_HistorialEquipoMD (equipo) + vw_HistorialFlotaMD (proyecto) ====
 SELECT MD FROM [dbo].[vw_HistorialEquipoMD] WITH (NOLOCK) WHERE Equipo LIKE '%CA3171%';
 SELECT MD FROM [dbo].[vw_HistorialFlotaMD]  WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 
-/* ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ==== */
+-- ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ====
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 
-/* ==== BLOQUE 50 — CORROBORAR límites gerencia (docs/gerencia/Limites.xlsx) vs [Eqpcare].[lc] ====
-   Origen gerencia = matriz Proyecto x Componente x Modelo, ~60 parámetros (Fe,Al,Cu,Pb,Sn,Cr,Ni,Si,
-   Na,K,Zn,P,B,Ca,Mg,PQ,TBN,Visc,ISO...). HALLAZGO: Pb/Sn SÍ tienen LC (Antapaccay MT: Pb LC=5, Sn LC=5).
-   Objetivo: (a) ver qué columnas/valores tiene realmente Eqpcare.lc; (b) detectar faltantes vs gerencia. */
+-- ==== BLOQUE 50 — CORROBORAR límites gerencia (docs/gerencia/Limites.xlsx) vs [Eqpcare].[lc] ====
+-- Origen gerencia = matriz Proyecto x Componente x Modelo, ~60 parámetros (Fe,Al,Cu,Pb,Sn,Cr,Ni,Si,
+-- Na,K,Zn,P,B,Ca,Mg,PQ,TBN,Visc,ISO...). HALLAZGO: Pb/Sn SÍ tienen LC (Antapaccay MT: Pb LC=5, Sn LC=5).
+-- Objetivo: (a) ver qué columnas/valores tiene realmente Eqpcare.lc; (b) detectar faltantes vs gerencia.
 GO
 -- 50.1 Columnas reales de [Eqpcare].[lc] (¿existen [PLOMO - LC], [ESTAÑO - LC], [TIPO], [MODELO]?)
 SELECT ORDINAL_POSITION, COLUMN_NAME, DATA_TYPE
@@ -887,19 +887,19 @@ SELECT TOP 1 * FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
 WHERE Compartimiento LIKE '%TRACCION%';   -- inspeccionar columnas Pb_/Sn_ en el grid
 GO
 
-/* ==== BLOQUE 46 — vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal) ==== */
+-- ==== BLOQUE 46 — vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal) ====
 SELECT MD FROM [dbo].[vw_HistorialMetalMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
 GO
 
-/* ==== BLOQUE 48 — vw_HistorialMetalEquipoMD (firma equipo+parametro, flujo MD_metal comp=todos) ==== */
+-- ==== BLOQUE 48 — vw_HistorialMetalEquipoMD (firma equipo+parametro, flujo MD_metal comp=todos) ====
 SELECT MD FROM [dbo].[vw_HistorialMetalEquipoMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%todos%' AND Parametro='Cu';
 GO
 
-/* ==== BLOQUE 51 — VALIDAR fix Pb/Sn LC (crítico) tras re-correr la cadena ====
-   ORDEN de re-corrida en SSMS (dependencias): 1) vw_LimitesPorComponente  2) vw_MuestrasEstado
-   3) (vw_MuestrasRankeadas hereda por me.*)  4) vw_TendenciaElemento  5) las *MD (último, historial-metal). */
+-- ==== BLOQUE 51 — VALIDAR fix Pb/Sn LC (crítico) tras re-correr la cadena ====
+-- ORDEN de re-corrida en SSMS (dependencias): 1) vw_LimitesPorComponente  2) vw_MuestrasEstado
+-- 3) (vw_MuestrasRankeadas hereda por me.*)  4) vw_TendenciaElemento  5) las *MD (último, historial-metal).
 GO
 -- 51.1 La fundación ya expone Pb_LC / Sn_LC y marca crítico (Antapaccay MT: Pb LC=5, Sn LC=5)
 SELECT TOP 20 Equipo, Compartimiento, Pb_ppm, Pb_LP, Pb_LC, Estado_Pb, Sn_ppm, Sn_LP, Sn_LC, Estado_Sn
@@ -918,18 +918,18 @@ SELECT MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3163%' AND compAbbr LIKE '%MT RH%';   -- CA3163 tenía Pb,Zn observados en triage
 GO
 
-/* ==== BLOQUE 42 — vw_TendenciaGraficoMD (tabla del metal + gráfico ASCII combinados) ==== */
+-- ==== BLOQUE 42 — vw_TendenciaGraficoMD (tabla del metal + gráfico ASCII combinados) ====
 SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
 GO
 
-/* ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ==== */
+-- ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ====
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
 
-/* ==== BLOQUE 52 — VALIDAR Pb/Sn LC en BARRIDO (vw_ObservadosFlota) ====
-   Re-correr en orden: vw_ObservadosFlota -> vw_ObservadosResumen -> vw_ObservadosResumenMD / vw_ObservadosBarridoMD. */
+-- ==== BLOQUE 52 — VALIDAR Pb/Sn LC en BARRIDO (vw_ObservadosFlota) ====
+-- Re-correr en orden: vw_ObservadosFlota -> vw_ObservadosResumen -> vw_ObservadosResumenMD / vw_ObservadosBarridoMD.
 GO
 -- 52.1 ¿Mets_Obs ahora incluye Pb:C / Sn:C donde el ppm supera LC?
 SELECT TOP 20 Equipo, Compartimiento, NumCrit, NumPrec, Mets_Obs
@@ -943,8 +943,8 @@ SELECT MD FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
 
-/* ==== BLOQUE 53 — VALIDAR salud (V100/viscosidad) en la fundación ====
-   Re-correr: vw_LimitesPorComponente -> vw_MuestrasEstado. V100 fuera de rango [LCI,LCS] = CRITICO. */
+-- ==== BLOQUE 53 — VALIDAR salud (V100/viscosidad) en la fundación ====
+-- Re-correr: vw_LimitesPorComponente -> vw_MuestrasEstado. V100 fuera de rango [LCI,LCS] = CRITICO.
 GO
 -- 53.1 ¿Estado_V100 marca crítico/precaución donde V100 sale del rango? (Antapaccay MT: LCI=70.1 LCS=85.7)
 SELECT TOP 30 Proyecto, Equipo, Compartimiento, V100, V100_LCI, V100_LCS, Estado_V100, Estado_General
