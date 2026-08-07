@@ -832,3 +832,8 @@ WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPL
 SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
 GO
+
+/* ==== BLOQUE 42 — vw_TendenciaGraficoMD (firma equipo+compAbbr+parametro, flujo MD_metal) ==== */
+SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
+GO

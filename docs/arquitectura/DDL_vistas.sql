@@ -1676,3 +1676,17 @@ LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimien
 LEFT JOIN obsall oa ON oa.Equipo=d.Equipo AND oa.Compartimiento=d.Compartimiento
 LEFT JOIN recoblock rb ON rb.Equipo=d.Equipo AND rb.Compartimiento=d.Compartimiento;
 GO
+
+
+/* ==== vw_TendenciaGraficoMD (wrapper del gráfico ASCII en fence, contrato MD) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaGraficoMD] AS
+SELECT
+    g.Equipo,
+    CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
+    g.Parametro,
+    CAST(NULL AS nvarchar(max)) AS Observados,       -- contrato fijo (no aplica en gráfico)
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,  -- contrato fijo (no aplica en gráfico)
+    /* El grafico ASCII VA en bloque de codigo (monospace) — al reves que las tablas. Se imprime tal cual. */
+    CAST(N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```' AS nvarchar(max)) AS MD
+FROM [dbo].[vw_TendenciaGrafico] g;
+GO
