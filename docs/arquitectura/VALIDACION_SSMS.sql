@@ -828,7 +828,7 @@ GO
 
 /* ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ==== */
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
-SELECT MD_Completo FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPLETA (default)
+SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
 GO

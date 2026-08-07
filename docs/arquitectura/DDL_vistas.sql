@@ -1658,18 +1658,18 @@ SELECT
         CASE WHEN d.compAbbr LIKE 'MT %'
              THEN N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite en la última muestra — sin recomendaciones aplicables por ahora.'
              ELSE N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Nada que comentar sobre el Motor de Tracción para este componente.' END) AS Recomendaciones,
-    CAST(
-        N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (parámetros relevantes)' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
-      + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
-      + ISNULL(br.bodyMD, N'_Sin parámetros fuera de umbral en la última muestra — pide la **matriz completa** para verlos todos._')
-    AS nvarchar(max)) AS MD,
-    CAST(
+    CAST(   -- DEFAULT (columna=MD): matriz COMPLETA, todos los parámetros
         N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (todos los parámetros)' + NCHAR(10) + NCHAR(10)
       + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
       + ba.bodyMD
-    AS nvarchar(max)) AS MD_Completo
+    AS nvarchar(max)) AS MD,
+    CAST(   -- opt-in (columna=MD_Relevantes): solo los parámetros fuera de umbral
+        N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (parámetros relevantes)' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
+      + ISNULL(br.bodyMD, N'_Sin parámetros fuera de umbral en la última muestra._')
+    AS nvarchar(max)) AS MD_Relevantes
 FROM datehdr d
 JOIN body_all ba ON ba.Equipo=d.Equipo AND ba.Compartimiento=d.Compartimiento
 LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimiento
