@@ -815,3 +815,8 @@ GO
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
+
+/* ==== BLOQUE 39 — vw_CondicionMT_MD (firma equipo, flujo MD_equipo) ==== */
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3177%';
+GO
