@@ -1358,3 +1358,73 @@ FROM (VALUES
     (N'V100', 10, N'Viscosidad V100', N'Baja viscosidad con tendencia decreciente, acompañada de un sobrenivel de aceite, indicaría un posible pase interno de aceite hidráulico a la caja de engranajes: detenga el equipo y solicite el cambio de aceite. Baja viscosidad constante entre muestras indicaría una posible carga con aceite incorrecto: detenga el equipo y solicite el cambio de aceite. En ambos casos, filtrar el aceite no ayudará a mejorar la condición.')
 ) v(metal, ord, label, indicio);
 GO
+
+
+/* ==== vw_UltimoAnalisisMD (último análisis de 1 componente) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_UltimoAnalisisMD] AS
+WITH u AS (
+    SELECT *,
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH'
+             WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH'
+             WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr
+    FROM [dbo].[vw_UltimoAnalisisAceite]
+),
+om AS (
+    SELECT Equipo, Compartimiento, mm.metal
+    FROM [dbo].[vw_UltimoAnalisisAceite]
+    CROSS APPLY (VALUES ('Fe',Fe_ppm,Fe_LP,Fe_LC),('PQ',Indice_PQ,PQ_LP,PQ_LC),('Cr',Cr_ppm,Cr_LP,Cr_LC),('Ni',Ni_ppm,Ni_LP,Ni_LC),('Cu',Cu_ppm,Cu_LP,Cu_LC),('Pb',Pb_ppm,Pb_LP,NULL),('Sn',Sn_ppm,Sn_LP,NULL),('Al',Al_ppm,Al_LP,Al_LC),('Si',Si_ppm,Si_LP,Si_LC),('Ca',Ca_ppm,Ca_LP,Ca_LC),('Zn',Zn_ppm,Zn_LP,Zn_LC),('K',K_ppm,K_LP,K_LC),('Na',Na_ppm,Na_LP,Na_LC),('Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
+    WHERE (ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) AND Compartimiento LIKE '%TRACCION%'
+),
+reco AS (
+    SELECT o.Equipo, o.Compartimiento,
+        CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
+           + STRING_AGG(CONVERT(nvarchar(max), N'- **' + r.label + N':** ' + r.indicio), NCHAR(10)) WITHIN GROUP (ORDER BY r.ord)
+        AS nvarchar(max)) AS Recomendaciones
+    FROM (SELECT DISTINCT Equipo, Compartimiento, metal FROM om) o
+    JOIN [dbo].[vw_Recomendaciones] r ON r.metal = o.metal
+    GROUP BY o.Equipo, o.Compartimiento
+),
+omall AS (
+    SELECT Equipo, Compartimiento, STRING_AGG(metal, N', ') AS metals
+    FROM (SELECT Equipo, Compartimiento, mm.metal
+          FROM [dbo].[vw_UltimoAnalisisAceite]
+          CROSS APPLY (VALUES ('Fe',Fe_ppm,Fe_LP,Fe_LC),('PQ',Indice_PQ,PQ_LP,PQ_LC),('Cr',Cr_ppm,Cr_LP,Cr_LC),('Ni',Ni_ppm,Ni_LP,Ni_LC),('Cu',Cu_ppm,Cu_LP,Cu_LC),('Pb',Pb_ppm,Pb_LP,NULL),('Sn',Sn_ppm,Sn_LP,NULL),('Al',Al_ppm,Al_LP,Al_LC),('Si',Si_ppm,Si_LP,Si_LC),('Ca',Ca_ppm,Ca_LP,Ca_LC),('Zn',Zn_ppm,Zn_LP,Zn_LC),('K',K_ppm,K_LP,K_LC),('Na',Na_ppm,Na_LP,Na_LC),('Mg',Mg_ppm,Mg_LP,Mg_LC)) mm(metal, ppm, lp, lc)
+          WHERE ppm > ISNULL(lc,9999) OR ppm > ISNULL(lp,9999)) z
+    GROUP BY Equipo, Compartimiento
+)
+SELECT u.Equipo, u.Proyecto, u.Modelo, u.Compartimiento,
+    ISNULL(u.compAbbr + N': ' + oaz.metals, u.compAbbr + N': (sin observados)') AS Observados,
+    ISNULL(rc.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
+    CAST(
+        N'**Último análisis — ' + u.Equipo + N' · ' + u.compAbbr + N'**' + NCHAR(10)
+      + N'*Mod. ' + ISNULL(u.Modelo,N'—') + N' · Hor. ' + ISNULL(CONVERT(varchar(20),CAST(u.Horometro AS decimal(18,0))),N'—')
+      + N' · Hor.Comp. ' + ISNULL(CONVERT(varchar(20),CAST(u.HorasComponente AS decimal(18,0))),N'—')
+      + N' · CM ' + ISNULL(u.CM,N'—') + N' · ' + ISNULL(FORMAT(u.FechaMuestreo,'dd-MMM-yy'),N'—') + N'*' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC | Valor |' + NCHAR(10) + N'|---|---|---|---|' + NCHAR(10)
+      + N'| **Met. Desg.** | | | |' + NCHAR(10) +
+            N'| Fe | ' + ISNULL(CONVERT(varchar(20),CAST(Fe_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Fe_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Fe_ppm>ISNULL(Fe_LC,9999) THEN CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+N' 🟥' WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| PQ | ' + ISNULL(CONVERT(varchar(20),CAST(PQ_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(PQ_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Indice_PQ>ISNULL(PQ_LC,9999) THEN CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1)))+N' 🟥' WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Indice_PQ AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| Cr | ' + ISNULL(CONVERT(varchar(20),CAST(Cr_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Cr_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Cr_ppm>ISNULL(Cr_LC,9999) THEN CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+N' 🟥' WHEN Cr_ppm>ISNULL(Cr_LP,9999) THEN CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Cr_ppm AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| Ni | ' + ISNULL(CONVERT(varchar(20),CAST(Ni_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Ni_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Ni_ppm>ISNULL(Ni_LC,9999) THEN CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+N' 🟥' WHEN Ni_ppm>ISNULL(Ni_LP,9999) THEN CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Ni_ppm AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| Cu | ' + ISNULL(CONVERT(varchar(20),CAST(Cu_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Cu_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Cu_ppm>ISNULL(Cu_LC,9999) THEN CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+N' 🟥' WHEN Cu_ppm>ISNULL(Cu_LP,9999) THEN CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Cu_ppm AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| Pb | ' + ISNULL(CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1))), N'—') + N' | ' + N'—' + N' | ' + CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1))) END + N' |' + NCHAR(10) +
+            N'| Sn | ' + ISNULL(CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1))), N'—') + N' | ' + N'—' + N' | ' + CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1))) END + N' |' + NCHAR(10) +
+            N'| Al | ' + ISNULL(CONVERT(varchar(20),CAST(Al_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Al_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Al_ppm>ISNULL(Al_LC,9999) THEN CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+N' 🟥' WHEN Al_ppm>ISNULL(Al_LP,9999) THEN CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Al_ppm AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| Si | ' + ISNULL(CONVERT(varchar(20),CAST(Si_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Si_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Si_ppm>ISNULL(Si_LC,9999) THEN CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+N' 🟥' WHEN Si_ppm>ISNULL(Si_LP,9999) THEN CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(Si_ppm AS decimal(18,1)))+N'' END + N' |' + NCHAR(10) +
+            N'| **Contam.** | | | |' + NCHAR(10) +
+            N'| Ca | ' + ISNULL(CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+N' 🟥 inf' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+N' 🟨 inf' ELSE CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+N' inf' END + N' |' + NCHAR(10) +
+            N'| Zn | ' + ISNULL(CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+N' 🟥 inf' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+N' 🟨 inf' ELSE CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+N' inf' END + N' |' + NCHAR(10) +
+            N'| K | ' + ISNULL(CONVERT(varchar(20),CAST(K_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(K_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+N' 🟥 inf' WHEN K_ppm>ISNULL(K_LP,9999) THEN CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+N' 🟨 inf' ELSE CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+N' inf' END + N' |' + NCHAR(10) +
+            N'| Na | ' + ISNULL(CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+N' 🟥 inf' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+N' 🟨 inf' ELSE CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+N' inf' END + N' |' + NCHAR(10) +
+            N'| **Adit.** | | | |' + NCHAR(10) +
+            N'| B | ' + N'—' + N' | ' + N'—' + N' | ' + ISNULL(CONVERT(varchar(20),CAST(B_ppm AS decimal(18,1))),N'—') + N' |' + NCHAR(10) +
+            N'| P | ' + N'—' + N' | ' + N'—' + N' | ' + ISNULL(CONVERT(varchar(20),CAST(P_ppm AS decimal(18,1))),N'—') + N' |' + NCHAR(10) +
+            N'| Mg | ' + ISNULL(CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))), N'—') + N' | ' + CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+N' 🟥 inf' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+N' 🟨 inf' ELSE CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+N' inf' END + N' |' + NCHAR(10) +
+            N'| **Salud** | | | |' + NCHAR(10) +
+            N'| V100 | ' + N'—' + N' | ' + N'—' + N' | ' + ISNULL(CONVERT(varchar(20),CAST(V100 AS decimal(18,1))),N'—') + N' |' + NCHAR(10) +
+            N'| TBN | ' + ISNULL(CONVERT(varchar(20),CAST(TBN_LP AS decimal(18,1))), N'—') + N' | ' + N'—' + N' | ' + CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN CONVERT(varchar(20),CAST(TBN AS decimal(18,1)))+N' 🟨' ELSE CONVERT(varchar(20),CAST(TBN AS decimal(18,1))) END + N' |' + NCHAR(10)
+    AS nvarchar(max)) AS MD
+FROM u
+LEFT JOIN reco  rc  ON rc.Equipo=u.Equipo AND rc.Compartimiento=u.Compartimiento
+LEFT JOIN omall oaz ON oaz.Equipo=u.Equipo AND oaz.Compartimiento=u.Compartimiento;
+GO
