@@ -18,6 +18,7 @@ Parte de la config a aplicar. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_
 | Último análisis de componente | equipo, compartimiento | MD_equipo_comp · vista=vw_UltimoAnalisisMD · columna=MD | sí |
 | Condición MT | equipo | MD_equipo · vista=vw_CondicionMT_MD · columna=MD | sí |
 | Diagnóstico equipo | equipo | MD_equipo · vista=vw_DiagnosticoMD · columna=MD | sí |
+| Diagnóstico completo (nuevo) | equipo | MD_equipo · vista=vw_DiagnosticoMD · columna=MD_Completo | sí |
 | Tendencia paso 1 | equipo, compartimiento | MD_equipo_comp · vista=vw_TendenciaP1MD · columna=MD | no |
 | Tendencia detalle | equipo, compartimiento | MD_equipo_comp · vista=vw_TendenciaMD · columna=MD | sí |
 | Tendencia relevantes | equipo, compartimiento | MD_equipo_comp · vista=vw_TendenciaMD · columna=MD_Relevantes | sí |
@@ -41,6 +42,7 @@ Parte de la config a aplicar. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_
 - **Último análisis de componente:** "Último análisis de aceite de UN componente de un equipo. «último análisis del MT LH del CA3177», «cómo salió el hidráulico del X». Rellena equipo y compartimiento. ⛔ NO para el equipo completo (Diagnóstico) ni la flota."
 - **Condición MT:** "Estado de los Motores de Tracción (MT LH y RH) de UN equipo. «condición del MT del X», «cómo están los motores de tracción del X». Rellena equipo. ⛔ NO otro componente ni flota."
 - **Diagnóstico equipo:** "ESTADO ACTUAL de TODOS los componentes de UN equipo (matriz). «diagnóstico del X», «cómo está el equipo X», «último análisis general del X». ⛔ NO historial (cronológico), un componente, ni flota."
+- **Diagnóstico completo:** "Diagnóstico de UN equipo con TODOS los parámetros (incluidos los que están OK), matriz completa. «diagnóstico completo del X», «todos los metales del equipo X», «la matriz completa del X». Rellena equipo. ⛔ NO para solo observados (Diagnóstico equipo) ni un componente."
 - **Tendencia paso 1:** "Evolución de las últimas muestras de UN componente, SIN nombrar metal. «tendencia del MT LH del X». Rellena equipo, compartimiento. ⛔ NO si nombran un metal."
 - **Tendencia detalle:** "Detalle de la tendencia de UN componente: metales×fechas + LP/LC + Σvida + resumen estadístico. «detalle por elemento», «la matriz de metales». Rellena equipo, compartimiento."
 - **Tendencia relevantes:** "Solo los parámetros fuera de umbral de la tendencia de UN componente. «solo los relevantes de la tendencia del X». Rellena equipo, compartimiento."
