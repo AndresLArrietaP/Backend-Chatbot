@@ -349,7 +349,9 @@ WITH b AS (
             CASE WHEN Zn_ppm > ISNULL(Zn_LC,9999) THEN ',Zn:C' WHEN Zn_ppm > ISNULL(Zn_LP,9999) THEN ',Zn:P' ELSE '' END,
             CASE WHEN K_ppm  > ISNULL(K_LC,9999)  THEN ',K:C'  WHEN K_ppm  > ISNULL(K_LP,9999)  THEN ',K:P'  ELSE '' END,
             CASE WHEN Na_ppm > ISNULL(Na_LC,9999) THEN ',Na:C' WHEN Na_ppm > ISNULL(Na_LP,9999) THEN ',Na:P' ELSE '' END,
-            CASE WHEN Mg_ppm > ISNULL(Mg_LC,9999) THEN ',Mg:C' WHEN Mg_ppm > ISNULL(Mg_LP,9999) THEN ',Mg:P' ELSE '' END
+            CASE WHEN Mg_ppm > ISNULL(Mg_LC,9999) THEN ',Mg:C' WHEN Mg_ppm > ISNULL(Mg_LP,9999) THEN ',Mg:P' ELSE '' END,
+            /* SALUD del aceite: viscosidad. Solo dispara donde los limites VISC estan aterrizados (Antapaccay); V100=0/NULL -> SIN DATO (nada). Informativo: NO cuenta como metal observado */
+            CASE WHEN Estado_V100 = 'CRITICO' THEN ',V100:C' WHEN Estado_V100 = 'PRECAUCION' THEN ',V100:P' ELSE '' END
         ), 1, 1, '') AS Infs_Obs,
         ( CASE WHEN Fe_ppm    > ISNULL(Fe_LC,9999) THEN 1 ELSE 0 END
         + CASE WHEN Indice_PQ > ISNULL(PQ_LC,9999) THEN 1 ELSE 0 END
@@ -408,7 +410,7 @@ WITH b AS (
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC,
         Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC,
-        K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
+        K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP, Estado_V100
     FROM [dbo].[vw_MuestrasEstado]
     WHERE EsDDI = 0 AND rn_recencia = 1
 ),
@@ -947,7 +949,9 @@ WITH f AS (
             CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C inf' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':C inf' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
             CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':C inf' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
-            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C inf' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P inf' ELSE '' END
+            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C inf' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P inf' ELSE '' END,
+            /* SALUD del aceite: viscosidad V100 (informativo, no dispara Estado_General; solo aparece en equipos ya observados) */
+            CASE WHEN Estado_V100='CRITICO' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':C salud' WHEN Estado_V100='PRECAUCION' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':P salud' ELSE '' END
         ),1,3,'') AS chipsCell
     FROM [dbo].[vw_ObservadosFlota]
     WHERE Estado_General <> 'OK'

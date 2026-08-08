@@ -965,3 +965,17 @@ GO
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
+
+-- ==== BLOQUE 54 - #6b salud: V100 (viscosidad) informativo en barrido detalle ====
+-- 54.1 Detalle Antapaccay: debe verse ' · V100=NNN 🟥/🟨 salud' SOLO en filas ya observadas (Estado <> OK)
+SELECT MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- 54.2 Cordura: V100 NO agrega equipos nuevos (Estado_General sigue mandando). Cuenta observados con y sin V100
+SELECT
+  SUM(CASE WHEN Estado_General <> 'OK' THEN 1 ELSE 0 END) AS Observados_totales,
+  SUM(CASE WHEN Estado_General <> 'OK' AND Estado_V100 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Con_V100_salud,
+  SUM(CASE WHEN Estado_General = 'OK'  AND Estado_V100 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Solo_V100_excluidos
+FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%';
+GO
