@@ -960,3 +960,8 @@ WHERE rn_recencia=1 AND Estado_V100<>'OK'
   AND Fe_ppm<=ISNULL(Fe_LP,9999) AND Cr_ppm<=ISNULL(Cr_LP,9999) AND Cu_ppm<=ISNULL(Cu_LP,9999)
   AND Pb_ppm<=ISNULL(Pb_LP,9999) AND Sn_ppm<=ISNULL(Sn_LP,9999);
 GO
+
+/* ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ==== */
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO

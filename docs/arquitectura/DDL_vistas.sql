@@ -803,7 +803,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_DiagnosticoEquipo] AS
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, CompTipo, FechaMuestreo,
-    Horometro, HorasDeAceite, HorasComponente, CM, Estado_General, Cond_Area,
+    Horometro, HorasDeAceite, HorasComponente, CM, Grado, Estado_General, Cond_Area,
     -- conteos por equipo (sobre TODOS los componentes) para el encabezado «X de N observados»
     -- aunque el central filtre Estado_General<>'OK': los window se calculan antes del filtro.
     COUNT(*) OVER (PARTITION BY Equipo) AS NumCompTotal,
@@ -930,7 +930,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosBarridoMD] AS
 WITH f AS (
     SELECT
-        Proyecto, Modelo, Compartimiento, Equipo, Estado_General, FechaMuestreo, HorasComponente, CM,
+        Proyecto, Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, CM,
         CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END AS sev,
         STUFF(CONCAT(
             CASE WHEN Fe_ppm>ISNULL(Fe_LC,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':C' WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':P' ELSE '' END,
@@ -956,6 +956,7 @@ fila AS (
     SELECT Proyecto, Modelo, Compartimiento, sev, Equipo, Estado_General,
         CAST(
             N'| ' + Equipo
+          + N' | ' + ISNULL(Grado, N'—')
           + N' | ' + ISNULL(FORMAT(FechaMuestreo, 'dd-MMM'), N'—')
           + N' | ' + ISNULL(CONVERT(nvarchar(12), HorasComponente), N'—')
           + N' | ' + ISNULL(CM, N'—')
@@ -969,8 +970,8 @@ t_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
-          + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
         AS nvarchar(max)) AS seccionMD
     FROM fila
@@ -985,8 +986,8 @@ c_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
-          + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
         AS nvarchar(max)) AS seccionMD
     FROM fila WHERE Estado_General='CRITICO'
@@ -1001,8 +1002,8 @@ p_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
-          + N'| Equipo | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
         AS nvarchar(max)) AS seccionMD
     FROM fila WHERE Estado_General='PRECAUCION'
@@ -2043,7 +2044,7 @@ GO
 /* ==== vw_TriageMD (triage MT de flota — caso de uso principal) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TriageMD] AS
 WITH base AS (
-    SELECT Equipo, Proyecto, Compartimiento, Estado_General, HorasComponente, FechaMuestreo,
+    SELECT Equipo, Proyecto, Compartimiento, Estado_General, HorasComponente, FechaMuestreo, Grado,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' ELSE N'—' END AS estadoChip, CASE WHEN Estado_General LIKE '%CRITIC%' THEN 1 WHEN Estado_General LIKE '%PRECAUC%' THEN 2 ELSE 3 END AS estadoOrd
     FROM [dbo].[vw_DiagnosticoEquipo]
     WHERE Compartimiento LIKE '%TRACCION%'
@@ -2075,7 +2076,7 @@ metcell AS (   -- "Fe, Cu" por MT observado
 ),
 rows_ AS (
     SELECT b.Equipo, b.Proyecto, b.estadoOrd,
-        CAST(N'| ' + b.Equipo + N' | ' + b.compAbbr + N' | ' + b.estadoChip + N' | ' + ISNULL(mc.metals, N'—')
+        CAST(N'| ' + b.Equipo + N' | ' + b.compAbbr + N' | ' + ISNULL(b.Grado,N'—') + N' | ' + b.estadoChip + N' | ' + ISNULL(mc.metals, N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(b.HorasComponente AS decimal(18,0))),N'—')
            + N' | ' + ISNULL(FORMAT(b.FechaMuestreo,'dd-MMM-yy'),N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM base b LEFT JOIN metcell mc ON mc.Equipo=b.Equipo AND mc.Compartimiento=b.Compartimiento
@@ -2110,8 +2111,8 @@ SELECT
     CAST(
         N'**Triage Motores de Tracción — ' + c.Proyecto + N'** · ' + CAST(c.Nobs AS nvarchar(10)) + N' de ' + CAST(c.Ntot AS nvarchar(10)) + N' MT observados' + NCHAR(10) + NCHAR(10)
       + CASE WHEN bd.bodyMD IS NOT NULL THEN
-            N'| Equipo | MT | Estado | Metales Obs. | Hrs Comp | Últ. |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|' + NCHAR(10) + bd.bodyMD
+            N'| Equipo | MT | Grado | Estado | Metales Obs. | Hrs Comp | Últ. |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|' + NCHAR(10) + bd.bodyMD
         ELSE N'_Ninguno observado — todos los Motores de Tracción del proyecto dentro de límite._' END
     AS nvarchar(max)) AS MD
 FROM cnt c
