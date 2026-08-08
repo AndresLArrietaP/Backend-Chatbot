@@ -1,7 +1,7 @@
 # Roadmap — nuevos roles (KomfIA SQL, Conocimientos) + qué agregar
 
 Complementa [AUDITORIA_KOMFIA_2026-08.md](AUDITORIA_KOMFIA_2026-08.md) y
-[CONFIG_TEMAS_FLUJOS.md](CONFIG_TEMAS_FLUJOS.md). Enfoque nuevo, mismo objetivo: todo determinístico,
+[CONFIG_FLUJOS.md](CONFIG_FLUJOS.md) / [CONFIG_TEMAS.md](CONFIG_TEMAS.md) / [CONFIG_PROMPTS.md](CONFIG_PROMPTS.md). Enfoque nuevo, mismo objetivo: todo determinístico,
 dinámico, consistente y adaptable; KomfIA SQL y Conocimientos con propósito o fuera.
 
 ## 1) KomfIA SQL — nuevo rol (urgente)
@@ -53,7 +53,7 @@ Firma `proyecto` (+modelo), flujo `MD_flota`. Análisis con el prompt universal.
 ## 4) Orden de archivos (docs/copilot/)
 - `prompts/analisis_prompts.md` — prompt universal (ya existe). ✅
 - `AUDITORIA_KOMFIA_2026-08.md` — hallazgos.
-- `CONFIG_TEMAS_FLUJOS.md` — config canónica (aplicar en Copilot).
+- `CONFIG_FLUJOS.md` / `CONFIG_TEMAS.md` / `CONFIG_PROMPTS.md` — config canónica (aplicar en Copilot).
 - `ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md` — este.
 - Instrucciones `KomfIA_central.docx`/`KomfIA_SQL.docx` — se conservan; se **vacían** por handoff limpio a
   medida que cada módulo vive en su tema (liberar los 8000 chars). Conocimientos `.docx` — quedan en repo,

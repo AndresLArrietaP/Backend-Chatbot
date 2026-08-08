@@ -6,7 +6,7 @@ Sistema actual: **KomfIA Central** (orquesta por intención + imprime {md} + nod
 formatos en `docs/gerencia/formatos 1`. Contrato: toda vista `*MD` expone `MD` + variantes, `Observados`,
 `Recomendaciones`; el flujo NUNCA cambia su query, solo cambia la entrada `vista`.
 
-Complementa este archivo: [CONFIG_TEMAS_FLUJOS.md](CONFIG_TEMAS_FLUJOS.md) (config canónica a aplicar) y
+Complementa este archivo: [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md) / [CONFIG_TEMAS.md](CONFIG_TEMAS.md) / [CONFIG_PROMPTS.md](CONFIG_PROMPTS.md) (config canónica) y
 [ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md](ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md) (nuevos roles + qué agregar).
 
 ## 🔴 Hallazgos transversales (prioridad)
