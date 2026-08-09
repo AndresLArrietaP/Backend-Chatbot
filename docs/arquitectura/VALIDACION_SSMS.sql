@@ -997,5 +997,5 @@ GO
 -- Debe aparecer >=1 fila con EsDDI=1 (DDI) si el equipo tuvo dializados; antes se perdian.
 -- 58.2 el MD del historial de componente ahora refleja las muestras DDI en la bitacora
 SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND Compartimiento LIKE '%TRACCION%LH';
+WHERE Equipo LIKE '%CA3171%' AND compAbbr = 'MT LH';   -- las vistas MD filtran por compAbbr, NO por Compartimiento
 GO
