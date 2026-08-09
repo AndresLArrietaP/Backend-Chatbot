@@ -932,7 +932,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosBarridoMD] AS
 WITH f AS (
     SELECT
-        Proyecto, N'(todos)' AS Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, CM,
+        Proyecto, mg.ModeloG AS Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, CM,
         CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END AS sev,
         STUFF(CONCAT(
             CASE WHEN Fe_ppm>ISNULL(Fe_LC,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':C' WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':P' ELSE '' END,
@@ -954,6 +954,7 @@ WITH f AS (
             CASE WHEN Estado_V100='CRITICO' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':C salud' WHEN Estado_V100='PRECAUCION' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':P salud' ELSE '' END
         ),1,3,'') AS chipsCell
     FROM [dbo].[vw_ObservadosFlota]
+    CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG)
     WHERE Estado_General <> 'OK'
 ),
 fila AS (
@@ -1019,14 +1020,15 @@ p_agg AS (
     FROM p_sec GROUP BY Proyecto, Modelo
 ),
 compsev AS (
-    SELECT Proyecto, N'(todos)' AS Modelo, Compartimiento,
+    SELECT Proyecto, mg.ModeloG AS Modelo, Compartimiento,
         MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev
-    FROM [dbo].[vw_ObservadosFlota] WHERE Estado_General <> 'OK'
-    GROUP BY Proyecto, Compartimiento
+    FROM [dbo].[vw_ObservadosFlota] CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG) WHERE Estado_General <> 'OK'
+    GROUP BY Proyecto, mg.ModeloG, Compartimiento
 ),
 metrows AS (
-    SELECT DISTINCT o.Proyecto, N'(todos)' AS Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
+    SELECT DISTINCT o.Proyecto, mg.ModeloG AS Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
     FROM [dbo].[vw_ObservadosFlota] o
+    CROSS APPLY (VALUES (o.Modelo),(N'(todos)')) mg(ModeloG)
     CROSS APPLY (VALUES
         (1, 'Fe', CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LP AS decimal(18,1)) END, CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LC AS decimal(18,1)) END),
         (2, 'PQ', CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CAST(PQ_LP AS decimal(18,1)) END, CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CAST(PQ_LC AS decimal(18,1)) END),
@@ -1062,11 +1064,11 @@ limtbl AS (
     GROUP BY r.Proyecto, r.Modelo
 ),
 cnt AS (
-    SELECT Proyecto, N'(todos)' AS Modelo,
+    SELECT Proyecto, mg.ModeloG AS Modelo,
         COUNT(*) AS NumEquipos,
         SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumEquiposCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumEquiposSoloPrecau
-    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto
+    FROM [dbo].[vw_ObservadosResumen] CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG) GROUP BY Proyecto, mg.ModeloG
 )
 SELECT
     ta.Proyecto, ta.Modelo,
@@ -1106,7 +1108,7 @@ GO
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosResumenMD] AS
 WITH r AS (
-    SELECT Proyecto, N'(todos)' AS Modelo, Equipo, NumCrit, NumPrec, Horometro, HorasDeAceite, FechaUltima, CM, Comp_Obs, Met_Obs,
+    SELECT Proyecto, mg.ModeloG AS Modelo, Equipo, NumCrit, NumPrec, Horometro, HorasDeAceite, FechaUltima, CM, Comp_Obs, Met_Obs,
         CAST(
             N'| ' + Equipo
           + N' | ' + CAST(NumCrit AS nvarchar(10))
@@ -1120,6 +1122,7 @@ WITH r AS (
           + N' |'
         AS nvarchar(max)) AS filaMD
     FROM [dbo].[vw_ObservadosResumen]
+    CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG)
 ),
 tabla AS (
     SELECT Proyecto, Modelo,
@@ -1127,21 +1130,22 @@ tabla AS (
     FROM r GROUP BY Proyecto, Modelo
 ),
 cnt AS (
-    SELECT Proyecto, N'(todos)' AS Modelo,
+    SELECT Proyecto, mg.ModeloG AS Modelo,
         COUNT(*) AS NumEquipos,
         SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumSoloPrecau
-    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto
+    FROM [dbo].[vw_ObservadosResumen] CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG) GROUP BY Proyecto, mg.ModeloG
 ),
 compsev AS (
-    SELECT Proyecto, N'(todos)' AS Modelo, Compartimiento,
+    SELECT Proyecto, mg.ModeloG AS Modelo, Compartimiento,
         MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev
-    FROM [dbo].[vw_ObservadosFlota] WHERE Estado_General <> 'OK'
-    GROUP BY Proyecto, Compartimiento
+    FROM [dbo].[vw_ObservadosFlota] CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG) WHERE Estado_General <> 'OK'
+    GROUP BY Proyecto, mg.ModeloG, Compartimiento
 ),
 metrows AS (
-    SELECT DISTINCT o.Proyecto, N'(todos)' AS Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
+    SELECT DISTINCT o.Proyecto, mg.ModeloG AS Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
     FROM [dbo].[vw_ObservadosFlota] o
+    CROSS APPLY (VALUES (o.Modelo),(N'(todos)')) mg(ModeloG)
     CROSS APPLY (VALUES
         (1, 'Fe', CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LP AS decimal(18,1)) END, CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LC AS decimal(18,1)) END),
         (2, 'PQ', CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CAST(PQ_LP AS decimal(18,1)) END, CASE WHEN Indice_PQ>ISNULL(PQ_LP,9999) THEN CAST(PQ_LC AS decimal(18,1)) END),

@@ -966,17 +966,23 @@ SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 
--- ==== BLOQUE 56 - Barrido rollup (todos): resumen y detalle NO piden modelo (1 fila por proyecto, Modelo='(todos)') ====
-SELECT Modelo, MD FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
-GO
-SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
-GO
--- Debe devolver EXACTAMENTE 1 fila cada uno (toda la flota agregada, sin importar el modelo real)
-
 -- ==== BLOQUE 57 - Triage recos limpias: Recomendaciones SOLO de metales de la tabla (sin Calcio/Zinc informativos) ====
 SELECT MD, Recomendaciones FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 -- En Recomendaciones NO debe aparecer Calcio ni Zinc; solo los metales que salen en la columna 'Metales Obs.' de la tabla
+
+-- ==== BLOQUE 56 - Barrido: (todos) sin modelo Y por-modelo especifico (duplicacion) ====
+-- 56.1 sin modelo -> flota completa (1 fila '(todos)')
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- 56.2 modelo nombrado -> solo ese modelo (ej. 980E)
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980%';
+GO
+-- 56.3 resumen: ambos casos deben existir (lista de modelos disponibles)
+SELECT DISTINCT Modelo FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%';
+GO
+-- Debe listar '(todos)' + cada modelo real de la flota
