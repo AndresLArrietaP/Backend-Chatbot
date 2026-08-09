@@ -932,7 +932,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosBarridoMD] AS
 WITH f AS (
     SELECT
-        Proyecto, Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, CM,
+        Proyecto, N'(todos)' AS Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, CM,
         CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END AS sev,
         STUFF(CONCAT(
             CASE WHEN Fe_ppm>ISNULL(Fe_LC,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':C' WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':P' ELSE '' END,
@@ -1019,13 +1019,13 @@ p_agg AS (
     FROM p_sec GROUP BY Proyecto, Modelo
 ),
 compsev AS (
-    SELECT Proyecto, Modelo, Compartimiento,
+    SELECT Proyecto, N'(todos)' AS Modelo, Compartimiento,
         MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev
     FROM [dbo].[vw_ObservadosFlota] WHERE Estado_General <> 'OK'
-    GROUP BY Proyecto, Modelo, Compartimiento
+    GROUP BY Proyecto, Compartimiento
 ),
 metrows AS (
-    SELECT DISTINCT o.Proyecto, o.Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
+    SELECT DISTINCT o.Proyecto, N'(todos)' AS Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
     FROM [dbo].[vw_ObservadosFlota] o
     CROSS APPLY (VALUES
         (1, 'Fe', CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LP AS decimal(18,1)) END, CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LC AS decimal(18,1)) END),
@@ -1062,11 +1062,11 @@ limtbl AS (
     GROUP BY r.Proyecto, r.Modelo
 ),
 cnt AS (
-    SELECT Proyecto, Modelo,
+    SELECT Proyecto, N'(todos)' AS Modelo,
         COUNT(*) AS NumEquipos,
         SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumEquiposCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumEquiposSoloPrecau
-    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto, Modelo
+    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto
 )
 SELECT
     ta.Proyecto, ta.Modelo,
@@ -1106,7 +1106,7 @@ GO
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosResumenMD] AS
 WITH r AS (
-    SELECT Proyecto, Modelo, Equipo, NumCrit, NumPrec, Horometro, HorasDeAceite, FechaUltima, CM, Comp_Obs, Met_Obs,
+    SELECT Proyecto, N'(todos)' AS Modelo, Equipo, NumCrit, NumPrec, Horometro, HorasDeAceite, FechaUltima, CM, Comp_Obs, Met_Obs,
         CAST(
             N'| ' + Equipo
           + N' | ' + CAST(NumCrit AS nvarchar(10))
@@ -1127,20 +1127,20 @@ tabla AS (
     FROM r GROUP BY Proyecto, Modelo
 ),
 cnt AS (
-    SELECT Proyecto, Modelo,
+    SELECT Proyecto, N'(todos)' AS Modelo,
         COUNT(*) AS NumEquipos,
         SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumSoloPrecau
-    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto, Modelo
+    FROM [dbo].[vw_ObservadosResumen] GROUP BY Proyecto
 ),
 compsev AS (
-    SELECT Proyecto, Modelo, Compartimiento,
+    SELECT Proyecto, N'(todos)' AS Modelo, Compartimiento,
         MIN(CASE WHEN Estado_General='CRITICO' THEN 1 ELSE 2 END) AS sev
     FROM [dbo].[vw_ObservadosFlota] WHERE Estado_General <> 'OK'
-    GROUP BY Proyecto, Modelo, Compartimiento
+    GROUP BY Proyecto, Compartimiento
 ),
 metrows AS (
-    SELECT DISTINCT o.Proyecto, o.Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
+    SELECT DISTINCT o.Proyecto, N'(todos)' AS Modelo, o.Compartimiento, m.ord, m.metal, m.lp, m.lc
     FROM [dbo].[vw_ObservadosFlota] o
     CROSS APPLY (VALUES
         (1, 'Fe', CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LP AS decimal(18,1)) END, CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN CAST(Fe_LC AS decimal(18,1)) END),
@@ -1181,7 +1181,7 @@ SELECT
     c.NumEquipos, c.NumCriticos, c.NumSoloPrecau,
     CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
-        N'**Barrido Flota ' + ISNULL(t.Modelo,N'') + N' — ' + t.Proyecto + N' | Estado Actual (No-OK)**' + NCHAR(10)
+        N'**Barrido Flota — ' + t.Proyecto + N' | Estado Actual (No-OK)**' + NCHAR(10)
       + N'**' + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos con ≥1 componente observado — '
         + CAST(c.NumCriticos AS nvarchar(10)) + N' con CRÍTICO · '
         + CAST(c.NumSoloPrecau AS nvarchar(10)) + N' solo PRECAUCIÓN**' + NCHAR(10) + NCHAR(10)
@@ -2066,13 +2066,10 @@ obsdet AS (   -- metales observados por MT (value:marker :C/:P)
             (N'Pb', Pb),
             (N'Sn', Sn),
             (N'Al', Al),
-            (N'Si', Si),
-            (N'Ca', Ca),
-            (N'Zn', Zn),
-            (N'P', P),
-            (N'V100', V100)
+            (N'Si', Si)
     ) mm(metal, val)
-    WHERE mm.val LIKE '%:C%' OR mm.val LIKE '%:P%'
+    WHERE (mm.val LIKE '%:C%' OR mm.val LIKE '%:P%')
+      AND b.Estado_General NOT LIKE '%OK%' AND b.Estado_General NOT LIKE '%NORMAL%'   -- solo equipos en la tabla
 ),
 metcell AS (   -- "Fe, Cu" por MT observado
     SELECT Equipo, Compartimiento, STRING_AGG(CONVERT(nvarchar(20),metal), N', ') AS metals

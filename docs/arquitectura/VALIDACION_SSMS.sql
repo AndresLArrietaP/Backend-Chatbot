@@ -966,23 +966,17 @@ SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 
--- ==== BLOQUE 54 - #6b salud: V100 (viscosidad) informativo en barrido detalle ====
--- 54.1 Detalle Antapaccay: debe verse ' · V100=NNN 🟥/🟨 salud' SOLO en filas ya observadas (Estado <> OK)
--- (el barrido emite el Modelo REAL, no '(todos)') -> filtrar solo por proyecto; busca ' V100=' en el MD
-SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%';
-GO
--- 54.2 Cordura: V100 NO agrega equipos nuevos (Estado_General sigue mandando). Cuenta observados con y sin V100
-SELECT
-  SUM(CASE WHEN Estado_General <> 'OK' THEN 1 ELSE 0 END) AS Observados_totales,
-  SUM(CASE WHEN Estado_General <> 'OK' AND Estado_V100 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Con_V100_salud,
-  SUM(CASE WHEN Estado_General = 'OK'  AND Estado_V100 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Solo_V100_excluidos
-FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%';
-GO
-
--- ==== BLOQUE 55 - #14 vw_TendenciaIncipienteMD (firma proyecto, flujo MD_flota modelo=todos) ====
--- Debe listar el EQUIPO afectado + metales (prom->ult, +%); 0 filas -> mensaje 'Ninguno'
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaIncipienteMD] WITH (NOLOCK)
+-- ==== BLOQUE 56 - Barrido rollup (todos): resumen y detalle NO piden modelo (1 fila por proyecto, Modelo='(todos)') ====
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- Debe devolver EXACTAMENTE 1 fila cada uno (toda la flota agregada, sin importar el modelo real)
+
+-- ==== BLOQUE 57 - Triage recos limpias: Recomendaciones SOLO de metales de la tabla (sin Calcio/Zinc informativos) ====
+SELECT MD, Recomendaciones FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- En Recomendaciones NO debe aparecer Calcio ni Zinc; solo los metales que salen en la columna 'Metales Obs.' de la tabla
