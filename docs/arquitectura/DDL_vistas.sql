@@ -286,6 +286,33 @@ LEFT JOIN hs H
 WHERE me.EsDDI = 0;
 GO
 
+/* ==== vw_MuestrasHistorial — base DDI-INCLUSIVA para historial (unico topico con DDI). ====
+   = vw_MuestrasRankeadas SIN el filtro EsDDI=0, + rn_hist (recencia por MUESTRA, 1=mas reciente,
+   incluye DDI). Los demas topicos NO usan esta vista (siguen en vw_MuestrasRankeadas, EsDDI=0). */
+CREATE OR ALTER VIEW [dbo].[vw_MuestrasHistorial] AS
+WITH hs AS (
+    SELECT [EQUIPO] AS Eq, [SISTEMA] AS Sis,
+           TRY_CONVERT(decimal(12,2),[SMR ULTIMO SERVICIO])        AS Smr,
+           TRY_CONVERT(decimal(12,2),[HORAS DE TRABAJO ACUMULADO ]) AS Hta,
+           ROW_NUMBER() OVER (PARTITION BY [EQUIPO],[SISTEMA] ORDER BY [FECHA] DESC) AS rn
+    FROM [Eqpcare].[HsCc]
+)
+SELECT me.*,
+    CASE WHEN H.Smr IS NOT NULL AND me.Horometro >= H.Smr THEN me.Horometro - H.Smr ELSE H.Hta END AS HorasComponente,
+    ROW_NUMBER() OVER (PARTITION BY me.Equipo, me.Compartimiento ORDER BY me.FechaMuestreo DESC, me.LaboratoryDataId DESC) AS rn_hist
+FROM [dbo].[vw_MuestrasEstado] me
+LEFT JOIN hs H
+  ON  H.rn = 1
+  AND ( H.Eq = me.Equipo OR (H.Eq LIKE 'T[0-9]%' AND me.Equipo = 'CA'+SUBSTRING(H.Eq,2,10)) )
+  AND H.Sis = CASE WHEN me.Compartimiento LIKE '%TRACCION%LH' THEN 'WHEEL MOTOR LH'
+                   WHEN me.Compartimiento LIKE '%TRACCION%RH' THEN 'WHEEL MOTOR RH'
+                   WHEN me.Compartimiento LIKE '%HIDRAULICO%' THEN 'HYDRAULIC'
+                   WHEN me.Compartimiento LIKE '%RUEDA%LH'    THEN 'SPINDLE LH'
+                   WHEN me.Compartimiento LIKE '%RUEDA%RH'    THEN 'SPINDLE RH'
+                   WHEN me.Compartimiento LIKE 'MOTOR%'       THEN 'MOTOR DIESEL'
+                   ELSE me.Compartimiento END;
+GO
+
 CREATE OR ALTER VIEW [dbo].[vw_UltimoAnalisisAceite] AS
 -- sobre vw_MuestrasRankeadas (no vw_MuestrasEstado) para exponer HorasComponente
 -- (rankeadas ya filtra EsDDI=0). rn_recencia=1 = última muestra en uso por equipo+compartimiento.
@@ -1797,15 +1824,15 @@ GO
 /* ==== vw_HistorialMD (log cronológico de un componente) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMD] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_recencia, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
         CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Indice_PQ, PQ_LP, Cr_ppm, Cr_LP, Ni_ppm, Ni_LP, Cu_ppm, Cu_LP,
         Pb_ppm, Pb_LP, Sn_ppm, Sn_LP, Al_ppm, Al_LP, Si_ppm, Si_LP
-    FROM [dbo].[vw_MuestrasRankeadas]
-    WHERE rn_recencia <= 12
+    FROM [dbo].[vw_MuestrasHistorial]
+    WHERE rn_hist <= 12
 ),
 obs AS (
-    SELECT s.Equipo, s.Compartimiento, s.rn_recencia,
+    SELECT s.Equipo, s.Compartimiento, s.rn_hist,
         STRING_AGG(CASE WHEN mm.ppm > ISNULL(mm.lp, 9999) THEN CONVERT(nvarchar(20), mm.metal) END, N', ') AS obsList
     FROM s CROSS APPLY (VALUES
             (N'Fe',Fe_ppm,Fe_LP),
@@ -1818,17 +1845,17 @@ obs AS (
             (N'Al',Al_ppm,Al_LP),
             (N'Si',Si_ppm,Si_LP)
     ) mm(metal, ppm, lp)
-    GROUP BY s.Equipo, s.Compartimiento, s.rn_recencia
+    GROUP BY s.Equipo, s.Compartimiento, s.rn_hist
 ),
 rows_ AS (
-    SELECT s.Equipo, s.Compartimiento, s.compAbbr, s.rn_recencia,
+    SELECT s.Equipo, s.Compartimiento, s.compAbbr, s.rn_hist,
         CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
            + N' | ' + ISNULL(o.obsList, N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(s.CM,N'—') + N' | ' + s.estadoChip + N' |' AS nvarchar(max)) AS rowMD
-    FROM s LEFT JOIN obs o ON o.Equipo=s.Equipo AND o.Compartimiento=s.Compartimiento AND o.rn_recencia=s.rn_recencia
+    FROM s LEFT JOIN obs o ON o.Equipo=s.Equipo AND o.Compartimiento=s.Compartimiento AND o.rn_hist=s.rn_hist
 ),
 body AS (
     SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr, COUNT(*) AS N,
-        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY rn_recencia) AS bodyMD
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY rn_hist) AS bodyMD
     FROM rows_ GROUP BY Equipo, Compartimiento
 )
 SELECT
@@ -1847,16 +1874,16 @@ GO
 /* ==== vw_HistorialMetalMD (historial de un metal en un componente) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalMD] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_recencia, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
         Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
-    FROM [dbo].[vw_MuestrasRankeadas]
-    WHERE rn_recencia <= 12
+    FROM [dbo].[vw_MuestrasHistorial]
+    WHERE rn_hist <= 12
 ),
 u AS (
-    SELECT s.Equipo, s.Compartimiento, s.compAbbr, s.rn_recencia, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.HorasComponente, s.CM, s.estadoChip,
+    SELECT s.Equipo, s.Compartimiento, s.compAbbr, s.rn_hist, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.HorasComponente, s.CM, s.estadoChip,
         CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
         CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC
     FROM s CROSS APPLY (VALUES
@@ -1881,7 +1908,7 @@ u AS (
     ) m(metal, Valor, LP, LC)
 ),
 rows_ AS (
-    SELECT Equipo, Compartimiento, compAbbr, Parametro, rn_recencia, LP, LC,
+    SELECT Equipo, Compartimiento, compAbbr, Parametro, rn_hist, LP, LC,
         CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—') + N' | ' + ISNULL(CASE WHEN u.Valor > ISNULL(u.LC,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟥' WHEN u.Valor > ISNULL(u.LP,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟨' ELSE CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1))) END, N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CM,N'—') + N' | ' + estadoChip + N' |' AS nvarchar(max)) AS rowMD
     FROM u
@@ -1889,7 +1916,7 @@ rows_ AS (
 body AS (
     SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr, Parametro,
         MAX(LP) AS LP, MAX(LC) AS LC, COUNT(*) AS N,
-        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY rn_recencia) AS bodyMD
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY rn_hist) AS bodyMD
     FROM rows_
     GROUP BY Equipo, Compartimiento, Parametro
 )
@@ -1912,14 +1939,14 @@ GO
 /* ==== vw_HistorialEquipoMD ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialEquipoMD] AS
 WITH s0 AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_recencia, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm,Fe_LP,Indice_PQ,PQ_LP,Cr_ppm,Cr_LP,Ni_ppm,Ni_LP,Cu_ppm,Cu_LP,Pb_ppm,Pb_LP,Sn_ppm,Sn_LP,Al_ppm,Al_LP,Si_ppm,Si_LP,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC) AS grn
-    FROM [dbo].[vw_MuestrasRankeadas]
+    FROM [dbo].[vw_MuestrasHistorial]
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 24),
 obs AS (
-    SELECT s.Equipo, s.Compartimiento, s.rn_recencia,
+    SELECT s.Equipo, s.Compartimiento, s.rn_hist,
         STRING_AGG(CASE WHEN mm.ppm > ISNULL(mm.lp,9999) THEN CONVERT(nvarchar(20), mm.metal) END, N', ') AS obsList
     FROM s CROSS APPLY (VALUES
             (N'Fe',Fe_ppm,Fe_LP),
@@ -1932,13 +1959,13 @@ obs AS (
             (N'Al',Al_ppm,Al_LP),
             (N'Si',Si_ppm,Si_LP)
     ) mm(metal, ppm, lp)
-    GROUP BY s.Equipo, s.Compartimiento, s.rn_recencia
+    GROUP BY s.Equipo, s.Compartimiento, s.rn_hist
 ),
 rows_ AS (
     SELECT s.Equipo, s.grn,
         CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
            + N' | ' + ISNULL(o.obsList, N'—') + N' | ' + s.compAbbr + N' | ' + ISNULL(s.CM,N'—') + N' | ' + s.estadoChip + N' |' AS nvarchar(max)) AS rowMD
-    FROM s LEFT JOIN obs o ON o.Equipo=s.Equipo AND o.Compartimiento=s.Compartimiento AND o.rn_recencia=s.rn_recencia
+    FROM s LEFT JOIN obs o ON o.Equipo=s.Equipo AND o.Compartimiento=s.Compartimiento AND o.rn_hist=s.rn_hist
 ),
 body AS (SELECT Equipo, COUNT(*) AS N, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY grn) AS bodyMD FROM rows_ GROUP BY Equipo)
 SELECT b.Equipo,
@@ -1953,15 +1980,15 @@ GO
 /* ==== vw_HistorialFlotaMD ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialFlotaMD] AS
 WITH s0 AS (
-    SELECT Proyecto, Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_recencia, FechaMuestreo, Estado_General, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
+    SELECT Proyecto, Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr, rn_hist, FechaMuestreo, Estado_General, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm,Fe_LP,Indice_PQ,PQ_LP,Cr_ppm,Cr_LP,Ni_ppm,Ni_LP,Cu_ppm,Cu_LP,Pb_ppm,Pb_LP,Sn_ppm,Sn_LP,Al_ppm,Al_LP,Si_ppm,Si_LP,
         ROW_NUMBER() OVER (PARTITION BY Proyecto ORDER BY FechaMuestreo DESC) AS grn
-    FROM [dbo].[vw_MuestrasRankeadas]
+    FROM [dbo].[vw_MuestrasHistorial]
     WHERE Estado_General NOT LIKE '%OK%' AND Estado_General NOT LIKE '%NORMAL%'
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 24),
 obs AS (
-    SELECT s.Equipo, s.Compartimiento, s.rn_recencia,
+    SELECT s.Equipo, s.Compartimiento, s.rn_hist,
         STRING_AGG(CASE WHEN mm.ppm > ISNULL(mm.lp,9999) THEN CONVERT(nvarchar(20), mm.metal) END, N', ') AS obsList
     FROM s CROSS APPLY (VALUES
             (N'Fe',Fe_ppm,Fe_LP),
@@ -1974,13 +2001,13 @@ obs AS (
             (N'Al',Al_ppm,Al_LP),
             (N'Si',Si_ppm,Si_LP)
     ) mm(metal, ppm, lp)
-    GROUP BY s.Equipo, s.Compartimiento, s.rn_recencia
+    GROUP BY s.Equipo, s.Compartimiento, s.rn_hist
 ),
 rows_ AS (
     SELECT s.Proyecto, s.grn,
         CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + s.Equipo + N' | ' + s.compAbbr
            + N' | ' + s.estadoChip + N' | ' + ISNULL(o.obsList, N'—') + N' |' AS nvarchar(max)) AS rowMD
-    FROM s LEFT JOIN obs o ON o.Equipo=s.Equipo AND o.Compartimiento=s.Compartimiento AND o.rn_recencia=s.rn_recencia
+    FROM s LEFT JOIN obs o ON o.Equipo=s.Equipo AND o.Compartimiento=s.Compartimiento AND o.rn_hist=s.rn_hist
 ),
 body AS (SELECT Proyecto, COUNT(*) AS N, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY grn) AS bodyMD FROM rows_ GROUP BY Proyecto)
 SELECT b.Proyecto, N'(todos)' AS Modelo,
@@ -2000,7 +2027,7 @@ WITH s0 AS (
         Pb_ppm,Pb_LP,Pb_LC,Sn_ppm,Sn_LP,Sn_LC,Al_ppm,Al_LP,Al_LC,Si_ppm,Si_LP,Si_LC,Ca_ppm,Ca_LP,Ca_LC,Zn_ppm,Zn_LP,Zn_LC,
         K_ppm,K_LP,K_LC,Na_ppm,Na_LP,Na_LC,Mg_ppm,Mg_LP,Mg_LC,B_ppm,P_ppm,V100,TBN,TBN_LP,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC) AS grn
-    FROM [dbo].[vw_MuestrasRankeadas]
+    FROM [dbo].[vw_MuestrasHistorial]
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 24),
 u AS (

@@ -986,3 +986,16 @@ SELECT DISTINCT Modelo FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%';
 GO
 -- Debe listar '(todos)' + cada modelo real de la flota
+
+-- ==== BLOQUE 58 - Historial INCLUYE DDI (unico topico con DDI) ====
+-- 58.1 base nueva: rn_hist rankea por muestra incluyendo DDI (EsDDI puede ser 0 o 1)
+SELECT TOP 15 Equipo, Compartimiento, FechaMuestreo, CM, EsDDI, rn_hist
+FROM [dbo].[vw_MuestrasHistorial] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY rn_hist;
+GO
+-- Debe aparecer >=1 fila con EsDDI=1 (DDI) si el equipo tuvo dializados; antes se perdian.
+-- 58.2 el MD del historial de componente ahora refleja las muestras DDI en la bitacora
+SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND Compartimiento LIKE '%TRACCION%LH';
+GO
