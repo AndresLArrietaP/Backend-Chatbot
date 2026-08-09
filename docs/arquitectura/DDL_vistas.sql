@@ -2166,7 +2166,7 @@ eq AS (   -- por equipo+comp MT: lista de metales incipientes + severidad
         STRING_AGG(CONVERT(nvarchar(max),
             metal + N' ' + CONVERT(nvarchar(20), CAST(prom_prev AS decimal(18,1))) + N'→'
             + CONVERT(nvarchar(20), CAST(ult AS decimal(18,1)))
-            + N' (+' + CONVERT(nvarchar(12), pct) + N'%)'), N', ') WITHIN GROUP (ORDER BY Orden) AS mets,
+            + N' (+' + CASE WHEN pct > 500 THEN N'>500' ELSE CONVERT(nvarchar(12), pct) END + N'%)'), N', ') WITHIN GROUP (ORDER BY Orden) AS mets,
         MIN(CASE WHEN pct >= 80 THEN 1 ELSE 2 END) AS sev
     FROM inc GROUP BY Proyecto, Equipo, compAbbr
 ),
