@@ -979,3 +979,9 @@ SELECT
 FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%';
 GO
+
+-- ==== BLOQUE 55 - #14 vw_TendenciaIncipienteMD (firma proyecto, flujo MD_flota modelo=todos) ====
+-- Debe listar el EQUIPO afectado + metales (prom->ult, +%); 0 filas -> mensaje 'Ninguno'
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaIncipienteMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO

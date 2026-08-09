@@ -2123,3 +2123,79 @@ FROM cnt c
 LEFT JOIN body bd ON bd.Proyecto=c.Proyecto
 LEFT JOIN recoblock rb ON rb.Proyecto=c.Proyecto;
 GO
+
+/* ==== vw_TendenciaIncipienteMD (#14: MT que varian de su promedio sin superar LP) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaIncipienteMD] AS
+WITH s AS (   -- ultimas 6 muestras MT por equipo+comp, normalizadas por metal de desgaste
+    SELECT Proyecto, Equipo, Compartimiento, rn_recencia,
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr,
+        p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP
+    FROM [dbo].[vw_MuestrasRankeadas]
+    CROSS APPLY (VALUES
+        (N'Fe',1,Fe_ppm,Fe_LP),
+        (N'PQ',2,Indice_PQ,PQ_LP),
+        (N'Cr',3,Cr_ppm,Cr_LP),
+        (N'Ni',4,Ni_ppm,Ni_LP),
+        (N'Cu',5,Cu_ppm,Cu_LP),
+        (N'Pb',6,Pb_ppm,Pb_LP),
+        (N'Sn',7,Sn_ppm,Sn_LP),
+        (N'Al',8,Al_ppm,Al_LP),
+        (N'Si',9,Si_ppm,Si_LP)
+    ) p(metal, Orden, Valor, LP)
+    WHERE EsDDI = 0 AND rn_recencia <= 6 AND Compartimiento LIKE '%TRACCION%'
+),
+agg AS (   -- ultimo (rn=1) vs promedio de las previas (rn 2..6) por equipo+comp+metal
+    SELECT Proyecto, Equipo, Compartimiento, compAbbr, metal, Orden,
+        MAX(CASE WHEN rn_recencia = 1 THEN Valor END) AS ult,
+        MAX(CASE WHEN rn_recencia = 1 THEN LP END)    AS LP,
+        AVG(CASE WHEN rn_recencia BETWEEN 2 AND 6 THEN Valor END) AS prom_prev,
+        SUM(CASE WHEN rn_recencia BETWEEN 2 AND 6 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
+    FROM s GROUP BY Proyecto, Equipo, Compartimiento, compAbbr, metal, Orden
+),
+inc AS (   -- incipientes: subieron >=40% sobre su media SIN superar el LP (aun no observados)
+    SELECT *, CONVERT(int, ROUND((ult - prom_prev) / NULLIF(prom_prev, 0) * 100, 0)) AS pct
+    FROM agg
+    WHERE n_prev >= 2 AND ult > 0 AND prom_prev > 0
+      AND ult <= ISNULL(LP, 999999)
+      AND ult >= prom_prev * 1.4
+),
+eq AS (   -- por equipo+comp MT: lista de metales incipientes + severidad
+    SELECT Proyecto, Equipo, compAbbr,
+        STRING_AGG(CONVERT(nvarchar(max),
+            metal + N' ' + CONVERT(nvarchar(20), CAST(prom_prev AS decimal(18,1))) + N'→'
+            + CONVERT(nvarchar(20), CAST(ult AS decimal(18,1)))
+            + N' (+' + CONVERT(nvarchar(12), pct) + N'%)'), N', ') WITHIN GROUP (ORDER BY Orden) AS mets,
+        MIN(CASE WHEN pct >= 80 THEN 1 ELSE 2 END) AS sev
+    FROM inc GROUP BY Proyecto, Equipo, compAbbr
+),
+rows_ AS (
+    SELECT Proyecto, sev, Equipo,
+        CAST(N'| ' + Equipo + N' | ' + compAbbr + N' | '
+           + CASE WHEN sev = 1 THEN N'🟧 acelerada' ELSE N'🔵 incipiente' END
+           + N' | ' + mets + N' |' AS nvarchar(max)) AS rowMD
+    FROM eq
+),
+body AS (
+    SELECT Proyecto, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo) AS bodyMD, COUNT(*) AS Ninc
+    FROM rows_ GROUP BY Proyecto
+),
+tot AS (   -- MT evaluados por proyecto (para "X de N")
+    SELECT Proyecto, COUNT(DISTINCT Equipo + N'|' + Compartimiento) AS Ntot
+    FROM s WHERE rn_recencia = 1 GROUP BY Proyecto
+)
+SELECT
+    t.Proyecto, N'(todos)' AS Modelo,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Tendencia incipiente 🔵 🟧 - Motores de Traccion - ' + t.Proyecto + N'** - '
+      + CAST(ISNULL(b.Ninc, 0) AS nvarchar(10)) + N' de ' + CAST(t.Ntot AS nvarchar(10)) + N' MT' + NCHAR(10)
+      + N'_MT que se dispararon respecto a su propio promedio (>=40%) SIN superar aun el limite (LP)._' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN b.bodyMD IS NOT NULL THEN
+            N'| Equipo | MT | Tendencia | Parametros (prom' + N'→' + N'ult) |' + NCHAR(10)
+          + N'|---|---|---|---|' + NCHAR(10) + b.bodyMD
+        ELSE N'_Ninguno - ningun Motor de Traccion muestra desviacion incipiente sobre su comportamiento historico._' END
+    AS nvarchar(max)) AS MD
+FROM tot t
+LEFT JOIN body b ON b.Proyecto = t.Proyecto;
+GO

@@ -64,7 +64,7 @@ Firma `proyecto` (+modelo), flujo `MD_flota`. Análisis con el prompt universal.
 2. **H2 — Barrido detalle → MD_flota**, retirar flujo `Barrido_Detalle`. *(consistencia)*
 3. **#6b/#7 — Grado + Horas Comp + V100/salud en el barrido** (gerencia). *(vistas)*
 4. **KomfIA SQL → Conteo + Ranking deterministas.** *(velocidad; libera al hijo)*
-5. **#14 Tendencia incipiente.** *(gerencia; vista nueva)*
+5. ~~**#14 Tendencia incipiente.**~~ ✅ HECHO — `vw_TendenciaIncipienteMD` (tema 20, flujo `MD_flota`, `vista=vw_TendenciaIncipienteMD`, `columna=MD`, entradas `proyecto`,`modelo='(todos)'`). Regla: última muestra ≥40% sobre su media de las 5 previas SIN superar LP; muestra equipo + params (prom→últ, +%). Análisis con prompt universal.
 6. **H3 — MD_metal: agregar salidas observados/recomendaciones** (contrato). *(menor)*
 7. **Adaptive Cards** — cuando el ancho sea crítico. *(futuro)*
 8. **V100:** cargar límites de viscosidad correctos por proyecto si se quiere flag real (hoy display-only).
