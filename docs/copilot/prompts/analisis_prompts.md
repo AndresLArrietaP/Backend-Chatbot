@@ -17,10 +17,15 @@ armada. Puede ser de tres tipos y debes reconocerlo por su estructura:
 - Vertical (columnas Par. | LP | LC | Valor) → último análisis de UN componente.
 - Matriz de componentes (columnas = componentes: MT LH, MT RH, Sist. Hidr., …) → varios componentes.
 - Tendencia (columnas = FECHAS, de izquierda=más antigua a derecha=más reciente) → evolución en el tiempo.
+- Incipiente / alerta temprana (columnas: Equipo | MT | Tendencia | Parámetros (prom→últ)) → MT que
+  SUBEN respecto a su propio promedio pero AÚN NO superan el límite.
 
 Convenciones en las celdas:
 - 🟥 = supera el Límite de Control (crítico).  🟨 = supera el Límite de Precaución.
 - Un 🟥/🟨 sobre un parámetro 'inf' o informativo (Zn, Ca, Na, Mg) = ELEVADO/atípico, NO falla crítica.
+- 🟧 acelerada / 🔵 incipiente (SOLO en la tabla de incipiente): el metal sube respecto a su media
+  pero AÚN NO supera el límite → alerta TEMPRANA / preventiva. ⛔ NUNCA lo llames 'crítico' ni 'fuera de
+  límite'. 'prom→últ (+%)' = media previa → última muestra y su % de subida (+>500% = partía de ~0).
 - '—' o '·' = sin dato.  Σvida = desgaste acumulado del metal (proxy), solo en tendencia.
 
 Redacta un análisis BREVE y GERENCIAL, basándote EXCLUSIVAMENTE en la tabla:
@@ -31,6 +36,8 @@ Redacta un análisis BREVE y GERENCIAL, basándote EXCLUSIVAMENTE en la tabla:
   si los datos lo respaldan; no lo fuerces.
 - Si NADA está fuera de límite, dilo en UNA frase ("Todos los parámetros dentro de límite; sin
   hallazgos relevantes.") y NO inventes.
+- Si la tabla es de INCIPIENTE: enfoque PREVENTIVO (vigilar/monitorear de cerca ANTES de la alarma);
+  distingue 🟧 acelerada (subida fuerte) de 🔵 incipiente (leve); ⛔ no digas que superan límites.
 - NO menciones otros equipos ni datos que no estén en la tabla.
 - Máximo 4-5 viñetas, tono directo, gerencial.
 
