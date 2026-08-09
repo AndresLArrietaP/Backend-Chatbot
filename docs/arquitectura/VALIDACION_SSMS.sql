@@ -968,8 +968,9 @@ GO
 
 -- ==== BLOQUE 54 - #6b salud: V100 (viscosidad) informativo en barrido detalle ====
 -- 54.1 Detalle Antapaccay: debe verse ' · V100=NNN 🟥/🟨 salud' SOLO en filas ya observadas (Estado <> OK)
-SELECT MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+-- (el barrido emite el Modelo REAL, no '(todos)') -> filtrar solo por proyecto; busca ' V100=' en el MD
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%';
 GO
 -- 54.2 Cordura: V100 NO agrega equipos nuevos (Estado_General sigue mandando). Cuenta observados con y sin V100
 SELECT

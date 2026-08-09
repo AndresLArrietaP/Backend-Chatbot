@@ -2152,12 +2152,14 @@ agg AS (   -- ultimo (rn=1) vs promedio de las previas (rn 2..6) por equipo+comp
         SUM(CASE WHEN rn_recencia BETWEEN 2 AND 6 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
     FROM s GROUP BY Proyecto, Equipo, Compartimiento, compAbbr, metal, Orden
 ),
-inc AS (   -- incipientes: subieron >=40% sobre su media SIN superar el LP (aun no observados)
+inc AS (   -- incipientes: acercandose al LP (mitad superior) y subiendo >=40% sobre su media, SIN superarlo aun
     SELECT *, CONVERT(int, ROUND((ult - prom_prev) / NULLIF(prom_prev, 0) * 100, 0)) AS pct
     FROM agg
     WHERE n_prev >= 2 AND ult > 0 AND prom_prev > 0
-      AND ult <= ISNULL(LP, 999999)
-      AND ult >= prom_prev * 1.4
+      AND LP IS NOT NULL            -- solo metales con limite definido (aproximacion medible)
+      AND ult <= LP                 -- aun NO observado
+      AND ult >= 0.5 * LP           -- mitad superior: acercandose al limite (filtra ruido de traza)
+      AND ult >= prom_prev * 1.4    -- acelerando respecto a su propia media
 ),
 eq AS (   -- por equipo+comp MT: lista de metales incipientes + severidad
     SELECT Proyecto, Equipo, compAbbr,
@@ -2190,7 +2192,7 @@ SELECT
     CAST(
         N'**Tendencia incipiente 🔵 🟧 - Motores de Traccion - ' + t.Proyecto + N'** - '
       + CAST(ISNULL(b.Ninc, 0) AS nvarchar(10)) + N' de ' + CAST(t.Ntot AS nvarchar(10)) + N' MT' + NCHAR(10)
-      + N'_MT que se dispararon respecto a su propio promedio (>=40%) SIN superar aun el limite (LP)._' + NCHAR(10) + NCHAR(10)
+      + N'_MT acercandose al limite (>=50% del LP) y subiendo >=40% sobre su propia media, SIN superarlo aun._' + NCHAR(10) + NCHAR(10)
       + CASE WHEN b.bodyMD IS NOT NULL THEN
             N'| Equipo | MT | Tendencia | Parametros (prom' + N'→' + N'ult) |' + NCHAR(10)
           + N'|---|---|---|---|' + NCHAR(10) + b.bodyMD
