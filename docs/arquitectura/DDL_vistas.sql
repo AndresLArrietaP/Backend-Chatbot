@@ -855,6 +855,7 @@ SELECT
     CONVERT(varchar(20),CAST(B_ppm     AS decimal(18,1))) AS B,
     CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
     CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
+    Estado_V100,
     CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN
 FROM [dbo].[vw_UltimoAnalisisFlota];
 GO
@@ -2081,7 +2082,7 @@ GO
 /* ==== vw_TriageMD (triage MT de flota — caso de uso principal) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TriageMD] AS
 WITH base AS (
-    SELECT Equipo, Proyecto, Compartimiento, Estado_General, HorasComponente, FechaMuestreo, Grado,
+    SELECT Equipo, Proyecto, Compartimiento, Estado_General, HorasComponente, FechaMuestreo, Grado, Estado_V100, TBN,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' ELSE N'—' END AS estadoChip, CASE WHEN Estado_General LIKE '%CRITIC%' THEN 1 WHEN Estado_General LIKE '%PRECAUC%' THEN 2 ELSE 3 END AS estadoOrd
     FROM [dbo].[vw_DiagnosticoEquipo]
     WHERE Compartimiento LIKE '%TRACCION%'
@@ -2111,6 +2112,7 @@ metcell AS (   -- "Fe, Cu" por MT observado
 rows_ AS (
     SELECT b.Equipo, b.Proyecto, b.estadoOrd,
         CAST(N'| ' + b.Equipo + N' | ' + b.compAbbr + N' | ' + ISNULL(b.Grado,N'—') + N' | ' + b.estadoChip + N' | ' + ISNULL(mc.metals, N'—')
+           + N' | ' + ISNULL(NULLIF(STUFF(CASE WHEN b.Estado_V100='CRITICO' THEN N' · V100 🟥' WHEN b.Estado_V100='PRECAUCION' THEN N' · V100 🟨' ELSE N'' END + CASE WHEN b.TBN LIKE '%:P%' THEN N' · TBN 🟨' ELSE N'' END,1,3,''),N''),N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(b.HorasComponente AS decimal(18,0))),N'—')
            + N' | ' + ISNULL(FORMAT(b.FechaMuestreo,'dd-MMM-yy'),N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM base b LEFT JOIN metcell mc ON mc.Equipo=b.Equipo AND mc.Compartimiento=b.Compartimiento
@@ -2145,8 +2147,8 @@ SELECT
     CAST(
         N'**Triage Motores de Tracción — ' + c.Proyecto + N'** · ' + CAST(c.Nobs AS nvarchar(10)) + N' de ' + CAST(c.Ntot AS nvarchar(10)) + N' MT observados' + NCHAR(10) + NCHAR(10)
       + CASE WHEN bd.bodyMD IS NOT NULL THEN
-            N'| Equipo | MT | Grado | Estado | Metales Obs. | Hrs Comp | Últ. |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|---|' + NCHAR(10) + bd.bodyMD
+            N'| Equipo | MT | Grado | Estado | Metales Obs. | Salud | Hrs Comp | Últ. |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|---|' + NCHAR(10) + bd.bodyMD
         ELSE N'_Ninguno observado — todos los Motores de Tracción del proyecto dentro de límite._' END
     AS nvarchar(max)) AS MD
 FROM cnt c
