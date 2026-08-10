@@ -37,3 +37,16 @@ Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada sa
 ## Flujos NUEVOS a crear (ver [ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md](ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md))
 - **(opcional) `MD_ranking`** — si el ranking necesita una firma propia (proyecto, compartimiento, parametro);
   si no, se resuelve con `MD_flota` + una vista `vw_RankingMD`. Conteo se resuelve con `MD_flota`.
+
+
+## Flujo `MD_ranking` (nuevo — Ranking)
+4 entradas: `proyecto`, `modelo`, `compartimiento` (tipo de componente), `parametro` (metal). Query FIJO:
+```
+SELECT [columna] AS MD, Observados, Recomendaciones
+FROM [vista]
+WHERE Proyecto LIKE '%'+proyecto+'%' AND Modelo LIKE '%'+modelo+'%'
+  AND CompTipo LIKE '%'+compartimiento+'%' AND Metal LIKE '%'+parametro+'%'
+```
+En la Acción: `vista=vw_RankingMD`, `columna=MD`. El modelo la infiere de la frase (o `(todos)`); `compartimiento` = tipo (tracción/hidráulico/rueda/mando/transmisión/motor); `parametro` = metal (Fe, Cu, Cr…).
+Salidas: `md` (tabla top-10), `observados` (NULL), `recomendaciones` (NULL).
+**Descripciones:** proyecto="Proyecto/mina." · modelo="Modelo del equipo; (todos) si no lo nombran." · compartimiento="Tipo de componente a rankear (tracción, hidráulico, rueda, mando, transmisión, motor)." · parametro="Metal a rankear (Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ)."

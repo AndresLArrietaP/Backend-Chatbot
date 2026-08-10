@@ -2229,3 +2229,108 @@ SELECT
 FROM tot t
 LEFT JOIN body b ON b.Proyecto = t.Proyecto;
 GO
+
+/* ==== vw_ConteoFlotaMD (Conteo deterministico — reemplaza KomfIA SQL) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_ConteoFlotaMD] AS
+WITH base AS (   -- ultima muestra por equipo+comp (sin DDI), duplicada por modelo real + '(todos)'
+    SELECT b.Proyecto, mg.ModeloG AS Modelo, b.Equipo, b.Compartimiento, b.Estado_General,
+        CASE WHEN b.Estado_General LIKE '%CRITIC%' THEN 1 ELSE 0 END AS esCrit,
+        CASE WHEN b.Estado_General LIKE '%PRECAUC%' THEN 1 ELSE 0 END AS esPrec,
+        CASE WHEN b.Estado_General NOT LIKE '%OK%' AND b.Estado_General NOT LIKE '%NORMAL%' THEN 1 ELSE 0 END AS esObs
+    FROM [dbo].[vw_MuestrasRankeadas] b
+    CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) mg(ModeloG)
+    WHERE b.rn_recencia = 1
+),
+comprow AS (   -- por componente (data-driven)
+    SELECT Proyecto, Modelo, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(Compartimiento,'MOTOR DE TRACCION LH','MT LH'),'MOTOR DE TRACCION RH','MT RH'),'RUEDA DELANTERA LH','RD LH'),'RUEDA DELANTERA RH','RD RH'),'SISTEMA HIDRAULICO','Hidr'),'MOTOR','Motor') AS Comp,
+        COUNT(DISTINCT Equipo) AS nEq, SUM(esObs) AS nObs, SUM(esCrit) AS nCrit, SUM(esPrec) AS nPrec,
+        MIN(CASE WHEN esCrit=1 THEN 1 WHEN esObs=1 THEN 2 ELSE 3 END) AS sev
+    FROM base GROUP BY Proyecto, Modelo, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(Compartimiento,'MOTOR DE TRACCION LH','MT LH'),'MOTOR DE TRACCION RH','MT RH'),'RUEDA DELANTERA LH','RD LH'),'RUEDA DELANTERA RH','RD RH'),'SISTEMA HIDRAULICO','Hidr'),'MOTOR','Motor')
+),
+fleet AS (   -- por proyecto+modelo (equipos DISTINTOS)
+    SELECT Proyecto, Modelo,
+        COUNT(DISTINCT Equipo) AS nEq,
+        COUNT(DISTINCT CASE WHEN esObs=1 THEN Equipo END) AS nObs,
+        COUNT(DISTINCT CASE WHEN esCrit=1 THEN Equipo END) AS nCrit,
+        COUNT(DISTINCT CASE WHEN esPrec=1 AND esCrit=0 THEN Equipo END) AS nPrecOnly
+    FROM base GROUP BY Proyecto, Modelo
+),
+rows_ AS (
+    SELECT Proyecto, Modelo, sev,
+        CAST(N'| ' + Comp + N' | ' + CAST(nEq AS nvarchar(10)) + N' | ' + CAST(nObs AS nvarchar(10))
+           + N' | ' + CAST(nCrit AS nvarchar(10)) + N' | ' + CAST(nPrec AS nvarchar(10)) + N' |' AS nvarchar(max)) AS rowMD
+    FROM comprow
+),
+body AS (
+    SELECT Proyecto, Modelo, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, rowMD) AS bodyMD
+    FROM rows_ GROUP BY Proyecto, Modelo
+)
+SELECT
+    f.Proyecto, f.Modelo,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Conteo de flota — ' + f.Proyecto + CASE WHEN f.Modelo <> N'(todos)' THEN N' · ' + f.Modelo ELSE N'' END + N'**' + NCHAR(10)
+      + CAST(f.nEq AS nvarchar(10)) + N' equipos · ' + CAST(f.nObs AS nvarchar(10)) + N' observados ('
+      + CAST(f.nCrit AS nvarchar(10)) + N' criticos · ' + CAST(f.nPrecOnly AS nvarchar(10)) + N' precaucion) · '
+      + CAST(f.nEq - f.nObs AS nvarchar(10)) + N' sin novedad' + NCHAR(10) + NCHAR(10)
+      + N'| Componente | Equipos | Observ. | Criticos | Precau. |' + NCHAR(10)
+      + N'|---|---|---|---|---|' + NCHAR(10) + ISNULL(b.bodyMD, N'—')
+    AS nvarchar(max)) AS MD
+FROM fleet f
+LEFT JOIN body b ON b.Proyecto = f.Proyecto AND b.Modelo = f.Modelo;
+GO
+
+/* ==== vw_RankingMD (Ranking deterministico — reemplaza KomfIA SQL) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_RankingMD] AS
+WITH s AS (   -- ultima muestra por equipo+comp (sin DDI), metales normalizados, modelo real + '(todos)'
+    SELECT b.Proyecto, mg.ModeloG AS Modelo, b.Equipo, b.CompTipo,
+        p.metal, p.Orden, CAST(p.val AS decimal(18,2)) AS val, CAST(p.lp AS decimal(18,2)) AS lp, CAST(p.lc AS decimal(18,2)) AS lc
+    FROM [dbo].[vw_MuestrasRankeadas] b
+    CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) mg(ModeloG)
+    CROSS APPLY (VALUES
+            (N'Fe',1,Fe_ppm,Fe_LP,Fe_LC),
+            (N'PQ',2,Indice_PQ,PQ_LP,PQ_LC),
+            (N'Cr',3,Cr_ppm,Cr_LP,Cr_LC),
+            (N'Ni',4,Ni_ppm,Ni_LP,Ni_LC),
+            (N'Cu',5,Cu_ppm,Cu_LP,Cu_LC),
+            (N'Pb',6,Pb_ppm,Pb_LP,Pb_LC),
+            (N'Sn',7,Sn_ppm,Sn_LP,Sn_LC),
+            (N'Al',8,Al_ppm,Al_LP,Al_LC),
+            (N'Si',9,Si_ppm,Si_LP,Si_LC)
+    ) p(metal, Orden, val, lp, lc)
+    WHERE b.rn_recencia = 1 AND p.val IS NOT NULL
+),
+eqmax AS (   -- por equipo+comptipo+metal: el PEOR (MAX) valor del equipo (combina lados LH/RH)
+    SELECT Proyecto, Modelo, CompTipo, metal, Orden, Equipo,
+        MAX(val) AS val, MAX(lp) AS lp, MAX(lc) AS lc
+    FROM s GROUP BY Proyecto, Modelo, CompTipo, metal, Orden, Equipo
+),
+rk AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY Proyecto, Modelo, CompTipo, metal ORDER BY val DESC, Equipo) AS pos
+    FROM eqmax
+),
+rows_ AS (
+    SELECT Proyecto, Modelo, CompTipo, metal, Orden, pos,
+        CAST(N'| ' + CAST(pos AS nvarchar(10)) + N' | ' + Equipo + N' | ' + CONVERT(nvarchar(20), CAST(val AS decimal(18,1)))
+           + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(lp AS decimal(18,1))), N'—') + N'/' + ISNULL(CONVERT(nvarchar(20), CAST(lc AS decimal(18,1))), N'—')
+           + N' | ' + CASE WHEN lc IS NOT NULL AND val > lc THEN N'🟥' WHEN lp IS NOT NULL AND val > lp THEN N'🟨' ELSE N'—' END + N' |' AS nvarchar(max)) AS rowMD
+    FROM rk WHERE pos <= 10
+),
+body AS (
+    SELECT Proyecto, Modelo, CompTipo, metal, Orden,
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS bodyMD
+    FROM rows_ GROUP BY Proyecto, Modelo, CompTipo, metal, Orden
+)
+SELECT
+    Proyecto, Modelo, CompTipo, metal AS Metal,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Ranking ' + metal + N' — ' + CASE CompTipo WHEN 'TRACCION' THEN N'Motor de Traccion' WHEN 'HIDRAULICO' THEN N'Sistema Hidraulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmision' WHEN 'MOTOR' THEN N'Motor' ELSE CompTipo END + N' · ' + Proyecto
+      + CASE WHEN Modelo <> N'(todos)' THEN N' · ' + Modelo ELSE N'' END + N'** (top 10 por valor)' + NCHAR(10) + NCHAR(10)
+      + N'| # | Equipo | ' + metal + N' | LP/LC | Est. |' + NCHAR(10)
+      + N'|---|---|---|---|---|' + NCHAR(10) + bodyMD
+    AS nvarchar(max)) AS MD
+FROM body;
+GO

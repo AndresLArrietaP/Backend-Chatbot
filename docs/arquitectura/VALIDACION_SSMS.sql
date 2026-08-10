@@ -999,3 +999,15 @@ GO
 SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr = 'MT LH';   -- las vistas MD filtran por compAbbr, NO por Compartimiento
 GO
+
+-- ==== BLOQUE 59 - vw_ConteoFlotaMD (Conteo; flujo MD_flota; proyecto + modelo) ====
+SELECT Modelo, MD FROM [dbo].[vw_ConteoFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- por-modelo tambien: cambia '%todos%' por '%980%' (o el modelo real del proyecto)
+
+-- ==== BLOQUE 60 - vw_RankingMD (Ranking; flujo MD_ranking; proyecto+compartimiento(CompTipo)+parametro+modelo) ====
+SELECT MD FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo LIKE '%TRACCION%' AND Metal LIKE '%Fe%';
+GO
+-- top 10 equipos por Fe en Motor de Traccion. Cambia Metal/CompTipo para otros rankings.
