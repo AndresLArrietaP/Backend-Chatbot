@@ -1,4 +1,44 @@
 /* ============================================================================
+   KomfIA — ÍNDICE DE VALIDACIÓN (bloques ordenados)
+     BLOQUE 0   ¿Existen las 13 vistas? (deben aparecer las 13)
+     BLOQUE 1   Componentes que el CASE NO reconoce (caen en 'OTRO')
+     BLOQUE 22  VALIDAR LA FUNDACIÓN tras los cambios de perf (re-correr DDL primero)
+     BLOQUE 23  DEDUP POR FECHA en rn_recencia (re-correr DDL primero)
+     BLOQUE 24  CA3174 SIN LÍMITES (LP
+     BLOQUE 25  SPARK (sparkline pre-computado en vw_TendenciaElemento) (2026-06-29)
+     BLOQUE 26  SCOPE diagnóstico + filtro de proyecto del triage (marcha 2026-06-30)
+     BLOQUE 32  vw_ObservadosBarridoMD (TIER 2 copia verbatim del "detalle de todos")
+     BLOQUE 34  vw_ObservadosResumenMD (PASO 1 del barrido, columna MD)
+     BLOQUE 35  barrido filtrado (MD_Criticos
+     BLOQUE 36  vw_DiagnosticoMD (diagnóstico 1 equipo)
+     BLOQUE 37  vw_Recomendaciones + bloque determinístico en DiagnosticoMD
+     BLOQUE 38  vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo)
+     BLOQUE 39  vw_CondicionMT_MD (firma equipo, flujo MD_equipo)
+     BLOQUE 40  vw_TendenciaP1MD (firma equipo+compAbbr, flujo MD_equipo_comp)
+     BLOQUE 41  vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp)
+     BLOQUE 42  vw_TendenciaGraficoMD (tabla del metal + gráfico ASCII combinados)
+     BLOQUE 43  vw_TendenciaGraficoObsMD (default: gráficas de observados; firma equip
+     BLOQUE 44  vw_TendenciaMetalMD (firma equipo+parametro, flujo MD_metal comp vacío
+     BLOQUE 45  vw_HistorialMD (firma equipo+compAbbr, flujo MD_equipo_comp)
+     BLOQUE 46  vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal)
+     BLOQUE 47  vw_HistorialEquipoMD (equipo) + vw_HistorialFlotaMD (proyecto)
+     BLOQUE 48  vw_HistorialMetalEquipoMD (firma equipo+parametro, flujo MD_metal comp
+     BLOQUE 49  vw_TriageMD (firma proyecto, flujo MD_flota modelo
+     BLOQUE 50  CORROBORAR límites gerencia (docs
+     BLOQUE 51  VALIDAR fix Pb
+     BLOQUE 52  VALIDAR Pb
+     BLOQUE 53  VALIDAR salud (V100
+     BLOQUE 54  #6b salud V100 (viscosidad) informativa en barrido detalle
+     BLOQUE 55  #14 vw_TendenciaIncipienteMD (firma proyecto, flujo MD_flota modelo
+     BLOQUE 56  Barrido: (todos) sin modelo Y por-modelo especifico (duplicacion)
+     BLOQUE 57  Triage recos: solo metales de la tabla (sin Calcio
+     BLOQUE 58  Historial INCLUYE DDI (unico topico con DDI; vw_MuestrasHistorial + rn
+     BLOQUE 59  vw_ConteoFlotaMD (Conteo; flujo MD_flota; proyecto + modelo)
+     BLOQUE 60  vw_RankingMD (formato largo; el flujo MD_ranking arma la tabla con pos
+     BLOQUE 61  Tendencia con Grado (lubricante) + horas comp
+   ============================================================================ */
+
+/* ============================================================================
    KomfIA — VALIDACIÓN EN SSMS  (bd_kmmp_osconfiabilidad, Azure SQL)
    Corre cada BLOQUE por separado (selecciona y F5). Son SOLO lecturas.
    Objetivo: probar las 13 vistas, el barrido/diagnóstico/tendencia/historial, y — sobre todo — diagnosticar la
@@ -21,7 +61,6 @@ WHERE v.name IN (
     'vw_HistorialFlotaObs')
 ORDER BY v.name;
 GO
-
 
 /* ============================================================================
    BLOQUE 1  ★ EL MÁS IMPORTANTE ★  — COBERTURA DE LÍMITES
@@ -440,7 +479,6 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
 ORDER BY Fe_ppm DESC;
 GO
 
-
 /* ============================================================================
    BLOQUE 22 — VALIDAR LA FUNDACIÓN tras los cambios de perf (re-correr DDL primero)
    1) ventana 12 meses en vw_MuestrasEstado  2) HorasComponente vía JOIN pre-rankeado.
@@ -483,8 +521,6 @@ FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK) WHERE rn_recencia = 1;
 SET STATISTICS TIME OFF;
 GO
 
-
-
 /* ============================================================================
    BLOQUE 23 — DEDUP POR FECHA en rn_recencia (re-correr DDL primero)
    Antes: muestras del mismo día consumían ranking -> tendencia mostraba "3 de 6".
@@ -508,7 +544,6 @@ SELECT FechaMuestreo, CM, Fe FROM [dbo].[vw_HistorialMuestra] WITH (NOLOCK)
 WHERE Equipo='CA3171' AND Compartimiento LIKE '%TRACCION%LH'
 ORDER BY FechaMuestreo DESC;   -- puede haber 2+ del mismo día (correcto)
 GO
-
 
 /* ============================================================================
    BLOQUE 24 — CA3174 SIN LÍMITES (LP/LC) NI Hor.Comp. (marcha 2026-06-27)
@@ -549,7 +584,6 @@ FROM [Eqpcare].[HsCc] WITH (NOLOCK)
 WHERE ([EQUIPO]='CA3174' OR [EQUIPO]='T3174')
 ORDER BY [SISTEMA], [FECHA] DESC;
 GO
-
 
 /* ============================================================================
    BLOQUE 25 — SPARK (sparkline pre-computado en vw_TendenciaElemento) (2026-06-29)
@@ -595,7 +629,6 @@ GO
 -- 25.7 Confirmar que vw_TendenciaElemento ya NO trae Grafico (columnas ligeras + Spark)
 SELECT TOP 1 * FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK) WHERE Equipo='CA3165' AND Parametro='Cu';
 GO
-
 
 /* ============================================================================
    BLOQUE 26 — SCOPE diagnóstico + filtro de proyecto del triage (marcha 2026-06-30)
@@ -753,7 +786,6 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
 ORDER BY Equipo, Compartimiento;
 GO
 
-
 /* ============================================================================
    BLOQUE 32 — vw_ObservadosBarridoMD (TIER 2 copia verbatim del "detalle de todos")
    Objetivo: confirmar que la vista entrega el bloque markdown YA armado y las cifras.
@@ -773,7 +805,6 @@ FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
 
-
 /* ============================================================================
    BLOQUE 34 — vw_ObservadosResumenMD (PASO 1 del barrido, columna MD)
    ⚠ Sube "Maximum Characters Retrieved" para ver el bloque completo.
@@ -787,7 +818,6 @@ FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
 
-
 /* ============================================================================
    BLOQUE 35 — barrido filtrado (MD_Criticos / MD_Precaucion)
    ---------------------------------------------------------------------------- */
@@ -797,7 +827,6 @@ SELECT MD_Precaucion FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%';
 GO
 
-
 /* ===== BLOQUE 36 — vw_DiagnosticoMD (diagnóstico 1 equipo) ===== */
 SELECT Equipo, NumCompObs, NumCompTotal, LEN(MD) AS LargoMD, LEN(MD_Completo) AS LargoCompleto
 FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
@@ -805,10 +834,14 @@ SELECT MD          FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3
 SELECT MD_Completo FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
 GO
 
-
 -- ==== BLOQUE 37 — vw_Recomendaciones + bloque determinístico en DiagnosticoMD ====
 SELECT * FROM [dbo].[vw_Recomendaciones];
 SELECT Observados, Recomendaciones FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo='CA3177';
+GO
+
+-- ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ====
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
 
 -- ==== BLOQUE 39 — vw_CondicionMT_MD (firma equipo, flujo MD_equipo) ====
@@ -819,6 +852,18 @@ GO
 -- ==== BLOQUE 40 — vw_TendenciaP1MD (firma equipo+compAbbr, flujo MD_equipo_comp) ====
 SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3177%' AND compAbbr LIKE '%MT LH%';
+GO
+
+-- ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ====
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPLETA (default)
+SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
+GO
+
+-- ==== BLOQUE 42 — vw_TendenciaGraficoMD (tabla del metal + gráfico ASCII combinados) ====
+SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
 GO
 
 -- ==== BLOQUE 43 — vw_TendenciaGraficoObsMD (default: gráficas de observados; firma equipo+compAbbr) ====
@@ -833,16 +878,14 @@ SELECT MD FROM [dbo].[vw_TendenciaMetalMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%%' AND Parametro='Cu';
 GO
 
--- ==== BLOQUE 41 — vw_TendenciaMD (detalle; firma equipo+compAbbr, flujo MD_equipo_comp) ====
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- MD = matriz COMPLETA (default)
-SELECT MD_Relevantes FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';   -- opt-in: solo fuera de umbral
-GO
-
 -- ==== BLOQUE 45 — vw_HistorialMD (firma equipo+compAbbr, flujo MD_equipo_comp) ====
 SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
+GO
+
+-- ==== BLOQUE 46 — vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal) ====
+SELECT MD FROM [dbo].[vw_HistorialMetalMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
 GO
 
 -- ==== BLOQUE 47 — vw_HistorialEquipoMD (equipo) + vw_HistorialFlotaMD (proyecto) ====
@@ -850,7 +893,12 @@ SELECT MD FROM [dbo].[vw_HistorialEquipoMD] WITH (NOLOCK) WHERE Equipo LIKE '%CA
 SELECT MD FROM [dbo].[vw_HistorialFlotaMD]  WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 
--- ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ====
+-- ==== BLOQUE 48 — vw_HistorialMetalEquipoMD (firma equipo+parametro, flujo MD_metal comp=todos) ====
+SELECT MD FROM [dbo].[vw_HistorialMetalEquipoMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%todos%' AND Parametro='Cu';
+GO
+
+/* ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ==== */
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
@@ -887,16 +935,6 @@ SELECT TOP 1 * FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
 WHERE Compartimiento LIKE '%TRACCION%';   -- inspeccionar columnas Pb_/Sn_ en el grid
 GO
 
--- ==== BLOQUE 46 — vw_HistorialMetalMD (firma equipo+compAbbr+parametro, flujo MD_metal) ====
-SELECT MD FROM [dbo].[vw_HistorialMetalMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
-GO
-
--- ==== BLOQUE 48 — vw_HistorialMetalEquipoMD (firma equipo+parametro, flujo MD_metal comp=todos) ====
-SELECT MD FROM [dbo].[vw_HistorialMetalEquipoMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%todos%' AND Parametro='Cu';
-GO
-
 -- ==== BLOQUE 51 — VALIDAR fix Pb/Sn LC (crítico) tras re-correr la cadena ====
 -- ORDEN de re-corrida en SSMS (dependencias): 1) vw_LimitesPorComponente  2) vw_MuestrasEstado
 -- 3) (vw_MuestrasRankeadas hereda por me.*)  4) vw_TendenciaElemento  5) las *MD (último, historial-metal).
@@ -916,16 +954,6 @@ GO
 -- 51.3 Último análisis de un MT: la tabla ya trae LC de Pb/Sn (no '—') y chip si supera
 SELECT MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3163%' AND compAbbr LIKE '%MT RH%';   -- CA3163 tenía Pb,Zn observados en triage
-GO
-
--- ==== BLOQUE 42 — vw_TendenciaGraficoMD (tabla del metal + gráfico ASCII combinados) ====
-SELECT MD FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%' AND Parametro='Cr';
-GO
-
--- ==== BLOQUE 38 — vw_UltimoAnalisisMD (filtro por compAbbr, como el flujo) ====
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
-WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%MT LH%';
 GO
 
 -- ==== BLOQUE 52 — VALIDAR Pb/Sn LC en BARRIDO (vw_ObservadosFlota) ====
@@ -961,7 +989,64 @@ WHERE rn_recencia=1 AND Estado_V100<>'OK'
   AND Pb_ppm<=ISNULL(Pb_LP,9999) AND Sn_ppm<=ISNULL(Sn_LP,9999);
 GO
 
-/* ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ==== */
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+-- ==== BLOQUE 54 — #6b salud V100 (viscosidad) informativa en barrido detalle ====
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%';   -- busca ' V100=' en el MD (chip salud en equipos ya observados)
+GO
+SELECT
+  SUM(CASE WHEN Estado_General <> 'OK' THEN 1 ELSE 0 END) AS Observados_totales,
+  SUM(CASE WHEN Estado_General <> 'OK' AND Estado_V100 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Con_V100_salud,
+  SUM(CASE WHEN Estado_General =  'OK' AND Estado_V100 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Solo_V100_excluidos
+FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%';
+GO
+
+-- ==== BLOQUE 55 — #14 vw_TendenciaIncipienteMD (firma proyecto, flujo MD_flota modelo=todos) ====
+SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaIncipienteMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+
+-- ==== BLOQUE 56 — Barrido: (todos) sin modelo Y por-modelo especifico (duplicacion) ====
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+SELECT Modelo, MD FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980%';
+GO
+SELECT DISTINCT Modelo FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%';
+GO
+
+-- ==== BLOQUE 57 — Triage recos: solo metales de la tabla (sin Calcio/Zinc informativos) ====
+SELECT MD, Recomendaciones FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+
+-- ==== BLOQUE 58 — Historial INCLUYE DDI (unico topico con DDI; vw_MuestrasHistorial + rn_hist) ====
+SELECT TOP 15 Equipo, Compartimiento, FechaMuestreo, CM, EsDDI, rn_hist
+FROM [dbo].[vw_MuestrasHistorial] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND Compartimiento LIKE '%TRACCION%LH' ORDER BY rn_hist;
+GO
+SELECT MD FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3171%' AND compAbbr = 'MT LH';   -- las vistas MD filtran por compAbbr
+GO
+
+-- ==== BLOQUE 59 — vw_ConteoFlotaMD (Conteo; flujo MD_flota; proyecto + modelo) ====
+SELECT Modelo, MD FROM [dbo].[vw_ConteoFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- por-modelo: cambia '%todos%' por '%980%' (o el modelo real del proyecto)
+
+-- ==== BLOQUE 60 — vw_RankingMD (formato largo; el flujo MD_ranking arma la tabla con pos<=top) ====
+SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD
+FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%' AND Metal LIKE '%Fe%' AND pos <= 5;
+GO
+-- cambia 'pos <= 5' por 10 para top 10; cambia Metal/CompTipo para otros rankings
+
+-- ==== BLOQUE 61 — Tendencia con Grado (lubricante) + horas comp ====
+SELECT MD FROM [dbo].[vw_TendenciaMetalMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3170%' AND Parametro='Fe';       -- tabla trae Grado + Hrs C. por componente
+GO
+SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3170%' AND compAbbr='MT LH';     -- info general incluye fila Grado
 GO
