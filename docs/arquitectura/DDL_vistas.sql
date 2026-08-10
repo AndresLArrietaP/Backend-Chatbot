@@ -568,7 +568,7 @@ GO
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM,
+    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM, Grado,
            Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
            Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
@@ -578,7 +578,7 @@ WITH s AS (
     WHERE rn_recencia <= 6
 ),
 u AS (
-    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente, s.CM,
+    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente, s.CM, s.Grado,
            p.Parametro, p.Grupo, p.Orden, p.Inf, p.Inv,
            CAST(p.Valor AS decimal(18,2)) AS Valor,
            CAST(p.LP AS decimal(18,2))    AS LP,
@@ -646,6 +646,7 @@ SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
     MAX(LP) AS LP, MAX(LC) AS LC,
     MAX(CASE WHEN rn_recencia = 1 THEN HorasComponente END) AS HorasComponente,
+    MAX(CASE WHEN rn_recencia = 1 THEN Grado END) AS Grado,
     MAX(CASE WHEN rn_recencia = 1 THEN CM END) AS CM,
     MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d1,
     MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d2,
@@ -678,7 +679,7 @@ FROM v
 GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf
 )
 SELECT
-    g.Equipo, g.Compartimiento, g.Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM,
+    g.Equipo, g.Compartimiento, g.Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM, Grado,
     d1, d2, d3, d4, d5, d6, f1, f2, f3, f4, f5, f6, Prom, Sigma, NVecesObs, EsRelevante, Tendencia,
     /* Spark: mini-tendencia visual (bloques ▁▂▃▄▅▆▇█) de n1..n6 cronológicos, normalizada al rango de la
        propia serie. PRE-COMPUTADA para que el central la IMPRIMA/COPIE tal cual (no regenere ASCII).
@@ -1611,6 +1612,7 @@ unpv AS (
             (1, N'Horómetro', ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—')),
             (2, N'Hrs Aceite', ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—')),
             (3, N'Hrs Comp', ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—')),
+            (6, N'Grado', ISNULL(Grado, N'—')),
             (4, N'CM', ISNULL(CM, N'—')),
             (5, N'Estado', CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END)
     ) v(ord, etq, val)
@@ -1787,13 +1789,13 @@ GO
 /* ==== vw_TendenciaMetalMD (tendencia de un metal en todos los componentes) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaMetalMD] AS
 WITH te AS (
-    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, Spark, Orden, Prom, Sigma, NVecesObs,
+    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, Spark, Orden, Prom, Sigma, NVecesObs, Grado, HorasComponente,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento='MOTOR' THEN 5 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr
     FROM [dbo].[vw_TendenciaElemento]
 ),
 qrows AS (
     SELECT Equipo, Parametro, compOrd,
-        CAST(N'| ' + compAbbr + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
+        CAST(N'| ' + compAbbr + N' | ' + ISNULL(Grado, N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
            + N' | ' + ISNULL(Tendencia, N'—') + N' | ' + ISNULL(Spark, N'·') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
@@ -1811,8 +1813,8 @@ SELECT
     CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
         N'**Tendencia de ' + CONVERT(nvarchar(20), q.Parametro) + N' — ' + q.Equipo + N' (todos los componentes)**' + NCHAR(10) + NCHAR(10)
-      + N'| Componente | LP | LC | Última | Tend. | Spark |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|' + NCHAR(10) + q.b + NCHAR(10) + NCHAR(10)
+      + N'| Componente | Grado | Hrs C. | LP | LC | Última | Tend. | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|' + NCHAR(10) + q.b + NCHAR(10) + NCHAR(10)
       + N'**Resumen estadístico**' + NCHAR(10) + NCHAR(10)
       + N'| Componente | Prom. | σ | Σvida | Nº fuera |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10) + s.b

@@ -1014,3 +1014,13 @@ SELECT Modelo, MD FROM [dbo].[vw_ConteoFlotaMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 -- por-modelo tambien: cambia '%todos%' por '%980%' (o el modelo real del proyecto)
+
+-- ==== BLOQUE 61 - Tendencia con Grado (lubricante) + horas comp ====
+-- 61.1 tendencia de un metal (tema 08): tabla ahora trae Grado + Hrs C. por componente
+SELECT MD FROM [dbo].[vw_TendenciaMetalMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3170%' AND Parametro='Fe';
+GO
+-- 61.2 tendencia paso 1: info general ahora incluye la fila Grado
+SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
+WHERE Equipo LIKE '%CA3170%' AND compAbbr='MT LH';
+GO
