@@ -68,3 +68,9 @@ Firma `proyecto` (+modelo), flujo `MD_flota`. Análisis con el prompt universal.
 6. **H3 — MD_metal: agregar salidas observados/recomendaciones** (contrato). *(menor)*
 7. **Adaptive Cards** — cuando el ancho sea crítico. *(futuro)*
 8. **V100:** cargar límites de viscosidad correctos por proyecto si se quiere flag real (hoy display-only).
+
+
+## 6) KomfIA SQL — descripción de FALLBACK (fix ruteo 2026-08-10)
+Con Conocimientos fuera y generativas apagadas, KomfIA SQL quedó como fallback. Pero su descripción amplia («responder CUALQUIER consulta… triage… barrido… conteos… llama siempre») hacía que el orquestador lo eligiera ANTES que los temas en consultas ambiguas (ej. «barrido… de cada motor de tracción» caía a KomfIA SQL con JSON crudo). **Descripción correcta (angosta, aplicar en el agente conectado):**
+> "Agente de RESPALDO (fallback). Genera y ejecuta SQL ad-hoc SOLO para consultas de datos que NINGÚN tema cubre (imprevistas/exploratorias). ⛔ NO usar para barrido/flota, triage MT, diagnóstico/estado de equipo, último análisis, condición MT, tendencia, gráfico, historial, conteo ni ranking — cada uno tiene su TEMA determinista. Úsalo solo cuando la consulta no encaje en ningún tema."
+Regla general: cada agente/herramienta compite por descripción; el fallback debe describirse por lo que NO hace.
