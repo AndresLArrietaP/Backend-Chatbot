@@ -2272,7 +2272,7 @@ SELECT
     CAST(
         N'**Conteo de flota — ' + f.Proyecto + CASE WHEN f.Modelo <> N'(todos)' THEN N' · ' + f.Modelo ELSE N'' END + N'**' + NCHAR(10)
       + CAST(f.nEq AS nvarchar(10)) + N' equipos · ' + CAST(f.nObs AS nvarchar(10)) + N' observados ('
-      + CAST(f.nCrit AS nvarchar(10)) + N' criticos · ' + CAST(f.nPrecOnly AS nvarchar(10)) + N' precaucion) · '
+      + CAST(f.nCrit AS nvarchar(10)) + N' criticos · ' + CAST(f.nObs - f.nCrit AS nvarchar(10)) + N' precaucion) · '
       + CAST(f.nEq - f.nObs AS nvarchar(10)) + N' sin novedad' + NCHAR(10) + NCHAR(10)
       + N'| Componente | Equipos | Observ. | Criticos | Precau. |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10) + ISNULL(b.bodyMD, N'—')
