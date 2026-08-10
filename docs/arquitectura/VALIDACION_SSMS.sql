@@ -1006,8 +1006,11 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 -- por-modelo tambien: cambia '%todos%' por '%980%' (o el modelo real del proyecto)
 
--- ==== BLOQUE 60 - vw_RankingMD (Ranking; flujo MD_ranking; proyecto+compartimiento(CompTipo)+parametro+modelo) ====
-SELECT MD FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo LIKE '%TRACCION%' AND Metal LIKE '%Fe%';
+-- ==== BLOQUE 60 - vw_RankingMD (FORMATO LARGO; el flujo MD_ranking arma la tabla con pos<=top) ====
+-- Simula lo que hace el flujo (top 5 de Fe en Motor de Traccion, Antapaccay, todos los modelos):
+SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD
+FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%' AND Metal LIKE '%Fe%' AND pos <= 5;
 GO
--- top 10 equipos por Fe en Motor de Traccion. Cambia Metal/CompTipo para otros rankings.
+-- Cambia 'pos <= 5' por 10 para top 10; cambia Metal/CompTipo para otros rankings.

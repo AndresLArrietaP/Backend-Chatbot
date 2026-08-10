@@ -38,15 +38,16 @@ Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada sa
 - **(opcional) `MD_ranking`** — si el ranking necesita una firma propia (proyecto, compartimiento, parametro);
   si no, se resuelve con `MD_flota` + una vista `vw_RankingMD`. Conteo se resuelve con `MD_flota`.
 
-
-## Flujo `MD_ranking` (nuevo — Ranking)
-4 entradas: `proyecto`, `modelo`, `compartimiento` (tipo de componente), `parametro` (metal). Query FIJO:
+## Flujo `MD_ranking` (dedicado — Ranking; honra el top N)
+Vista FIJA `vw_RankingMD` (formato largo: 1 fila por posición). El flujo ARMA la tabla y filtra `pos <= top`.
+**5 entradas** (todas Texto): `proyecto`, `modelo`, `compartimiento`, `parametro`, `top` (opcional; vacío → 10).
+Query (pégalo como expresión `fx`; cada nombre en ‹› = ficha de contenido dinámico de esa entrada):
 ```
-SELECT [columna] AS MD, Observados, Recomendaciones
-FROM [vista]
-WHERE Proyecto LIKE '%'+proyecto+'%' AND Modelo LIKE '%'+modelo+'%'
-  AND CompTipo LIKE '%'+compartimiento+'%' AND Metal LIKE '%'+parametro+'%'
+concat('SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM dbo.vw_RankingMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Metal LIKE ''%', ‹parametro›, '%'' AND pos <= ', if(empty(‹top›),'10',‹top›))
 ```
-En la Acción: `vista=vw_RankingMD`, `columna=MD`. El modelo la infiere de la frase (o `(todos)`); `compartimiento` = tipo (tracción/hidráulico/rueda/mando/transmisión/motor); `parametro` = metal (Fe, Cu, Cr…).
-Salidas: `md` (tabla top-10), `observados` (NULL), `recomendaciones` (NULL).
-**Descripciones:** proyecto="Proyecto/mina." · modelo="Modelo del equipo; (todos) si no lo nombran." · compartimiento="Tipo de componente a rankear (tracción, hidráulico, rueda, mando, transmisión, motor)." · parametro="Metal a rankear (Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ)."
+Salidas: `md` (=`first(...)?['MD']`), `observados` (NULL), `recomendaciones` (NULL).
+En el Tema 22: la Acción fija nada de vista/columna (el query ya apunta a vw_RankingMD); la IA llena
+`proyecto`, `compartimiento`, `parametro`, `top`; `modelo` = `(todos)` por defecto.
+**Descripciones de entradas:** proyecto="Proyecto/mina." · modelo="Modelo; (todos) si no lo nombran." ·
+compartimiento="Tipo de componente (tracción/hidráulico/rueda/mando/transmisión/motor)." ·
+parametro="Metal (Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ)." · top="Cuántos equipos mostrar; vacío = 10."

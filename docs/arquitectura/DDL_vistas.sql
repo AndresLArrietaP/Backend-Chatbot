@@ -2309,28 +2309,15 @@ eqmax AS (   -- por equipo+comptipo+metal: el PEOR (MAX) valor del equipo (combi
 rk AS (
     SELECT *, ROW_NUMBER() OVER (PARTITION BY Proyecto, Modelo, CompTipo, metal ORDER BY val DESC, Equipo) AS pos
     FROM eqmax
-),
-rows_ AS (
-    SELECT Proyecto, Modelo, CompTipo, metal, Orden, pos,
-        CAST(N'| ' + CAST(pos AS nvarchar(10)) + N' | ' + Equipo + N' | ' + CONVERT(nvarchar(20), CAST(val AS decimal(18,1)))
-           + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(lp AS decimal(18,1))), N'—') + N'/' + ISNULL(CONVERT(nvarchar(20), CAST(lc AS decimal(18,1))), N'—')
-           + N' | ' + CASE WHEN lc IS NOT NULL AND val > lc THEN N'🟥' WHEN lp IS NOT NULL AND val > lp THEN N'🟨' ELSE N'—' END + N' |' AS nvarchar(max)) AS rowMD
-    FROM rk WHERE pos <= 10
-),
-body AS (
-    SELECT Proyecto, Modelo, CompTipo, metal, Orden,
-        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS bodyMD
-    FROM rows_ GROUP BY Proyecto, Modelo, CompTipo, metal, Orden
 )
 SELECT
-    Proyecto, Modelo, CompTipo, metal AS Metal,
-    CAST(NULL AS nvarchar(max)) AS Observados,
-    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
-    CAST(
-        N'**Ranking ' + metal + N' — ' + CASE CompTipo WHEN 'TRACCION' THEN N'Motor de Traccion' WHEN 'HIDRAULICO' THEN N'Sistema Hidraulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmision' WHEN 'MOTOR' THEN N'Motor' ELSE CompTipo END + N' · ' + Proyecto
-      + CASE WHEN Modelo <> N'(todos)' THEN N' · ' + Modelo ELSE N'' END + N'** (top 10 por valor)' + NCHAR(10) + NCHAR(10)
-      + N'| # | Equipo | ' + metal + N' | LP/LC | Est. |' + NCHAR(10)
-      + N'|---|---|---|---|---|' + NCHAR(10) + bodyMD
-    AS nvarchar(max)) AS MD
-FROM body;
+    Proyecto, Modelo, CompTipo, metal AS Metal, pos,
+    CAST(N'| ' + CAST(pos AS nvarchar(10)) + N' | ' + Equipo + N' | ' + CONVERT(nvarchar(20), CAST(val AS decimal(18,1)))
+       + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(lp AS decimal(18,1))), N'—') + N'/' + ISNULL(CONVERT(nvarchar(20), CAST(lc AS decimal(18,1))), N'—')
+       + N' | ' + CASE WHEN lc IS NOT NULL AND val > lc THEN N'🟥' WHEN lp IS NOT NULL AND val > lp THEN N'🟨' ELSE N'—' END + N' |' AS nvarchar(max)) AS Fila,
+    CAST(N'**Ranking ' + metal + N' — ' + CASE CompTipo WHEN 'TRACCION' THEN N'Motor de Traccion' WHEN 'HIDRAULICO' THEN N'Sistema Hidraulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmision' WHEN 'MOTOR' THEN N'Motor' ELSE CompTipo END + N' · ' + Proyecto
+       + CASE WHEN Modelo <> N'(todos)' THEN N' · ' + Modelo ELSE N'' END + N'**' + NCHAR(10) + NCHAR(10)
+       + N'| # | Equipo | ' + metal + N' | LP/LC | Est. |' + NCHAR(10) + N'|---|---|---|---|---|' AS nvarchar(max)) AS HeaderMD
+FROM rk
+WHERE pos <= 20;
 GO
