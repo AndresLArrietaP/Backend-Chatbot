@@ -53,13 +53,18 @@ compartimiento="Tipo de componente (tracción/hidráulico/rueda/mando/transmisi�
 parametro="Metal (Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ)." · top="Cuántos equipos mostrar; vacío = 10."
 
 
-## Flujo `MD_metal_flota` (nuevo — Gap-fillers: tendencia-metal-flota y condición-componente)
-4 entradas: `proyecto`, `modelo`, `compartimiento` (tipo de componente = CompTipo), `parametro` (metal; `(todos)` para condición-componente). Query FIJO (expresión `fx` `concat`, cada ‹x› = ficha de la entrada):
+## Flujos DEDICADOS de gap-fillers (vista FIJA en el query → SIN scramble de fichas)
+Como el ranking: la vista va HARDCODEADA en el `concat` → solo hay fichas de VALOR (no de identificador), que no se desordenan. Cada `‹x›` = ficha de contenido dinámico de esa entrada, insertada EN ORDEN.
+
+### Flujo `MD_tendmetalflota` (Tema 23) — entradas: proyecto, modelo, compartimiento, parametro
 ```
-concat('SELECT [', ‹columna›, '] AS MD, Observados, Recomendaciones FROM [', ‹vista›, '] WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Metal LIKE ''%', ‹parametro›, '%''')
+concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaMetalFlotaMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Metal LIKE ''%', ‹parametro›, '%''')
 ```
-En la Acción: `columna=MD`; `vista=vw_TendenciaMetalFlotaMD` (tema 23) o `vw_CondicionCompMD` (tema 24); `modelo=(todos)`.
-- Tema 23: la IA llena `proyecto`, `compartimiento`, `parametro`.
-- Tema 24: la IA llena `proyecto`, `compartimiento`; `parametro=(todos)` fijo.
-Salidas: `md`, `observados` (NULL), `recomendaciones` (NULL).
-**Descripciones entradas:** proyecto="Proyecto/mina." · modelo="(todos) si no lo nombran." · compartimiento="Tipo de componente (tracción/hidráulico/rueda/mando/transmisión/motor)." · parametro="Metal (Fe, Cu, Cr…); (todos) en condición-componente."
+
+### Flujo `MD_condcomp` (Tema 24) — entradas: proyecto, modelo, compartimiento
+```
+concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_CondicionCompMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%''')
+```
+
+En la Acción: `modelo=(todos)`; la IA llena proyecto/compartimiento(/parametro). Salidas: `md`=`first(outputs('Ejecutar_una_consulta_SQL_(V2)')?['body/resultsets/Table1'])?['MD']`, `observados` (NULL), `recomendaciones` (NULL).
+⚠ **`compartimiento` = la palabra BASE del tipo** (tracción, hidráulico, rueda, mando, transmisión, motor) — ⛔ NUNCA la abreviatura (MT LH, Sist. Hidr., RD LH); el `COLLATE` ya tolera tildes/mayúsculas.
