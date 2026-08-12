@@ -51,3 +51,15 @@ En el Tema 22: la Acción fija nada de vista/columna (el query ya apunta a vw_Ra
 **Descripciones de entradas:** proyecto="Proyecto/mina." · modelo="Modelo; (todos) si no lo nombran." ·
 compartimiento="Tipo de componente (tracción/hidráulico/rueda/mando/transmisión/motor)." ·
 parametro="Metal (Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ)." · top="Cuántos equipos mostrar; vacío = 10."
+
+
+## Flujo `MD_metal_flota` (nuevo — Gap-fillers: tendencia-metal-flota y condición-componente)
+4 entradas: `proyecto`, `modelo`, `compartimiento` (tipo de componente = CompTipo), `parametro` (metal; `(todos)` para condición-componente). Query FIJO (expresión `fx` `concat`, cada ‹x› = ficha de la entrada):
+```
+concat('SELECT [', ‹columna›, '] AS MD, Observados, Recomendaciones FROM [', ‹vista›, '] WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Metal LIKE ''%', ‹parametro›, '%''')
+```
+En la Acción: `columna=MD`; `vista=vw_TendenciaMetalFlotaMD` (tema 23) o `vw_CondicionCompMD` (tema 24); `modelo=(todos)`.
+- Tema 23: la IA llena `proyecto`, `compartimiento`, `parametro`.
+- Tema 24: la IA llena `proyecto`, `compartimiento`; `parametro=(todos)` fijo.
+Salidas: `md`, `observados` (NULL), `recomendaciones` (NULL).
+**Descripciones entradas:** proyecto="Proyecto/mina." · modelo="(todos) si no lo nombran." · compartimiento="Tipo de componente (tracción/hidráulico/rueda/mando/transmisión/motor)." · parametro="Metal (Fe, Cu, Cr…); (todos) en condición-componente."

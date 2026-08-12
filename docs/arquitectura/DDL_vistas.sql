@@ -568,7 +568,7 @@ GO
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM, Grado,
+    SELECT Equipo, Proyecto, CompTipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM, Grado,
            Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC,
            Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
@@ -578,7 +578,7 @@ WITH s AS (
     WHERE rn_recencia <= 6
 ),
 u AS (
-    SELECT s.Equipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente, s.CM, s.Grado,
+    SELECT s.Equipo, s.Proyecto, s.CompTipo, s.Compartimiento, s.FechaMuestreo, s.rn_recencia, s.HorasComponente, s.CM, s.Grado,
            p.Parametro, p.Grupo, p.Orden, p.Inf, p.Inv,
            CAST(p.Valor AS decimal(18,2)) AS Valor,
            CAST(p.LP AS decimal(18,2))    AS LP,
@@ -647,6 +647,7 @@ SELECT
     MAX(LP) AS LP, MAX(LC) AS LC,
     MAX(CASE WHEN rn_recencia = 1 THEN HorasComponente END) AS HorasComponente,
     MAX(CASE WHEN rn_recencia = 1 THEN Grado END) AS Grado,
+    MAX(Proyecto) AS Proyecto, MAX(CompTipo) AS CompTipo,
     MAX(CASE WHEN rn_recencia = 1 THEN CM END) AS CM,
     MAX(CASE WHEN rn_recencia = 6 THEN Vstr END) AS d1,
     MAX(CASE WHEN rn_recencia = 5 THEN Vstr END) AS d2,
@@ -679,7 +680,7 @@ FROM v
 GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf
 )
 SELECT
-    g.Equipo, g.Compartimiento, g.Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM, Grado,
+    g.Equipo, g.Proyecto, g.CompTipo, g.Compartimiento, g.Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM, Grado,
     d1, d2, d3, d4, d5, d6, f1, f2, f3, f4, f5, f6, Prom, Sigma, NVecesObs, EsRelevante, Tendencia,
     /* Spark: mini-tendencia visual (bloques ▁▂▃▄▅▆▇█) de n1..n6 cronológicos, normalizada al rango de la
        propia serie. PRE-COMPUTADA para que el central la IMPRIMA/COPIE tal cual (no regenere ASCII).
@@ -2324,4 +2325,89 @@ SELECT
        + N'| # | Equipo | ' + metal + N' | LP/LC | Est. |' + NCHAR(10) + N'|---|---|---|---|---|' AS nvarchar(max)) AS HeaderMD
 FROM rk
 WHERE pos <= 20;
+GO
+
+/* ==== vw_TendenciaMetalFlotaMD (Gap 1: tendencia de un metal en un CompTipo, a nivel flota) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_TendenciaMetalFlotaMD] AS
+WITH te AS (
+    SELECT Proyecto, CompTipo, Parametro, Equipo, LP, LC, d6, Tendencia, Prom, Sigma, Acumulado, Orden, Spark,
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Hidr' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
+        CASE Tendencia WHEN N'↑' THEN 1 WHEN N'→' THEN 2 ELSE 3 END AS tendOrd,
+        CASE CompTipo WHEN 'TRACCION' THEN N'Motor de Traccion' WHEN 'HIDRAULICO' THEN N'Sistema Hidraulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmision' WHEN 'MOTOR' THEN N'Motor' ELSE CompTipo END AS compLabel
+    FROM [dbo].[vw_TendenciaElemento]
+),
+rows_ AS (
+    SELECT Proyecto, CompTipo, Parametro, tendOrd, Prom,
+        CAST(N'| ' + Equipo + N' | ' + compAbbr
+           + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
+           + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))), N'—')
+           + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))), N'—')
+           + N' | ' + ISNULL(Tendencia, N'—')
+           + N' | ' + ISNULL(Spark, N'·') + N' |' AS nvarchar(max)) AS rowMD
+    FROM te
+),
+body AS (
+    SELECT Proyecto, CompTipo, Parametro,
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY tendOrd, Prom DESC) AS bodyMD
+    FROM rows_ GROUP BY Proyecto, CompTipo, Parametro
+)
+SELECT
+    b.Proyecto, N'(todos)' AS Modelo, b.CompTipo, b.Parametro AS Metal,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Tendencia de ' + b.Parametro + N' — ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motor de Traccion' WHEN 'HIDRAULICO' THEN N'Sistema Hidraulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmision' WHEN 'MOTOR' THEN N'Motor' ELSE b.CompTipo END + N' · ' + b.Proyecto + N' (flota)**' + NCHAR(10)
+      + N'_Dirección por equipo: ↑ sube · ↓ baja · → estable (últimas 6 muestras)._' + NCHAR(10) + NCHAR(10)
+      + N'| Equipo | Comp | Última | Prom | σ | Tend | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
+    AS nvarchar(max)) AS MD
+FROM body b;
+GO
+
+/* ==== vw_CondicionCompMD (Gap 2: condición de un CompTipo en la flota) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_CondicionCompMD] AS
+WITH base AS (
+    SELECT b.Proyecto, mg.ModeloG AS Modelo, b.CompTipo, b.Equipo, b.Compartimiento, b.Grado,
+        b.FechaMuestreo, b.HorasComponente, b.CM, b.Estado_General, b.Mets_Obs, b.Infs_Obs,
+        CASE WHEN b.Estado_General='CRITICO' THEN 1 ELSE 2 END AS sev
+    FROM [dbo].[vw_ObservadosFlota] b
+    CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) mg(ModeloG)
+    WHERE b.Estado_General <> 'OK'
+),
+rows_ AS (
+    SELECT Proyecto, Modelo, CompTipo, sev, Equipo,
+        CAST(N'| ' + Equipo + N' | ' + ISNULL(Grado, N'—')
+           + N' | ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM'), N'—')
+           + N' | ' + ISNULL(CONVERT(nvarchar(12), CAST(HorasComponente AS decimal(18,0))), N'—')
+           + N' | ' + ISNULL(CM, N'—')
+           + N' | ' + CASE Estado_General WHEN 'CRITICO' THEN N'🟥' WHEN 'PRECAUCION' THEN N'🟨' ELSE N'' END
+           + N' | ' + ISNULL(REPLACE(REPLACE(REPLACE(Mets_Obs,':C',N' 🟥'),':P',N' 🟨'),',',N' · '), N'—')
+             + CASE WHEN Infs_Obs IS NOT NULL THEN N' · _inf:_ ' + REPLACE(REPLACE(REPLACE(Infs_Obs,':C',N' 🟥'),':P',N' 🟨'),',',N' · ') ELSE N'' END
+           + N' |' AS nvarchar(max)) AS rowMD
+    FROM base
+),
+cnt AS (
+    SELECT Proyecto, Modelo, CompTipo,
+        COUNT(DISTINCT Equipo) AS nObs,
+        COUNT(DISTINCT CASE WHEN Estado_General='CRITICO' THEN Equipo END) AS nCrit
+    FROM base GROUP BY Proyecto, Modelo, CompTipo
+),
+body AS (
+    SELECT Proyecto, Modelo, CompTipo, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo) AS bodyMD
+    FROM rows_ GROUP BY Proyecto, Modelo, CompTipo
+)
+SELECT
+    c.Proyecto, c.Modelo, c.CompTipo, N'(todos)' AS Metal,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Condición ' + CASE c.CompTipo WHEN 'TRACCION' THEN N'Motores de Traccion' WHEN 'HIDRAULICO' THEN N'Sistemas Hidraulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE c.CompTipo END + N' — ' + c.Proyecto + N'** · ' + CAST(c.nObs AS nvarchar(10))
+      + N' observados (' + CAST(c.nCrit AS nvarchar(10)) + N' críticos)' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN b.bodyMD IS NOT NULL THEN
+            N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
+        ELSE N'_Ninguno observado — todos dentro de límite._' END
+    AS nvarchar(max)) AS MD
+FROM cnt c
+LEFT JOIN body b ON b.Proyecto=c.Proyecto AND b.Modelo=c.Modelo AND b.CompTipo=c.CompTipo;
 GO

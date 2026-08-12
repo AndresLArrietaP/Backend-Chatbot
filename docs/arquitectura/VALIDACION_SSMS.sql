@@ -1050,3 +1050,17 @@ GO
 SELECT MD FROM [dbo].[vw_TendenciaP1MD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3170%' AND compAbbr='MT LH';     -- info general incluye fila Grado
 GO
+
+-- ==== BLOQUE 62 — vw_TendenciaMetalFlotaMD (Gap1; flujo MD_metal_flota; proyecto+CompTipo+Metal) ====
+SELECT MD FROM [dbo].[vw_TendenciaMetalFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%' AND Metal LIKE '%Fe%';
+GO
+-- '¿como evoluciono el Fe en los MT de la flota?' -> dirección por equipo. Cambia Metal/CompTipo.
+
+-- ==== BLOQUE 63 — vw_CondicionCompMD (Gap2; flujo MD_metal_flota sin parametro; proyecto+CompTipo) ====
+SELECT MD FROM [dbo].[vw_CondicionCompMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%hidraul%';
+GO
+-- '¿que sistemas hidraulicos necesitan atencion?' -> equipos con hidraulico observado. Cambia CompTipo.
