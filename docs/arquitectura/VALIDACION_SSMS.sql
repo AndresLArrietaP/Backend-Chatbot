@@ -36,6 +36,9 @@
      BLOQUE 59  vw_ConteoFlotaMD (Conteo; flujo MD_flota; proyecto + modelo)
      BLOQUE 60  vw_RankingMD (formato largo; el flujo MD_ranking arma la tabla con pos
      BLOQUE 61  Tendencia con Grado (lubricante) + horas comp
+     BLOQUE 62  vw_TendenciaMetalFlotaMD (Gap1; tendencia de un metal en la flota)
+     BLOQUE 63  vw_CondicionCompMD (Gap2; condicion de un componente en la flota)
+     BLOQUE 64  vw_UltimoMetalFlotaMD (Ultimo analisis en barrido por metal; 1..N metales)
    ============================================================================ */
 
 /* ============================================================================
@@ -1065,3 +1068,21 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
   AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%hidraul%';
 GO
 -- '¿que sistemas hidraulicos necesitan atencion?' -> equipos con hidraulico observado. Cambia CompTipo.
+
+-- ==== BLOQUE 64 — vw_UltimoMetalFlotaMD (Ultimo analisis en barrido por metal; 1..N metales) ====
+-- 1 metal (como '¿ultimo analisis de hierro de todos los MT en Antamina?'):
+SELECT MD FROM [dbo].[vw_UltimoMetalFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%'
+  AND CHARINDEX(',' + Metal + ',', ',' + 'Fe' + ',') > 0
+ORDER BY MetalOrden;
+GO
+-- N metales (como 'hierro y cobre y cromo de los MT'): el flujo hace STRING_AGG -> 1 tabla por metal.
+SELECT STRING_AGG(MD, NCHAR(10)+NCHAR(10)) WITHIN GROUP (ORDER BY MetalOrden) AS MD
+FROM [dbo].[vw_UltimoMetalFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%'
+  AND CHARINDEX(',' + Metal + ',', ',' + 'Fe,Cu,Cr' + ',') > 0;
+GO
+-- Por modelo especifico (Modelo LIKE '%980E%' en vez de '%todos%'); ordena por valor desc dentro de cada metal.
+-- Informativos (Ca/Zn/K/Na/Mg/B/P/V100) salen con 'inf' sin chip; TBN inverso (🟨 si < LP).

@@ -2411,3 +2411,79 @@ SELECT
 FROM cnt c
 LEFT JOIN body b ON b.Proyecto=c.Proyecto AND b.Modelo=c.Modelo AND b.CompTipo=c.CompTipo;
 GO
+
+/* ==== vw_UltimoMetalFlotaMD (Ultimo analisis en barrido por metal: 1..N metales, flota de un CompTipo) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_UltimoMetalFlotaMD] AS
+WITH base AS (
+    SELECT u.Proyecto, u.Modelo, u.CompTipo, u.Equipo, u.Compartimiento, u.FechaMuestreo, u.Horometro, u.HorasComponente, u.CM,
+        CASE WHEN u.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN u.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN u.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN u.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN u.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN u.Compartimiento='MOTOR' THEN N'Motor' ELSE u.Compartimiento END AS compAbbr,
+        p.Metal, p.Orden AS MetalOrden, p.Inf, p.Inv,
+        CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
+    FROM [dbo].[vw_UltimoAnalisisAceite] u
+    CROSS APPLY (VALUES
+        (N'Fe',1,0,0,u.Fe_ppm,u.Fe_LP,u.Fe_LC),
+        (N'PQ',2,0,0,u.Indice_PQ,u.PQ_LP,u.PQ_LC),
+        (N'Cr',3,0,0,u.Cr_ppm,u.Cr_LP,u.Cr_LC),
+        (N'Ni',4,0,0,u.Ni_ppm,u.Ni_LP,u.Ni_LC),
+        (N'Cu',5,0,0,u.Cu_ppm,u.Cu_LP,u.Cu_LC),
+        (N'Pb',6,0,0,u.Pb_ppm,u.Pb_LP,u.Pb_LC),
+        (N'Sn',7,0,0,u.Sn_ppm,u.Sn_LP,u.Sn_LC),
+        (N'Al',8,0,0,u.Al_ppm,u.Al_LP,u.Al_LC),
+        (N'Si',9,0,0,u.Si_ppm,u.Si_LP,u.Si_LC),
+        (N'Ca',10,1,0,u.Ca_ppm,u.Ca_LP,u.Ca_LC),
+        (N'Zn',11,1,0,u.Zn_ppm,u.Zn_LP,u.Zn_LC),
+        (N'K',12,1,0,u.K_ppm,u.K_LP,u.K_LC),
+        (N'Na',13,1,0,u.Na_ppm,u.Na_LP,u.Na_LC),
+        (N'Mg',14,1,0,u.Mg_ppm,u.Mg_LP,u.Mg_LC),
+        (N'B',15,1,0,u.B_ppm,NULL,NULL),
+        (N'P',16,1,0,u.P_ppm,NULL,NULL),
+        (N'V100',17,1,0,u.V100,NULL,NULL),
+        (N'TBN',18,0,1,u.TBN,u.TBN_LP,NULL)
+    ) p(Metal, Orden, Inf, Inv, Valor, LP, LC)
+    WHERE u.Compartimiento IS NOT NULL AND LTRIM(RTRIM(u.Compartimiento)) <> '' AND p.Valor IS NOT NULL
+),
+mg AS (
+    SELECT b.*, g.ModeloG FROM base b CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) g(ModeloG)
+),
+r AS (
+    SELECT Proyecto, ModeloG, CompTipo, Metal, MetalOrden, Valor, LP, LC,
+        CASE WHEN Inf=1 THEN 0 WHEN Inv=1 THEN CASE WHEN LP IS NOT NULL AND Valor>0 AND Valor<LP THEN 1 ELSE 0 END
+             ELSE CASE WHEN Valor>ISNULL(LP,999999) THEN 1 ELSE 0 END END AS Obs,
+        CASE WHEN Inf=0 AND Inv=0 AND Valor>ISNULL(LC,999999) THEN 1 ELSE 0 END AS Crit,
+        CAST(N'| ' + Equipo + N' | ' + compAbbr + N' | ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'), N'—')
+           + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—')
+           + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—')
+           + N' | ' + ISNULL(CM, N'—') + N' | '
+           + CASE WHEN Inf=1 THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' inf'
+                  WHEN Inv=1 THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + CASE WHEN LP IS NOT NULL AND Valor>0 AND Valor<LP THEN N' 🟨' ELSE N'' END
+                  WHEN Valor>ISNULL(LC,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟥'
+                  WHEN Valor>ISNULL(LP,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟨'
+                  ELSE CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) END
+           + N' | '
+           + CASE WHEN Inf=1 THEN N'inf'
+                  WHEN Inv=1 THEN CASE WHEN LP IS NOT NULL AND Valor>0 AND Valor<LP THEN N'PRECAUCION' ELSE N'OK' END
+                  WHEN Valor>ISNULL(LC,999999) THEN N'CRITICO'
+                  WHEN Valor>ISNULL(LP,999999) THEN N'PRECAUCION' ELSE N'OK' END
+           + N' |' AS nvarchar(max)) AS rowMD
+    FROM mg
+),
+body AS (
+    SELECT Proyecto, ModeloG, CompTipo, Metal, MetalOrden,
+        COUNT(*) AS nTot, SUM(Obs) AS nObs, SUM(Crit) AS nCrit, MAX(LP) AS LPh, MAX(LC) AS LCh,
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Valor DESC, Metal) AS bodyMD
+    FROM r GROUP BY Proyecto, ModeloG, CompTipo, Metal, MetalOrden
+)
+SELECT
+    b.Proyecto, b.ModeloG AS Modelo, b.CompTipo, b.Metal, b.MetalOrden,
+    CAST(NULL AS nvarchar(max)) AS Observados,
+    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Último análisis de ' + b.Metal + N' — ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motores de Traccion' WHEN 'HIDRAULICO' THEN N'Sistemas Hidraulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE b.CompTipo END + N' · ' + b.Proyecto
+      + CASE WHEN b.ModeloG <> N'(todos)' THEN N' · ' + b.ModeloG ELSE N'' END + N'** · '
+      + CAST(b.nTot AS nvarchar(10)) + N' equipos (' + CAST(b.nObs AS nvarchar(10)) + N' observados, ' + CAST(b.nCrit AS nvarchar(10)) + N' críticos)' + NCHAR(10)
+      + N'_Límites de referencia: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LPh AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LCh AS decimal(18,1))), N'—') + N' ppm._' + NCHAR(10) + NCHAR(10)
+      + N'| Equipo | Comp | Fecha | Horóm | Hrs C. | CM | ' + b.Metal + N' (ppm) | Estado |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
+    AS nvarchar(max)) AS MD
+FROM body b;
+GO
