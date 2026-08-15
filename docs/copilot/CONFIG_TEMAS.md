@@ -36,7 +36,7 @@ Parte de la config a aplicar. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_
 | Barrido detalle | proyecto, modelo | MD_flota · vista=vw_ObservadosBarridoMD · columna=DetalleTodosMD | no |
 | Barrido filtrado | proyecto, modelo, **columna** | MD_flota · vista=vw_ObservadosBarridoMD | no |
 | Triage MT | proyecto | MD_flota · vista=vw_TriageMD · modelo=todos · columna=MD | sí |
-| Último análisis por metal (flota) | proyecto, modelo, compartimiento, **parametros** | MD_ultmetalflota · vista=vw_UltimoMetalFlotaMD (fija en concat) · modelo=(todos) · compartimiento=tracción | no |
+| Último análisis por metal (flota) | proyecto, modelo, compartimiento, **parametros** | MD_ultmetalflota · vista=vw_UltimoMetalFlotaMD (fija en concat) · modelo=(todos) · compartimiento=tracción | sí (+ recos solo MT) |
 
 > **Barrido filtrado** es el ÚNICO que expone `columna` como Entrada (el modelo la infiere: «solo críticos»→
 > `MD_Criticos`, «solo precauciones»→`MD_Precaucion`). En todos los demás, `columna` es FIJA en la Acción.
@@ -90,7 +90,9 @@ El tema PARTE del flujo (ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md)); el/los Promp
 4. **Mensaje** `{md}` — imprime la tabla ya armada TAL CUAL.
 5. **CON análisis** (temas que lo llevan): Acción **Prompt** `Análisis de aceite` (`tabla={md}`) → Mensaje `{analisis.text}` → Mensaje `{recomendaciones}`. El Prompt es SIN conocimiento (ver [CONFIG_PROMPTS.md](CONFIG_PROMPTS.md)). **SIN análisis:** omite estos 3 nodos.
 6. **Condición** `md está en blanco` → Mensaje sin-data → **Finalizar** (el `if(empty)` del flujo evita el crash; la Condición muestra el mensaje).
-> Tema 25 (Último análisis por metal en la flota) = **SIN análisis**: Acción `MD_ultmetalflota` → Mensaje `{md}` → Condición sin-data → Finalizar. Entradas: `proyecto`,`modelo`,`compartimiento`,`parametros` (defaults fijados en la Acción; solo se pregunta el metal si NO lo nombran).
+> Tema 25 (Último análisis por metal en la flota) = **CON análisis** (nuestro pequeño análisis, como el fallback): Acción `MD_ultmetalflota` → Mensaje `{md}` → Prompt `Análisis de aceite` (`tabla={md}`) → Mensaje `{analisis.text}` → **Condición** `recomendaciones NO está en blanco` → Mensaje `{recomendaciones}` → **Condición** `md está en blanco` → Mensaje sin-data → Finalizar. Entradas: `proyecto`,`modelo`,`compartimiento`,`parametros` (defaults en la Acción; solo se pregunta el metal si NO lo nombran).
+> - **Recomendaciones = SOLO MT:** el flujo solo llena `recomendaciones` cuando `CompTipo=TRACCION` y el metal salió observado (verbatim de vw_Recomendaciones); en no-MT o sin observados viene NULL → la Condición «no está en blanco» oculta ese Mensaje. Por eso la 2ª Condición.
+> - **⚠️ en el valor:** el view marca con ⚠️ los valores del metal que dan **0.0** (muestras no-DDI que suelen ser falso positivo; el área lo revisa aparte). No es una alerta de límite, es un aviso de dato sospechoso.
 
 ## Intuitividad — plan (que el sistema NUNCA falle por un dato faltante)
 Objetivo: cero errores; si falta algo REQUERIDO, se pide en el chat; si es inferible o tiene default, se resuelve solo.

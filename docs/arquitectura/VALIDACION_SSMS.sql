@@ -1089,3 +1089,10 @@ GO
 -- SIN columna "Estado" (el chip del valor ya lo indica; conteo observados/criticos en el encabezado).
 -- El semaforo juzga contra el LP/LC de REFERENCIA del grupo cuando el limite propio de la fila es NULL
 -- (evita falsos "OK" en valores altos de equipos sin limite cargado). CM se mantiene (aun sin data en Antamina).
+-- ⚠️ junto al valor = metal en 0.0 (muestra no-DDI, posible falso positivo; el area lo revisa aparte).
+-- Recomendaciones: el view la llena SOLO si CompTipo=TRACCION y el metal salio observado (verbatim vw_Recomendaciones);
+-- el flujo agrega con cabecera MT (ver BLOQUE del flujo). Verificar que en no-MT / sin observados venga NULL:
+SELECT Metal, CompTipo, Recomendaciones FROM [dbo].[vw_UltimoMetalFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%' AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%'
+  AND CHARINDEX(',' + Metal + ',', ',' + 'Fe,Cu' + ',') > 0;
+GO

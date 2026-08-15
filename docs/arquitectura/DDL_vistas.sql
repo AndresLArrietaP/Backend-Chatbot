@@ -2467,6 +2467,7 @@ r AS (
                   WHEN Valor>ISNULL(LCx,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟥'
                   WHEN Valor>ISNULL(LPx,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟨'
                   ELSE CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) END
+           + CASE WHEN ROUND(Valor,1)=0 THEN N' ⚠️' ELSE N'' END   -- 0 en el metal (no-DDI) = posible falso positivo
            + N' |' AS nvarchar(max)) AS rowMD
     FROM mr
 ),
@@ -2479,7 +2480,9 @@ body AS (
 SELECT
     b.Proyecto, b.ModeloG AS Modelo, b.CompTipo, b.Metal, b.MetalOrden,
     CAST(NULL AS nvarchar(max)) AS Observados,
-    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    -- Recomendaciones (verbatim vw_Recomendaciones) SOLO si el componente es MT y el metal salio observado en la flota
+    CASE WHEN b.CompTipo = N'TRACCION' AND b.nObs > 0 AND rc.indicio IS NOT NULL
+         THEN CAST(N'- **' + rc.label + N':** ' + rc.indicio AS nvarchar(max)) ELSE NULL END AS Recomendaciones,
     CAST(
         N'**Último análisis de ' + b.Metal + N' — ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motores de Traccion' WHEN 'HIDRAULICO' THEN N'Sistemas Hidraulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE b.CompTipo END + N' · ' + b.Proyecto
       + CASE WHEN b.ModeloG <> N'(todos)' THEN N' · ' + b.ModeloG ELSE N'' END + N'** · '
@@ -2488,5 +2491,6 @@ SELECT
       + N'| Equipo | Comp | Fecha | Horóm | Hrs C. | CM | ' + b.Metal + N' (ppm) |' + NCHAR(10)
       + N'|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
     AS nvarchar(max)) AS MD
-FROM body b;
+FROM body b
+LEFT JOIN [dbo].[vw_Recomendaciones] rc ON rc.metal = b.Metal;
 GO
