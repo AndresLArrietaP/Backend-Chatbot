@@ -1001,6 +1001,7 @@ FROM [dbo].[vw_ObservadosFlota] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%'
 GO
 
 -- ==== BLOQUE 55 — #14 vw_TendenciaIncipienteMD (firma proyecto, flujo MD_flota modelo=todos) ====
+-- FIX gerencia 2026-08-14: baseline = promedio de las 6 PREVIAS (rn 2..7), SIN el ultimo (rn 1); total 7 muestras.
 SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TendenciaIncipienteMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO

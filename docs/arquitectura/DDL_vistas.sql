@@ -2159,7 +2159,7 @@ GO
 
 /* ==== vw_TendenciaIncipienteMD (#14: MT que varian de su promedio sin superar LP) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaIncipienteMD] AS
-WITH s AS (   -- ultimas 6 muestras MT por equipo+comp, normalizadas por metal de desgaste
+WITH s AS (   -- ultimas 7 muestras MT por equipo+comp (ult + 6 previas), normalizadas por metal de desgaste
     SELECT Proyecto, Equipo, Compartimiento, rn_recencia,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr,
         p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP
@@ -2175,14 +2175,14 @@ WITH s AS (   -- ultimas 6 muestras MT por equipo+comp, normalizadas por metal d
         (N'Al',8,Al_ppm,Al_LP),
         (N'Si',9,Si_ppm,Si_LP)
     ) p(metal, Orden, Valor, LP)
-    WHERE EsDDI = 0 AND rn_recencia <= 6 AND Compartimiento LIKE '%TRACCION%'
+    WHERE EsDDI = 0 AND rn_recencia <= 7 AND Compartimiento LIKE '%TRACCION%'
 ),
-agg AS (   -- ultimo (rn=1) vs promedio de las previas (rn 2..6) por equipo+comp+metal
+agg AS (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo) por equipo+comp+metal
     SELECT Proyecto, Equipo, Compartimiento, compAbbr, metal, Orden,
         MAX(CASE WHEN rn_recencia = 1 THEN Valor END) AS ult,
         MAX(CASE WHEN rn_recencia = 1 THEN LP END)    AS LP,
-        AVG(CASE WHEN rn_recencia BETWEEN 2 AND 6 THEN Valor END) AS prom_prev,
-        SUM(CASE WHEN rn_recencia BETWEEN 2 AND 6 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
+        AVG(CASE WHEN rn_recencia BETWEEN 2 AND 7 THEN Valor END) AS prom_prev,
+        SUM(CASE WHEN rn_recencia BETWEEN 2 AND 7 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
     FROM s GROUP BY Proyecto, Equipo, Compartimiento, compAbbr, metal, Orden
 ),
 inc AS (   -- incipientes: acercandose al LP (mitad superior) y subiendo >=40% sobre su media, SIN superarlo aun
