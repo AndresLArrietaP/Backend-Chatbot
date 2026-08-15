@@ -1661,9 +1661,14 @@ WITH te AS (
 ),
 rowcte AS (
     SELECT Equipo, Compartimiento, compAbbr, Grupo, Orden, EsRelevante,
-        CAST(N'| ' + Parametro + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | '
+        CAST(N'| ' + Parametro + N' | '
            + ISNULL(REPLACE(REPLACE(CAST(d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + CASE WHEN Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
+),
+limcte AS (   -- limites de referencia en tabla APARTE (pedido gerencia): solo params con LP o LC
+    SELECT Equipo, Compartimiento, Orden, EsRelevante,
+        CAST(N'| ' + Parametro + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' |' AS nvarchar(max)) AS rowMD
+    FROM te WHERE LP IS NOT NULL OR LC IS NOT NULL
 ),
 datehdr AS (
     SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr,
@@ -1674,7 +1679,7 @@ datehdr AS (
 ),
 body_all AS (
     SELECT Equipo, Compartimiento,
-        STRING_AGG(CAST(CASE WHEN Orden IN (1,9,14,17) THEN N'| **' + Grupo + N'** |' + REPLICATE(N' |', 10) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
+        STRING_AGG(CAST(CASE WHEN Orden IN (1,9,14,17) THEN N'| **' + Grupo + N'** |' + REPLICATE(N' |', 8) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
             WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM rowcte GROUP BY Equipo, Compartimiento
 ),
@@ -1682,6 +1687,14 @@ body_rel AS (   -- tabla SOLO de los parámetros relevantes (sin cabeceras de gr
     SELECT Equipo, Compartimiento,
         STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM rowcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
+),
+limbody AS (   -- tabla de limites (todos los params con limite)
+    SELECT Equipo, Compartimiento, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
+    FROM limcte GROUP BY Equipo, Compartimiento
+),
+limbody_rel AS (   -- tabla de limites SOLO de los relevantes
+    SELECT Equipo, Compartimiento, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
+    FROM limcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
 ),
 statbody AS (   -- Resumen estadístico por parámetro (Prom, σ, Σvida, Nº fuera)
     SELECT Equipo, Compartimiento,
@@ -1718,9 +1731,11 @@ SELECT
              ELSE N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Nada que comentar sobre el Motor de Tracción para este componente.' END) AS Recomendaciones,
     CAST(   -- DEFAULT (columna=MD): matriz COMPLETA, todos los parámetros
         N'**Tendencia detalle — ' + d.Equipo + N' · ' + d.compAbbr + N'** (todos los parámetros)' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
-      + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10)
+      + N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10)
       + ba.bodyMD + NCHAR(10) + NCHAR(10)
+      + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + lb.bodyMD + NCHAR(10) + NCHAR(10)
       + N'**Resumen estadístico**' + NCHAR(10) + NCHAR(10)
       + N'| Par. | Prom. | σ | Σvida | Nº fuera |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10) + st.bodyMD
@@ -1728,13 +1743,17 @@ SELECT
     CAST(   -- opt-in (columna=MD_Relevantes): TABLA solo si hay relevantes; si no, solo el mensaje
         N'**Tendencia — parámetros relevantes · ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
       + CASE WHEN br.bodyMD IS NOT NULL THEN
-            N'| Par. | LP | LC | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
-          + N'|---|' + REPLICATE(N'---|', 10) + NCHAR(10) + br.bodyMD
+            N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida | Spark |' + NCHAR(10)
+          + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10) + br.bodyMD + NCHAR(10) + NCHAR(10)
+          + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
+          + N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(lbr.bodyMD, N'_—_')
         ELSE N'_Sin parámetros fuera de umbral — el componente opera en condición normal._' END
     AS nvarchar(max)) AS MD_Relevantes
 FROM datehdr d
 JOIN body_all ba ON ba.Equipo=d.Equipo AND ba.Compartimiento=d.Compartimiento
 LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimiento
+LEFT JOIN limbody lb ON lb.Equipo=d.Equipo AND lb.Compartimiento=d.Compartimiento
+LEFT JOIN limbody_rel lbr ON lbr.Equipo=d.Equipo AND lbr.Compartimiento=d.Compartimiento
 LEFT JOIN statbody st ON st.Equipo=d.Equipo AND st.Compartimiento=d.Compartimiento
 LEFT JOIN obsall oa ON oa.Equipo=d.Equipo AND oa.Compartimiento=d.Compartimiento
 LEFT JOIN recoblock rb ON rb.Equipo=d.Equipo AND rb.Compartimiento=d.Compartimiento;
@@ -1749,10 +1768,11 @@ SELECT
     CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
         N'**Tendencia de ' + CONVERT(nvarchar(20), g.Parametro) + N' — ' + g.Equipo + N' · ' + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END + N'**' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | LP | LC | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Σvida | Spark |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
-      + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
+      + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Σvida | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
+      + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
         + N' | ' + CASE WHEN te.Orden IN (17,18) THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(te.Spark, N'·') + N' |' + NCHAR(10) + NCHAR(10)
+      + N'**Límites de referencia (ppm)**: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') + NCHAR(10) + NCHAR(10)
       + N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```'
     AS nvarchar(max)) AS MD
 FROM [dbo].[vw_TendenciaGrafico] g
@@ -1797,8 +1817,13 @@ WITH te AS (
 ),
 qrows AS (
     SELECT Equipo, Parametro, compOrd,
-        CAST(N'| ' + compAbbr + N' | ' + ISNULL(Grado, N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
+        CAST(N'| ' + compAbbr + N' | ' + ISNULL(Grado, N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
            + N' | ' + ISNULL(Tendencia, N'—') + N' | ' + ISNULL(Spark, N'·') + N' |' AS nvarchar(max)) AS rowMD
+    FROM te
+),
+lrows AS (   -- limites de referencia en tabla APARTE (pedido gerencia: no como columnas de la matriz)
+    SELECT Equipo, Parametro, compOrd,
+        CAST(N'| ' + compAbbr + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
 srows AS (
@@ -1808,20 +1833,25 @@ srows AS (
     FROM te
 ),
 qbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM qrows GROUP BY Equipo, Parametro),
-sbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM srows GROUP BY Equipo, Parametro)
+sbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM srows GROUP BY Equipo, Parametro),
+lbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM lrows GROUP BY Equipo, Parametro)
 SELECT
     q.Equipo, N'(todos)' AS compAbbr, q.Parametro,
     CAST(NULL AS nvarchar(max)) AS Observados,
     CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
         N'**Tendencia de ' + CONVERT(nvarchar(20), q.Parametro) + N' — ' + q.Equipo + N' (todos los componentes)**' + NCHAR(10) + NCHAR(10)
-      + N'| Componente | Grado | Hrs C. | LP | LC | Última | Tend. | Spark |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|---|---|' + NCHAR(10) + q.b + NCHAR(10) + NCHAR(10)
+      + N'| Componente | Grado | Hrs C. | Última | Tend. | Spark |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|' + NCHAR(10) + q.b + NCHAR(10) + NCHAR(10)
+      + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
+      + N'| Componente | LP | LC |' + NCHAR(10)
+      + N'|---|---|---|' + NCHAR(10) + l.b + NCHAR(10) + NCHAR(10)
       + N'**Resumen estadístico**' + NCHAR(10) + NCHAR(10)
       + N'| Componente | Prom. | σ | Σvida | Nº fuera |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10) + s.b
     AS nvarchar(max)) AS MD
-FROM qbody q JOIN sbody s ON s.Equipo=q.Equipo AND s.Parametro=q.Parametro;
+FROM qbody q JOIN sbody s ON s.Equipo=q.Equipo AND s.Parametro=q.Parametro
+JOIN lbody l ON l.Equipo=q.Equipo AND l.Parametro=q.Parametro;
 GO
 
 
