@@ -2192,19 +2192,19 @@ CREATE OR ALTER VIEW [dbo].[vw_TendenciaIncipienteMD] AS
 WITH s AS (   -- ultimas 7 muestras MT por equipo+comp (ult + 6 previas), normalizadas por metal de desgaste
     SELECT Proyecto, Equipo, Compartimiento, rn_recencia,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr,
-        p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP
+        p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
     FROM [dbo].[vw_MuestrasRankeadas]
     CROSS APPLY (VALUES
-        (N'Fe',1,Fe_ppm,Fe_LP),
-        (N'PQ',2,Indice_PQ,PQ_LP),
-        (N'Cr',3,Cr_ppm,Cr_LP),
-        (N'Ni',4,Ni_ppm,Ni_LP),
-        (N'Cu',5,Cu_ppm,Cu_LP),
-        (N'Pb',6,Pb_ppm,Pb_LP),
-        (N'Sn',7,Sn_ppm,Sn_LP),
-        (N'Al',8,Al_ppm,Al_LP),
-        (N'Si',9,Si_ppm,Si_LP)
-    ) p(metal, Orden, Valor, LP)
+        (N'Fe',1,Fe_ppm,Fe_LP,Fe_LC),
+        (N'PQ',2,Indice_PQ,PQ_LP,PQ_LC),
+        (N'Cr',3,Cr_ppm,Cr_LP,Cr_LC),
+        (N'Ni',4,Ni_ppm,Ni_LP,Ni_LC),
+        (N'Cu',5,Cu_ppm,Cu_LP,Cu_LC),
+        (N'Pb',6,Pb_ppm,Pb_LP,Pb_LC),
+        (N'Sn',7,Sn_ppm,Sn_LP,Sn_LC),
+        (N'Al',8,Al_ppm,Al_LP,Al_LC),
+        (N'Si',9,Si_ppm,Si_LP,Si_LC)
+    ) p(metal, Orden, Valor, LP, LC)
     WHERE EsDDI = 0 AND rn_recencia <= 7 AND Compartimiento LIKE '%TRACCION%'
 ),
 agg AS (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo) por equipo+comp+metal
@@ -2247,6 +2247,15 @@ body AS (
 tot AS (   -- MT evaluados por proyecto (para "X de N")
     SELECT Proyecto, COUNT(DISTINCT Equipo + N'|' + Compartimiento) AS Ntot
     FROM s WHERE rn_recencia = 1 GROUP BY Proyecto
+),
+lims AS (   -- limite de referencia SOLO de los metales que salieron incipientes (relevante)
+    SELECT s.Proyecto, s.metal, s.Orden, MAX(s.LP) AS LP, MAX(s.LC) AS LC
+    FROM s WHERE EXISTS (SELECT 1 FROM inc WHERE inc.Proyecto=s.Proyecto AND inc.metal=s.metal)
+    GROUP BY s.Proyecto, s.metal, s.Orden
+),
+limbody AS (
+    SELECT Proyecto, STRING_AGG(CAST(N'| ' + metal + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))),N'—') + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS b
+    FROM lims GROUP BY Proyecto
 )
 SELECT
     t.Proyecto, N'(todos)' AS Modelo,
@@ -2258,11 +2267,14 @@ SELECT
       + N'_MT acercandose al limite (>=50% del LP) y subiendo >=40% sobre su propia media, SIN superarlo aun._' + NCHAR(10) + NCHAR(10)
       + CASE WHEN b.bodyMD IS NOT NULL THEN
             N'| Equipo | MT | Tendencia | Parametros (prom' + N'→' + N'ult) |' + NCHAR(10)
-          + N'|---|---|---|---|' + NCHAR(10) + b.bodyMD
+          + N'|---|---|---|---|' + NCHAR(10) + b.bodyMD + NCHAR(10) + NCHAR(10)
+          + N'**Límites de referencia (ppm)**' + NCHAR(10)
+          + N'| Metal | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(lb.b, N'_—_')
         ELSE N'_Ninguno - ningun Motor de Traccion muestra desviacion incipiente sobre su comportamiento historico._' END
     AS nvarchar(max)) AS MD
 FROM tot t
-LEFT JOIN body b ON b.Proyecto = t.Proyecto;
+LEFT JOIN body b ON b.Proyecto = t.Proyecto
+LEFT JOIN limbody lb ON lb.Proyecto = t.Proyecto;
 GO
 
 /* ==== vw_ConteoFlotaMD (Conteo deterministico — reemplaza KomfIA SQL) ==== */
