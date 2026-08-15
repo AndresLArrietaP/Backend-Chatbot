@@ -1086,3 +1086,6 @@ WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%'
 GO
 -- Por modelo especifico (Modelo LIKE '%980E%' en vez de '%todos%'); ordena por valor desc dentro de cada metal.
 -- Informativos (Ca/Zn/K/Na/Mg/B/P/V100) salen con 'inf' sin chip; TBN inverso (🟨 si < LP).
+-- SIN columna "Estado" (el chip del valor ya lo indica; conteo observados/criticos en el encabezado).
+-- El semaforo juzga contra el LP/LC de REFERENCIA del grupo cuando el limite propio de la fila es NULL
+-- (evita falsos "OK" en valores altos de equipos sin limite cargado). CM se mantiene (aun sin data en Antamina).

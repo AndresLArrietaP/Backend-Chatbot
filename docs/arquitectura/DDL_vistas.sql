@@ -2445,31 +2445,34 @@ WITH base AS (
 mg AS (
     SELECT b.*, g.ModeloG FROM base b CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) g(ModeloG)
 ),
+mr AS (   -- limite de REFERENCIA del grupo (para juzgar filas cuyo LP/LC propio viene NULL)
+    SELECT *,
+        ISNULL(LP, MAX(LP) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal)) AS LPx,
+        ISNULL(LC, MAX(LC) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal)) AS LCx
+    FROM mg
+),
 r AS (
-    SELECT Proyecto, ModeloG, CompTipo, Metal, MetalOrden, Valor, LP, LC,
-        CASE WHEN Inf=1 THEN 0 WHEN Inv=1 THEN CASE WHEN LP IS NOT NULL AND Valor>0 AND Valor<LP THEN 1 ELSE 0 END
-             ELSE CASE WHEN Valor>ISNULL(LP,999999) THEN 1 ELSE 0 END END AS Obs,
-        CASE WHEN Inf=0 AND Inv=0 AND Valor>ISNULL(LC,999999) THEN 1 ELSE 0 END AS Crit,
+    SELECT Proyecto, ModeloG, CompTipo, Metal, MetalOrden, Valor,
+        MAX(LP) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal) AS LPref,
+        MAX(LC) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal) AS LCref,
+        CASE WHEN Inf=1 THEN 0 WHEN Inv=1 THEN CASE WHEN LPx IS NOT NULL AND Valor>0 AND Valor<LPx THEN 1 ELSE 0 END
+             ELSE CASE WHEN Valor>ISNULL(LPx,999999) THEN 1 ELSE 0 END END AS Obs,
+        CASE WHEN Inf=0 AND Inv=0 AND Valor>ISNULL(LCx,999999) THEN 1 ELSE 0 END AS Crit,
         CAST(N'| ' + Equipo + N' | ' + compAbbr + N' | ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'), N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—')
            + N' | ' + ISNULL(CM, N'—') + N' | '
            + CASE WHEN Inf=1 THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' inf'
-                  WHEN Inv=1 THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + CASE WHEN LP IS NOT NULL AND Valor>0 AND Valor<LP THEN N' 🟨' ELSE N'' END
-                  WHEN Valor>ISNULL(LC,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟥'
-                  WHEN Valor>ISNULL(LP,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟨'
+                  WHEN Inv=1 THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + CASE WHEN LPx IS NOT NULL AND Valor>0 AND Valor<LPx THEN N' 🟨' ELSE N'' END
+                  WHEN Valor>ISNULL(LCx,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟥'
+                  WHEN Valor>ISNULL(LPx,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + N' 🟨'
                   ELSE CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) END
-           + N' | '
-           + CASE WHEN Inf=1 THEN N'inf'
-                  WHEN Inv=1 THEN CASE WHEN LP IS NOT NULL AND Valor>0 AND Valor<LP THEN N'PRECAUCION' ELSE N'OK' END
-                  WHEN Valor>ISNULL(LC,999999) THEN N'CRITICO'
-                  WHEN Valor>ISNULL(LP,999999) THEN N'PRECAUCION' ELSE N'OK' END
            + N' |' AS nvarchar(max)) AS rowMD
-    FROM mg
+    FROM mr
 ),
 body AS (
     SELECT Proyecto, ModeloG, CompTipo, Metal, MetalOrden,
-        COUNT(*) AS nTot, SUM(Obs) AS nObs, SUM(Crit) AS nCrit, MAX(LP) AS LPh, MAX(LC) AS LCh,
+        COUNT(*) AS nTot, SUM(Obs) AS nObs, SUM(Crit) AS nCrit, MAX(LPref) AS LPh, MAX(LCref) AS LCh,
         STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Valor DESC, Metal) AS bodyMD
     FROM r GROUP BY Proyecto, ModeloG, CompTipo, Metal, MetalOrden
 )
@@ -2482,8 +2485,8 @@ SELECT
       + CASE WHEN b.ModeloG <> N'(todos)' THEN N' · ' + b.ModeloG ELSE N'' END + N'** · '
       + CAST(b.nTot AS nvarchar(10)) + N' equipos (' + CAST(b.nObs AS nvarchar(10)) + N' observados, ' + CAST(b.nCrit AS nvarchar(10)) + N' críticos)' + NCHAR(10)
       + N'_Límites de referencia: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LPh AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LCh AS decimal(18,1))), N'—') + N' ppm._' + NCHAR(10) + NCHAR(10)
-      + N'| Equipo | Comp | Fecha | Horóm | Hrs C. | CM | ' + b.Metal + N' (ppm) | Estado |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
+      + N'| Equipo | Comp | Fecha | Horóm | Hrs C. | CM | ' + b.Metal + N' (ppm) |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
     AS nvarchar(max)) AS MD
 FROM body b;
 GO
