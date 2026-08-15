@@ -2475,10 +2475,12 @@ WITH base AS (
 mg AS (
     SELECT b.*, g.ModeloG FROM base b CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) g(ModeloG)
 ),
-mr AS (   -- limite de REFERENCIA del grupo (para juzgar filas cuyo LP/LC propio viene NULL)
+mr AS (   -- limite de REFERENCIA del grupo (para juzgar filas cuyo LP/LC propio viene NULL).
+          -- SOLO dentro de UN modelo (mismo limite); en '(todos)' NO se cruza (modelos distintos = limites distintos,
+          -- ej. hidraulico varia por modelo) -> fila sin limite propio queda sin chip en vez de juzgarse mal.
     SELECT *,
-        ISNULL(LP, MAX(LP) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal)) AS LPx,
-        ISNULL(LC, MAX(LC) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal)) AS LCx
+        CASE WHEN ModeloG = N'(todos)' THEN LP ELSE ISNULL(LP, MAX(LP) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal)) END AS LPx,
+        CASE WHEN ModeloG = N'(todos)' THEN LC ELSE ISNULL(LC, MAX(LC) OVER (PARTITION BY Proyecto, ModeloG, CompTipo, Metal)) END AS LCx
     FROM mg
 ),
 r AS (
