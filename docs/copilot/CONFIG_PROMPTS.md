@@ -14,6 +14,16 @@ Parte de la config. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_TEMAS.md](
 - **Se usa en los temas:** Último análisis, Condición MT, Diagnóstico, Tendencia detalle, Tendencia relevantes,
   Tendencia de un metal, Triage MT. (Los "sin análisis" no lo incluyen.)
 
+## Prompt 2: `Ayuda KomfIA` (Tema 26 — Ayuda / Glosario)
+- **Tipo:** Solicitud (AI Builder), **sin conocimiento** — el glosario va DENTRO del prompt.
+- **Modelo:** GPT-4.1 mini.
+- **Entrada:** `pregunta` (Texto) = el mensaje del usuario (ej. `System.Activity.Text`).
+- **Salida:** imprimir **`{ayuda.text}`**.
+- **Instrucciones:** texto completo en **`docs/copilot/prompts/ayuda_glosario.md`** (glosario CM/LP/LC/semáforo/
+  metales/componentes/módulos + qué puede preguntar; responde breve; ⛔ no inventa cifras y reencamina las
+  consultas de datos reales a su módulo).
+- **Tema:** SIN flujo/SQL (Disparo → Solicitud → Mensaje → Finalizar). Hogar de las consultas simples/conceptuales.
+
 ## Prompts NUEVOS (evaluar — ver ROADMAP)
 - **Tendencia incipiente (#14):** probablemente **NO hace falta** un prompt aparte — el universal ya interpreta
   tendencias (sube/baja/pico, desviación del promedio). Reusar el universal con la vista `vw_TendenciaIncipienteMD`.
