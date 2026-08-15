@@ -35,6 +35,7 @@ Parte de la config a aplicar. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_
 | Barrido detalle | proyecto, modelo | MD_flota · vista=vw_ObservadosBarridoMD · columna=DetalleTodosMD | no |
 | Barrido filtrado | proyecto, modelo, **columna** | MD_flota · vista=vw_ObservadosBarridoMD | no |
 | Triage MT | proyecto | MD_flota · vista=vw_TriageMD · modelo=todos · columna=MD | sí |
+| Último análisis por metal (flota) | proyecto, modelo, compartimiento, **parametros** | MD_ultmetalflota · vista=vw_UltimoMetalFlotaMD (fija en concat) · modelo=(todos) · compartimiento=tracción | no |
 
 > **Barrido filtrado** es el ÚNICO que expone `columna` como Entrada (el modelo la infiere: «solo críticos»→
 > `MD_Criticos`, «solo precauciones»→`MD_Precaucion`). En todos los demás, `columna` es FIJA en la Acción.
@@ -66,13 +67,34 @@ Convención: prefijo `NN` en el NOMBRE del tema en Copilot (los diferencia de lo
 - **22 Ranking:** "Los equipos con MÁS de un metal en un tipo de componente, en orden descendente. «top 5 de hierro en motor de tracción de Antapaccay», «los 3 de más cobre en el hidráulico de <mina>», «qué equipos tienen el cromo más alto en <proyecto>», «ranking de Fe en <componente>». Rellena proyecto, compartimiento (tracción/hidráulico/rueda/mando/transmisión/motor), parametro (el metal) y top (el número que pidan, p.ej. 5; si no dicen número, 10). ⛔ NO la evolución de un metal en un equipo (→ Tendencia/Historial de un metal)."
 - **23 Tendencia de un metal en la flota:** "FLOTA: dirección (↑ sube / ↓ baja / → estable) de UN metal en un TIPO de componente de toda la flota/mina, equipo por equipo — cuando NO se nombra un equipo. «cómo evolucionó/ha variado el Fe en los motores de tracción de la flota», «el aluminio en tracción es ascendente o estable», «tendencia del Cu en los hidráulicos de Antapaccay», «cómo viene el cromo en las ruedas de la mina». Rellena proyecto, compartimiento (tracción/hidráulico/rueda/mando/transmisión/motor) y parametro (el metal). ⚑ Es de FLOTA (proyecto, sin equipo). ⛔ Si nombran UN equipo → 08 Tendencia de un metal."
 - **24 Condición de un componente en la flota:** "FLOTA: qué equipos tienen UN tipo de componente OBSERVADO / que necesita atención en toda la flota/mina (críticos primero), con lubricante, horas y metales fuera de límite — para CUALQUIER componente. «qué sistemas hidráulicos necesitan atención», «cómo están los hidráulicos de la flota», «qué ruedas delanteras están fuera de límite», «mandos finales observados de Antapaccay», «qué motores están en condición». Rellena proyecto y compartimiento (tracción/hidráulico/rueda/mando/transmisión/motor). ⚑ FLOTA, UN tipo de componente. ⛔ NO solo MT (→ Triage), NO la flota completa por-componente (→ Barrido) ni un equipo (→ Diagnóstico)."
+- **25 Último análisis por metal en la flota:** "FLOTA: el ÚLTIMO análisis de UN metal (o VARIOS) en un TIPO de componente de toda la flota/mina — el valor más reciente de ESE metal en CADA equipo, con su límite de referencia y estado, ordenados de mayor a menor. Es el «barrido enfocado a un metal». Se dispara cuando NOMBRAN el/los metal(es) + la flota + el tipo de componente (SIN nombrar un equipo). «dame el último análisis de hierro de todos los motores de tracción de Antamina», «el Fe de los MT de la flota», «hierro y cobre de todos los hidráulicos», «silicio, hierro y cromo de las ruedas de <mina>», «cómo está el cromo en cada motor de tracción». Con VARIOS metales devuelve UNA tabla por metal. Rellena proyecto, compartimiento (tracción/hidráulico/rueda/mando/transmisión/motor; default tracción) y parametros (el/los metal(es), símbolo). ⚑ FLOTA, UN metal (o varios) mostrando su ÚLTIMO valor por equipo. ⛔ NO todos los metales observados (→ 16/17 Barrido), NO la DIRECCIÓN/evolución del metal (→ 23 Tendencia de un metal en la flota), NO un solo equipo (→ 01 Último análisis / 08 Tendencia de un metal), NO «qué necesita atención» sin metal (→ 24 Condición de un componente en la flota)."
 
 
-## Variables de entrada — descripciones (rellenar dinámicamente)
-`equipo`="Código del equipo (ej. CA3177)." · `compartimiento`="Componente (MT LH, Sist. Hidr., Motor…).
-Traduce apodos." · `parametro`="Símbolo del metal (Fe, Cu, Cr…). Traduce cobre→Cu." · `proyecto`="Proyecto/
-mina (ej. Antapaccay)." · `modelo`="Modelo (ej. 980E)." · `columna` (solo Barrido filtrado)="MD_Criticos para
-solo críticos; MD_Precaucion para solo precauciones."
+## Variables de entrada — descripciones (AUTORIDAD única; van SIEMPRE en el TEMA, no en el flujo)
+Estas descripciones se pegan en cada **Entrada del tema** en Copilot (no en el flujo). `CONFIG_FLUJOS.md` solo
+lista qué entradas consume cada flujo; el TEXTO de cada descripción vive aquí.
+- `equipo` = "Código del equipo (ej. CAxxxx). Traduce apodos («el 3177»→CA3177)."
+- `compartimiento` = "Tipo de componente. En temas por-equipo usa la abreviatura (MT LH, Sist. Hidr., Motor…); en temas de FLOTA usa la palabra BASE (tracción, hidráulico, rueda, mando, transmisión, motor). Traduce apodos y siglas."
+- `parametro` = "Símbolo de UN metal/parámetro (Fe, Cu, Cr, Pb, Sn, Si, PQ…). Traduce cobre→Cu, hierro→Fe."
+- `parametros` = "Uno o VARIOS metales en símbolo, separados por coma (ej. `Fe` o `Fe,Cu,Cr`). Traduce nombres→símbolo (cobre→Cu, potasio→K). Devuelve una tabla por metal." (solo Tema 25)
+- `proyecto` = "Proyecto/mina (ej. Antapaccay). Si no lo nombran o dan algo que no es una mina válida, usa Antapaccay."
+- `modelo` = "Modelo de equipo (ej. 980E). `(todos)` si no lo nombran — NUNCA vacío."
+- `columna` (solo Barrido filtrado) = "MD_Criticos para solo críticos; MD_Precaucion para solo precauciones."
 
-## Temas NUEVOS a crear (ver ROADMAP)
-- **Conteo de flota**, **Ranking**, **Tendencia incipiente** (#14). Descripciones en el ROADMAP.
+## Nodos de un tema — cómo se arma (enseñar SIEMPRE, el orden importa)
+El tema PARTE del flujo (ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md)); el/los Prompt(s) son PARTE del tema. Orden de nodos:
+1. **Disparo** = por DESCRIPCIÓN (el agente elige; no hay «Frases» en el modelo de agente).
+2. **Preguntar entradas faltantes** (intuitividad): solo las REQUERIDAS que el modelo no infirió; las de default (proyecto=Antapaccay, modelo=(todos), compartimiento=tracción en Tema 25) NO se preguntan, se fijan en la Acción.
+3. **Acción (flujo)** — pasa las entradas; fija `vista`/`columna`/defaults. Sale `md` (+`observados`,`recomendaciones`).
+4. **Mensaje** `{md}` — imprime la tabla ya armada TAL CUAL.
+5. **CON análisis** (temas que lo llevan): Acción **Prompt** `Análisis de aceite` (`tabla={md}`) → Mensaje `{analisis.text}` → Mensaje `{recomendaciones}`. El Prompt es SIN conocimiento (ver [CONFIG_PROMPTS.md](CONFIG_PROMPTS.md)). **SIN análisis:** omite estos 3 nodos.
+6. **Condición** `md está en blanco` → Mensaje sin-data → **Finalizar** (el `if(empty)` del flujo evita el crash; la Condición muestra el mensaje).
+> Tema 25 (Último análisis por metal en la flota) = **SIN análisis**: Acción `MD_ultmetalflota` → Mensaje `{md}` → Condición sin-data → Finalizar. Entradas: `proyecto`,`modelo`,`compartimiento`,`parametros` (defaults fijados en la Acción; solo se pregunta el metal si NO lo nombran).
+
+## Intuitividad — plan (que el sistema NUNCA falle por un dato faltante)
+Objetivo: cero errores; si falta algo REQUERIDO, se pide en el chat; si es inferible o tiene default, se resuelve solo.
+- **Defaults no-restrictivos por tema:** proyecto→Antapaccay (si falta o es inválido, ej. «Lima»); modelo→(todos); en flota, compartimiento→tracción. ⛔ Nunca «sin datos» por un dato con default.
+- **Pedir SOLO lo genuinamente requerido y no-inferible:** el metal en Tema 22/25, el equipo en los por-equipo. Una sola pregunta, clara, con ejemplos.
+- **Traducción de apodos/siglas → keyword** antes de llamar al flujo (nunca pasar la sigla literal).
+- **Pendiente de expansión a otras minas:** cuando se sume una mina, revisar TODAS las descripciones de tema para no quedar ancladas a Antapaccay (el default está bien; el TEXTO no debe excluir otras minas).
+- **Follow-up ambiguo → re-delegar** al tema del turno previo (no al esqueleto genérico), conservando el scope.

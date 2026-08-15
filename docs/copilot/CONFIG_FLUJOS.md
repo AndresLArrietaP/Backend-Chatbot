@@ -68,3 +68,11 @@ concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_CondicionCompMD WHERE
 
 En la Acción: `modelo=(todos)`; la IA llena proyecto/compartimiento(/parametro). Salidas: `md`=`first(outputs('Ejecutar_una_consulta_SQL_(V2)')?['body/resultsets/Table1'])?['MD']`, `observados` (NULL), `recomendaciones` (NULL).
 ⚠ **`compartimiento` = la palabra BASE del tipo** (tracción, hidráulico, rueda, mando, transmisión, motor) — ⛔ NUNCA la abreviatura (MT LH, Sist. Hidr., RD LH); el `COLLATE` ya tolera tildes/mayúsculas.
+
+### Flujo `MD_ultmetalflota` (Tema 25 — Último análisis por metal en la flota) — entradas: proyecto, modelo, compartimiento, parametros
+Es el ÚNICO flujo que **agrega N tablas en una** (`STRING_AGG`): el usuario puede pedir 1 metal o varios («hierro y cobre», «silicio, hierro y cromo») y la vista trae **1 fila por metal** → el flujo las une → **una tabla por metal**. Los metales van en `parametros` como **lista separada por comas** (`Fe` o `Fe,Cu,Cr`); el filtro `CHARINDEX(',' + Metal + ',', ',' + ‹parametros› + ',')` selecciona los pedidos sin `STRING_SPLIT`.
+```
+concat('SELECT STRING_AGG(MD, NCHAR(10)+NCHAR(10)) WITHIN GROUP (ORDER BY MetalOrden) AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM dbo.vw_UltimoMetalFlotaMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND CHARINDEX('','' + Metal + '','', '','' + ''', ‹parametros›, ''' + '','') > 0')
+```
+En la Acción: `modelo=(todos)`; la IA llena `proyecto`, `compartimiento` (default `tracción` si no lo nombran) y `parametros` (el/los metal(es) en símbolo, separados por coma). Salidas: `md`=`first(...)?['MD']`, `observados`/`recomendaciones` (NULL).
+⚠ `parametros` = **símbolos** separados por coma SIN espacios ideal (`Fe,Cu`), pero el `CHARINDEX` con el wrap de comas tolera 1 o N. ⚠ `compartimiento` = palabra BASE (tracción/hidráulico/…), NUNCA la abreviatura. ⚠ `modelo` DEBE ir `(todos)` por defecto (no vacío): un `modelo` vacío haría `LIKE '%%'` y traería las filas por-modelo Y la `(todos)` → duplicación.
