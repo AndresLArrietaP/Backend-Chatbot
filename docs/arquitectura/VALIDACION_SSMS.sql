@@ -901,10 +901,22 @@ SELECT MD FROM [dbo].[vw_HistorialMetalEquipoMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%CA3171%' AND compAbbr LIKE '%todos%' AND Parametro='Cu';
 GO
 
-/* ==== BLOQUE 49 — vw_TriageMD (firma proyecto, flujo MD_flota modelo=todos) ==== */
-SELECT Observados, Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
-WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+/* ==== BLOQUE 49 — vw_TriageMD EVOLUCIONADO (base ligera; flujo MD_triage: proyecto+modelo+compartimiento) ====
+   Evolucion 2026-08-19: cualquier CompTipo, TODOS los equipos (obs o no), metales con valor entre parentesis,
+   agrupado por modelo (en '(todos)' cada modelo lleva sub-titulo ### <modelo>). Recos solo TRACCION.
+   Base: vw_MuestrasRankeadas rn=1 (1 pasada) — mas ligera que la version anterior (leia vw_DiagnosticoEquipo). */
+-- (a) MT de toda la flota, sin modelo -> sale por modelo con sub-titulos:
+SELECT Recomendaciones, MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%';
 GO
+-- (b) Ruedas de un modelo especifico -> tabla unica de ese modelo (como '¿que ruedas estan observadas?'):
+SELECT MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%980E%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%rueda%';
+GO
+-- Verifica: salen TODOS (🟩 OK incluidos), criticos/precaucion arriba, metales tipo 'Fe(199.0) · Cr(29.0)'.
+-- PERF: comparar elapsed vs la version anterior (deberia bajar; base = rankeadas rn=1, 1 pasada).
 
 -- ==== BLOQUE 50 — CORROBORAR límites gerencia (docs/gerencia/Limites.xlsx) vs [Eqpcare].[lc] ====
 -- Origen gerencia = matriz Proyecto x Componente x Modelo, ~60 parámetros (Fe,Al,Cu,Pb,Sn,Cr,Ni,Si,

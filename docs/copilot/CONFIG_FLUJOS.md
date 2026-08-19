@@ -61,6 +61,13 @@ Como el ranking: la vista va HARDCODEADA en el `concat` → solo hay fichas de V
 concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaMetalFlotaMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Metal LIKE ''%', ‹parametro›, '%''')
 ```
 
+### Flujo `MD_triage` (Tema 19 EVOLUCIONADO) — entradas: proyecto, modelo, compartimiento
+Triage generalizado: cualquier componente, TODOS los equipos (obs o no), agrupado por modelo. `compartimiento` = palabra BASE (tracción/hidráulico/rueda/mando/transmisión/motor); default `tracción`. `modelo` lo llena la IA (honra el nombrado; `(todos)` si no) — en `(todos)` la vista agrupa por modelo con sub-títulos; con modelo, tabla única de ese modelo.
+```
+concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TriageMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%''')
+```
+Salidas: `md`=`first(...)?['MD']`, `observados` (NULL), **`recomendaciones`**=`first(...)?['Recomendaciones']` (solo llena en TRACCION; NULL en otros comp → el tema la oculta con Condición «no está en blanco»). En la Acción: `compartimiento` default `tracción`; `modelo` IA/(todos). ⚠ ⛔ NO hardcodear `modelo=(todos)` (ignora el modelo pedido).
+
 ### Flujo `MD_condcomp` (Tema 24) — entradas: proyecto, modelo, compartimiento
 ```
 concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_CondicionCompMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%''')
