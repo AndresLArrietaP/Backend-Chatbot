@@ -225,6 +225,34 @@ ORDER BY Tabla, s.user_seeks DESC;
 GO
 
 
+/* ----------------------------------------------------------------------------
+   L8 — TRIAGE ANTAMINA (regresión 2026-08-18: 2-8 min variable). Objetivo:
+   (a) confirmar que el índice principal SIGUE vivo, (b) medir la vista real del
+   triage, (c) aislar el sobrecosto de referenciar vw_DiagnosticoEquipo 2 VECES.
+   Corre TODO 2 veces; usa la 2ª (warm). Anota «elapsed time» de cada uno.
+   ---------------------------------------------------------------------------- */
+-- L8.1 ¿El índice principal existe todavía? (si NO aparece, el DBA lo perdió → raíz)
+SELECT i.name AS Indice, i.type_desc, i.is_disabled
+FROM sys.indexes i JOIN sys.tables t ON t.object_id=i.object_id
+WHERE t.name='LaboratoryData' AND i.name IN ('IX_LabData_UltimaMuestra');
+GO
+-- L8.2 La VISTA REAL del triage para Antamina (lo que corrió en 2:38)
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%';
+GO
+-- L8.3 vw_DiagnosticoEquipo SOLO para Antamina (el triage lo paga DOS veces: base + obsdet)
+--     Si L8.3 ya es la mitad de L8.2, la doble referencia es el sobrecosto → optimizable.
+SELECT COUNT(*) FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Compartimiento LIKE '%TRACCION%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+-- L8.4 ¿Es el servidor (tier serverless que auto-pausa/escala)? Mira si hubo throttle/espera:
+SELECT database_name = DB_NAME(), sku = DATABASEPROPERTYEX(DB_NAME(),'ServiceObjective');
+GO
+
+
 /* ============================================================================
    CÓMO DECIDIR CON LOS RESULTADOS
    - L2 vs traza Copilot (L0): si los "A" (SSMS warm) son chicos y los "B/C" del chat
