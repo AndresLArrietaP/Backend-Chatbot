@@ -2112,26 +2112,26 @@ GO
 
 /* ==== vw_TriageMD (triage MT de flota — caso de uso principal) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TriageMD] AS
-WITH base AS (
+WITH base AS (   -- PERF: lee vw_DiagnosticoEquipo UNA sola vez (antes obsdet lo re-JOIN-eaba -> 2x la fundacion)
     SELECT Equipo, Proyecto, Compartimiento, Estado_General, HorasComponente, FechaMuestreo, Grado, Estado_V100, TBN,
+        Fe, PQ, Cr, Ni, Cu, Pb, Sn, Al, Si,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' ELSE N'MT' END AS compAbbr, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' ELSE N'—' END AS estadoChip, CASE WHEN Estado_General LIKE '%CRITIC%' THEN 1 WHEN Estado_General LIKE '%PRECAUC%' THEN 2 ELSE 3 END AS estadoOrd
     FROM [dbo].[vw_DiagnosticoEquipo]
     WHERE Compartimiento LIKE '%TRACCION%'
 ),
-obsdet AS (   -- metales observados por MT (value:marker :C/:P)
+obsdet AS (   -- metales observados por MT (chips :C/:P) — derivado de base, SIN re-leer el diagnostico
     SELECT b.Equipo, b.Proyecto, b.Compartimiento, mm.metal
     FROM base b
-    JOIN [dbo].[vw_DiagnosticoEquipo] d ON d.Equipo=b.Equipo AND d.Compartimiento=b.Compartimiento
     CROSS APPLY (VALUES
-            (N'Fe', Fe),
-            (N'PQ', PQ),
-            (N'Cr', Cr),
-            (N'Ni', Ni),
-            (N'Cu', Cu),
-            (N'Pb', Pb),
-            (N'Sn', Sn),
-            (N'Al', Al),
-            (N'Si', Si)
+            (N'Fe', b.Fe),
+            (N'PQ', b.PQ),
+            (N'Cr', b.Cr),
+            (N'Ni', b.Ni),
+            (N'Cu', b.Cu),
+            (N'Pb', b.Pb),
+            (N'Sn', b.Sn),
+            (N'Al', b.Al),
+            (N'Si', b.Si)
     ) mm(metal, val)
     WHERE (mm.val LIKE '%:C%' OR mm.val LIKE '%:P%')
       AND b.Estado_General NOT LIKE '%OK%' AND b.Estado_General NOT LIKE '%NORMAL%'   -- solo equipos en la tabla
