@@ -32,6 +32,16 @@ En Copilot Studio, tópicos de **sistema** → **«Error de conversación» / «
 edita su mensaje para que, ante cualquier fallo no controlado, muestre el **mensaje amable**. Es el cinturón
 por si el 504 igual escapa. No lleva flujo; solo el nodo Mensaje con el texto.
 
+### ⚠ Gotcha al publicar: «ActionSchemaInvalid» (esquemas 200 deben coincidir)
+Con DOS «Responder al agente» (éxito + respaldo), Power Automate exige que **ambos tengan el MISMO
+esquema de salida** (mismo nombre y tipo de campos). Si el de éxito devuelve `respuesta`=`body/resultsets/Table1`
+(array/objeto) y el de respaldo `respuesta`=texto → error `The schema definitions for actions with same status
+code must match`. **Fix:** que ambos devuelvan **una sola salida `respuesta` de tipo Texto**. En el de éxito,
+serializa el resultado a texto: `respuesta = string(outputs('Ejecutar_una_consulta_SQL_(V2)')?['body/resultsets/Table1'])`.
+El de respaldo ya es texto. Sin salidas extra en ninguno.
+**Plan B (a prueba de balas):** UNA sola «Responder al agente» con `respuesta`=variable `salida`; dos ramas previas
+(éxito / timeout+error, por run-after) que SETEAN `salida`. Una sola respuesta = un solo esquema, no puede chocar.
+
 ## Mensaje amable (texto fijo, listo para pegar en Capa B y C)
 ```
 ⏱️ Esa consulta de toda la flota tardó más de lo esperado. Para que salga al instante, acótala:
