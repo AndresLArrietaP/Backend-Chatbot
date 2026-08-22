@@ -1109,3 +1109,10 @@ SELECT Metal, CompTipo, Recomendaciones FROM [dbo].[vw_UltimoMetalFlotaMD] WITH 
 WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%' AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%traccion%'
   AND CHARINDEX(',' + Metal + ',', ',' + 'Fe,Cu' + ',') > 0;
 GO
+
+-- ==== BLOQUE 65 — vw_AcumuladosFlotaMD (wrapper del Ranking de Atencion / acumulados motor diesel) ====
+-- Requiere que vw_RankingAtencion exista en la BD (dashboard PBI). Alcance: Antapaccay motor diesel.
+SELECT MD FROM [dbo].[vw_AcumuladosFlotaMD] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%';
+GO
+-- Verifica: tabla ordenada por Ranking desc, # = posicion, metales Acum + H.Motor/H.Metal. SIN Estado (pendiente regla).
+-- Sanity: comparar el orden/valores contra el dashboard (BLOQUE de vw_RankingAtencion en su propio .sql).

@@ -2568,3 +2568,28 @@ SELECT
 FROM body b
 LEFT JOIN [dbo].[vw_Recomendaciones] rc ON rc.metal = b.Metal;
 GO
+
+/* ==== vw_AcumuladosFlotaMD (wrapper KomfIA del Ranking de Atencion / acumulados motor diesel) ==== */
+CREATE OR ALTER VIEW [dbo].[vw_AcumuladosFlotaMD] AS
+WITH ranked AS (
+    SELECT *, ROW_NUMBER() OVER (ORDER BY [Ranking] DESC) AS Pos FROM [dbo].[vw_RankingAtencion]
+),
+rows_ AS (
+    SELECT Pos,
+        CAST(N'| ' + CONVERT(nvarchar(10), Pos) + N' | ' + ISNULL(CONVERT(nvarchar(40), [N° Int.]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(40), [Serie]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Horas Motor Actual]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Horas Motor Metal]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Fe Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Cr Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Pb Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Cu Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Na Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [K Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Si Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), [Ranking]), N'—') + N' |' AS nvarchar(max)) AS rowMD
+    FROM ranked
+),
+body AS (
+    SELECT STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Pos) AS bodyMD, COUNT(*) AS N FROM rows_
+)
+SELECT
+    N'Antapaccay' AS Proyecto, N'(todos)' AS Modelo, N'MOTOR' AS CompTipo,
+    CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(
+        N'**Ranking de Atención — Motor Diésel · Antapaccay** · ' + CONVERT(nvarchar(10), b.N) + N' equipos (por desgaste acumulado ponderado)' + NCHAR(10)
+      + N'_Acumulados del metal del motor ACTUAL (resetean en cambio de motor/metal). Ranking = Pb·0.68 + Cu·0.17 + Cr·0.07 + (Fe·Na·K·Si)·0.02._' + NCHAR(10) + NCHAR(10)
+      + N'| # | Equipo | Serie | H.Motor | H.Metal | Fe | Cr | Pb | Cu | Na | K | Si | Ranking |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
+    AS nvarchar(max)) AS MD
+FROM body b;
+GO
