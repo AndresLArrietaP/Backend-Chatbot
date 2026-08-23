@@ -2577,7 +2577,7 @@ WITH ranked AS (
 ),
 rows_ AS (
     SELECT Pos,
-        CAST(N'| ' + CONVERT(nvarchar(10), Pos) + N' | ' + ISNULL(CONVERT(nvarchar(40), r.[N° Int.]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(40), r.[Serie]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Horas Motor Actual]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Horas Motor Metal]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Fe Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Cr Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Pb Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Cu Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Na Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[K Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Si Acum]), N'—')N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Ranking]), N'—') + N' | ' + Estado + N' |' AS nvarchar(max)) AS rowMD
+        CAST(N'| ' + CONVERT(nvarchar(10), Pos) + N' | ' + ISNULL(CONVERT(nvarchar(40), r.[N° Int.]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(40), r.[Serie]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Horas Motor Actual]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Horas Motor Metal]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Fe Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Cr Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Pb Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Cu Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Na Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[K Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Si Acum]), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20), r.[Ranking]), N'—') + N' | ' + Estado + N' |' AS nvarchar(max)) AS rowMD
     FROM ranked r
 ),
 body AS (
