@@ -68,6 +68,19 @@ concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TriageMD WHERE Proyec
 ```
 Salidas: `md`=`first(...)?['MD']`, `observados` (NULL), **`recomendaciones`**=`first(...)?['Recomendaciones']` (solo llena en TRACCION; NULL en otros comp → el tema la oculta con Condición «no está en blanco»). En la Acción: `compartimiento` default `tracción`; `modelo` IA/(todos). ⚠ ⛔ NO hardcodear `modelo=(todos)` (ignora el modelo pedido).
 
+### Flujo `MD_acumflota` (Tema 27 — Ranking de acumulados) — entradas: proyecto
+Envuelve `vw_AcumuladosFlotaMD` (que envuelve el Ranking de Atención del dashboard; motor diésel Antapaccay).
+```
+concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_AcumuladosFlotaMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%''')
+```
+Salidas: `md`=`first(...)?['MD']`, `observados`/`recomendaciones` (NULL). Alcance: Antapaccay motor diésel.
+
+### Flujo `MD_acumequipo` (Tema 28 — Acumulados de un equipo) — entradas: equipo
+```
+concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_AcumuladosEquipoMD WHERE Equipo LIKE ''%', ‹equipo›, '%''')
+```
+Salidas: `md`=`first(...)?['MD']`, `observados`/`recomendaciones` (NULL). Alcance: Antapaccay motor diésel (equipos CA31xx).
+
 ### Flujo `MD_condcomp` (Tema 24) — entradas: proyecto, modelo, compartimiento
 ```
 concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_CondicionCompMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%''')

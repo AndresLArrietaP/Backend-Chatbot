@@ -28,7 +28,10 @@ hechas para un **dashboard Power BI** (proyecto aparte, chat con MCP). KomfIA so
 `[Fe/Cr/Pb/Cu/Na/K ppm/h]`, `[NumMuestras]`, `[Intervenido]`.
 
 ## Wrappers KomfIA
-- **vw_AcumuladosFlotaMD** (Tema flota/ranking) ✅ creada — tabla ordenada por `Ranking` desc, con `#`(Pos).
-- **vw_AcumuladosEquipoMD** (Tema un equipo) — PENDIENTE (detalle de 1 equipo: metales acum + horas + serie + ppm/h).
-- **Estado Motor (Alerta/Atención/Monitoreo)**: lo pinta el PBI (DAX), NO la vista base → falta la REGLA de umbral
-  para reproducirlo en KomfIA (¿por score de Ranking? ¿por metales en alerta?). Pendiente confirmar.
+- **vw_AcumuladosFlotaMD** (Tema 27, flota/ranking) ✅ — tabla ordenada por `Ranking` desc, `#`(Pos) + Estado.
+- **vw_AcumuladosEquipoMD** (Tema 28, un equipo) ✅ — serie + horas motor/metal + 7 metales acum (filas) + ranking + Estado.
+- **Estado Motor** ✅ definido por score de Ranking (confirmado gerencia 2026-08-23): **<60 🟢 Monitoreo · 60-65 🟨 Atención ·
+  65-70 🟧 Alerta · ≥70 🟥 Crítico**. (El PBI lo pinta en DAX; aquí se reproduce por umbral de score.)
+- **Métricas fuera de alcance (pedido gerencia):** sin ppm/h, sin Specto, sin NumMuestras; la alerta de tendencia de Pb
+  (`vw_AlertaTendencia`) sigue **en prueba** → no se incluye aún.
+- 7 metales como el dashboard: Fe, Cr, Pb, Cu, Na, K, Si (Sn/Hollin existen en la vista base pero no se muestran).

@@ -1114,5 +1114,11 @@ GO
 -- Requiere que vw_RankingAtencion exista en la BD (dashboard PBI). Alcance: Antapaccay motor diesel.
 SELECT MD FROM [dbo].[vw_AcumuladosFlotaMD] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%';
 GO
--- Verifica: tabla ordenada por Ranking desc, # = posicion, metales Acum + H.Motor/H.Metal. SIN Estado (pendiente regla).
--- Sanity: comparar el orden/valores contra el dashboard (BLOQUE de vw_RankingAtencion en su propio .sql).
+-- Verifica: tabla ordenada por Ranking desc, # = posicion, metales Acum + H.Motor/H.Metal + Estado.
+-- Estado por score (limites 60/65/70): <60 Monitoreo, 60-65 Atencion, 65-70 Alerta, >=70 Critico.
+-- Sanity: comparar orden/valores/Estado contra el dashboard (vw_RankingAtencion en su propio .sql).
+
+-- ==== BLOQUE 66 — vw_AcumuladosEquipoMD (acumulados de 1 equipo; flujo MD_acumequipo) ====
+SELECT MD FROM [dbo].[vw_AcumuladosEquipoMD] WITH (NOLOCK) WHERE Equipo LIKE '%CA3197%';
+GO
+-- Verifica: linea de contexto (serie, horas motor/metal, ranking, estado) + tabla Metal|Acumulado (7 metales).
