@@ -1123,3 +1123,19 @@ GO
 SELECT MD FROM [dbo].[vw_AcumuladosEquipoMD] WITH (NOLOCK) WHERE Equipo LIKE '%CA3197%';
 GO
 -- Verifica: linea de contexto (serie, horas motor/metal, ranking, estado) + tabla Metal|Acumulado (7 metales).
+
+-- ==== BLOQUE 67 — VERIFICACION acumulados: KomfIA vs vista cruda vs dashboard ====
+-- La ULTIMA foto cruda de vw_RankingHistorico (lo que KomfIA envuelve). Debe COINCIDIR fila a fila con
+-- vw_AcumuladosFlotaMD (BLOQUE 65). Si KomfIA == esta vista PERO != dashboard PBI -> el PBI esta DESFASADO
+-- (modo import sin refrescar): la diferencia son muestras NUEVAS (mas horas, +1-2 ppm) que la vista viva ya
+-- tiene. Cambios de metal / lixiviacion Cu / RP YA estan en vw_RankingHistorico (KomfIA los hereda; no se tocan).
+WITH ult AS (
+    SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC, rh.[Horas Motor Actual] DESC) AS rn
+    FROM [dbo].[vw_RankingHistorico] rh
+)
+SELECT [N° Int.], Fecha, Serie, [Horas Motor Actual], [Horas Motor Metal],
+       [Fe Acum],[Cr Acum],[Pb Acum],[Cu Acum],[Na Acum],[K Acum],[Si Acum],[Ranking]
+FROM ult WHERE rn = 1 ORDER BY [Ranking] DESC;
+GO
+-- Interpretacion: si un equipo (ej CA3175) sale con +63 h y +2 ppm Fe respecto al dashboard, es una muestra
+-- nueva -> refrescar el PBIX. CA3197 ya coincidia exacto (no tenia muestra nueva). No hay bug de logica.

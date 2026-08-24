@@ -2573,7 +2573,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_AcumuladosFlotaMD] AS
 WITH base AS (   -- ultima foto por equipo de vw_RankingHistorico (reemplazo VIGENTE; incluye lixiviacion de Cu)
     SELECT z.* FROM (
-        SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC) AS _rn
+        SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC, rh.[Horas Motor Actual] DESC) AS _rn
         FROM [dbo].[vw_RankingHistorico] rh
     ) z WHERE z._rn = 1
 ),
@@ -2604,7 +2604,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_AcumuladosEquipoMD] AS
 WITH base AS (   -- ultima foto por equipo de vw_RankingHistorico (reemplazo VIGENTE; incluye lixiviacion de Cu)
     SELECT z.* FROM (
-        SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC) AS _rn
+        SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC, rh.[Horas Motor Actual] DESC) AS _rn
         FROM [dbo].[vw_RankingHistorico] rh
     ) z WHERE z._rn = 1
 ),
