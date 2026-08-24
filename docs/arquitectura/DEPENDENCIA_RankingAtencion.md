@@ -28,7 +28,11 @@ hechas para un **dashboard Power BI** (proyecto aparte, chat con MCP). KomfIA so
 `[Fe/Cr/Pb/Cu/Na/K ppm/h]`, `[NumMuestras]`, `[Intervenido]`.
 
 ## Wrappers KomfIA
-- **vw_AcumuladosFlotaMD** (Tema 27, flota/ranking) ✅ — tabla ordenada por `Ranking` desc, `#`(Pos) + Estado.
+> ⚠ **Fuente correcta = `vw_RankingHistorico` (última foto por equipo)**, NO `vw_RankingAtencion`. El dashboard usa
+> el HISTÓRICO (reemplazo vigente), que aplica la **lixiviación de Cu** (ignora las 1ras 1000h de Cu) — `vw_RankingAtencion`
+> NO la aplica → daba Cu/Ranking más altos (CA3197 Cu 102/Rk 71.4 vs dashboard Cu 75.5/Rk 66.9). Los wrappers toman
+> `ROW_NUMBER() OVER (PARTITION BY [N° Int.] ORDER BY Fecha DESC)=1` de `vw_RankingHistorico` para cuadrar con el PBI.
+- **vw_AcumuladosFlotaMD** (Tema 27, flota/ranking) ✅ — tabla ordenada por `Ranking` desc, `Pos.` + Estado.
 - **vw_AcumuladosEquipoMD** (Tema 28, un equipo) ✅ — serie + horas motor/metal + 7 metales acum (filas) + ranking + Estado.
 - **Estado Motor** ✅ definido por score de Ranking (confirmado gerencia 2026-08-23): **<60 🟢 Monitoreo · 60-65 🟨 Atención ·
   65-70 🟧 Alerta · ≥70 🟥 Crítico**. (El PBI lo pinta en DAX; aquí se reproduce por umbral de score.)

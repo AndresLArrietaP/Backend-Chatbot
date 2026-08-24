@@ -1111,7 +1111,8 @@ WHERE Proyecto LIKE '%Antamina%' AND Modelo LIKE '%todos%' AND CompTipo COLLATE 
 GO
 
 -- ==== BLOQUE 65 — vw_AcumuladosFlotaMD (wrapper del Ranking de Atencion / acumulados motor diesel) ====
--- Requiere que vw_RankingAtencion exista en la BD (dashboard PBI). Alcance: Antapaccay motor diesel.
+-- Fuente: vw_RankingHistorico (ULTIMA foto por equipo; reemplazo vigente, aplica lixiviacion de Cu = cuadra con el dashboard).
+-- Requiere que vw_RankingHistorico exista en la BD (dashboard PBI). Alcance: Antapaccay motor diesel.
 SELECT MD FROM [dbo].[vw_AcumuladosFlotaMD] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%';
 GO
 -- Verifica: tabla ordenada por Ranking desc, # = posicion, metales Acum + H.Motor/H.Metal + Estado.

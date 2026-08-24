@@ -2571,9 +2571,15 @@ GO
 
 /* ==== vw_AcumuladosFlotaMD (wrapper KomfIA del Ranking de Atencion / acumulados motor diesel) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_AcumuladosFlotaMD] AS
-WITH ranked AS (
+WITH base AS (   -- ultima foto por equipo de vw_RankingHistorico (reemplazo VIGENTE; incluye lixiviacion de Cu)
+    SELECT z.* FROM (
+        SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC) AS _rn
+        FROM [dbo].[vw_RankingHistorico] rh
+    ) z WHERE z._rn = 1
+),
+ranked AS (
     SELECT r.*, CASE WHEN r.[Ranking] >= 70 THEN N'🟥 Crítico' WHEN r.[Ranking] >= 65 THEN N'🟧 Alerta' WHEN r.[Ranking] >= 60 THEN N'🟨 Atención' ELSE N'🟢 Monitoreo' END AS Estado, ROW_NUMBER() OVER (ORDER BY r.[Ranking] DESC) AS Pos
-    FROM [dbo].[vw_RankingAtencion] r
+    FROM base r
 ),
 rows_ AS (
     SELECT Pos,
@@ -2589,18 +2595,24 @@ SELECT
     CAST(
         N'**Ranking de Atención — Motor Diésel · Antapaccay** · ' + CONVERT(nvarchar(10), b.N) + N' equipos (por desgaste acumulado ponderado)' + NCHAR(10)
       + N'_Acumulados del motor ACTUAL (resetean en cambio de motor/metal). Ranking = Pb·0.68 + Cu·0.17 + Cr·0.07 + (Fe·Na·K·Si)·0.02. Estado: <60 Monitoreo · 60-65 Atención · 65-70 Alerta · ≥70 Crítico._' + NCHAR(10) + NCHAR(10)
-      + N'| # | Equipo | Serie | H.Motor | H.Metal | Fe | Cr | Pb | Cu | Na | K | Si | Ranking | Estado |' + NCHAR(10) + N'|---|---|---|---|---|---|---|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
+      + N'| Pos. | Equipo | Serie | H.Motor | H.Metal | Fe | Cr | Pb | Cu | Na | K | Si | Ranking | Estado |' + NCHAR(10) + N'|---|---|---|---|---|---|---|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
     AS nvarchar(max)) AS MD
 FROM body b;
 GO
 
 /* ==== vw_AcumuladosEquipoMD (wrapper KomfIA acumulados motor diesel) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_AcumuladosEquipoMD] AS
-WITH m AS (
+WITH base AS (   -- ultima foto por equipo de vw_RankingHistorico (reemplazo VIGENTE; incluye lixiviacion de Cu)
+    SELECT z.* FROM (
+        SELECT rh.*, ROW_NUMBER() OVER (PARTITION BY rh.[N° Int.] ORDER BY rh.Fecha DESC) AS _rn
+        FROM [dbo].[vw_RankingHistorico] rh
+    ) z WHERE z._rn = 1
+),
+m AS (
     SELECT r.[N° Int.] AS Equipo, r.[Serie] AS Serie, r.[Horas Motor Actual] AS HMotor, r.[Horas Motor Metal] AS HMetal, r.[Ranking] AS Ranking,
         CASE WHEN r.[Ranking] >= 70 THEN N'🟥 Crítico' WHEN r.[Ranking] >= 65 THEN N'🟧 Alerta' WHEN r.[Ranking] >= 60 THEN N'🟨 Atención' ELSE N'🟢 Monitoreo' END AS Estado,
         STRING_AGG(CONVERT(nvarchar(max), N'| ' + mm.metal + N' | ' + ISNULL(CONVERT(nvarchar(20), mm.acum), N'—') + N' |'), NCHAR(10)) WITHIN GROUP (ORDER BY mm.ord) AS bodyMD
-    FROM [dbo].[vw_RankingAtencion] r
+    FROM base r
     CROSS APPLY (VALUES
         (1,N'Fe',r.[Fe Acum]),(2,N'Cr',r.[Cr Acum]),(3,N'Pb',r.[Pb Acum]),(4,N'Cu',r.[Cu Acum]),
         (5,N'Na',r.[Na Acum]),(6,N'K',r.[K Acum]),(7,N'Si',r.[Si Acum])
