@@ -28,6 +28,17 @@ La conversación natural sigue igual (los temas por descripción no se tocan); e
 > Posicional = más ágil para el ingeniero. Si un parámetro falta, el tema destino lo **pide en el chat** (como ya
 > hace). Alternativa robusta `clave=valor` (`/barrido proyecto=Antapaccay modelo=980E`) — evaluar si el posicional confunde.
 
+## DECISIÓN (2026-08-24): canal = Microsoft Teams (+ probar en el test de Copilot)
+Plan que sirve en AMBOS — se construye la próxima sesión, en este orden:
+1. **Dispatcher de texto `/`** (núcleo, canal-agnóstico): funciona **ya en el chat de prueba de Copilot** y en Teams.
+   Es el handler que parsea y redirige. Con esto se prueba todo sin depender del canal.
+2. **`/comandos` con botones de respuesta rápida**: menú descubrible (click-para-ejecutar) — sensación Discord en cualquier canal.
+3. **Teams — command list en el manifiesto de la app**: hace los comandos **descubribles** en el menú del bot de Teams
+   (al abrir la lista de comandos); al elegir uno envía el texto del comando → lo maneja el MISMO dispatcher. (El
+   autocompletado as-you-type puro depende de Teams; el menú de comandos ya da la lista.)
+> Así: probamos en el test de Copilot (dispatcher), y en Teams sumamos el menú del manifiesto. El «Comando» activity
+> trigger nativo queda como opción a explorar; el dispatcher por mensaje es lo que corre en ambos sin fricción.
+
 ## Mecanismo en Copilot Studio (a confirmar en la herramienta)
 **Un solo tema «Comando»** que parsea y **redirige** al tema correcto:
 1. **Disparo:** descripción anclada a mensajes que empiezan con `/` (ej. «Se activa cuando el mensaje empieza con `/`
