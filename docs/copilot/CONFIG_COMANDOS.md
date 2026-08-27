@@ -44,6 +44,17 @@ La conversación natural sigue igual (los temas por descripción no se tocan); e
 - Meter el parseo en el **fallback** (KomfIA SQL / intención desconocida): si `StartsWith(Activity.Text,"/")` → parsear y
   redirigir; si no → comportamiento normal del fallback. Así CUALQUIER `/…` se captura sí o sí.
 
+## HALLAZGO (2026-08-24): autocompletado `/` = feature del CANAL, no de Copilot
+- El popup tipo **Discord** (teclear `/` → lista de comandos + parámetros) lo da el **canal** (Discord/Slack/Teams),
+  NO el chat web/prueba de Copilot Studio. El iframe/web NO lo trae nativo.
+- Copilot Studio SÍ tiene el trigger **«Se produce una actividad» → tipo «Comando»** (Bot Framework `command` activity),
+  pero esa actividad es **programática** (la envía el host/canal), no el `/` tecleado con menú. Es el **HANDLER**, no la UX.
+- **Dos capas independientes:** (UX) el menú `/` lo pone el canal · (HANDLER) el trigger «Comando» o un dispatcher de texto.
+- **Camino recomendado ya (cualquier canal):** dispatcher de texto `/` (parsea → redirige) + un `/comandos` con
+  **botones de respuesta rápida** (menú descubrible, click-para-ejecutar) → sensación Discord sin depender del canal.
+- **Autocompletado real:** solo publicando en **Teams** (comandos en el manifiesto) o Discord/Slack (su integración) →
+  ahí se usa el trigger «Comando» nativo. Depende de EN QUÉ CANAL viven los ingenieros (a definir).
+
 ## A investigar/confirmar en Copilot Studio (próxima sesión)
 - ¿El orquestador rutea de forma fiable los mensajes que empiezan con `/` a un tema por su descripción? (si no → Plan B).
 - **«Redirigir a otro tema»** pasando **entradas** (inputs) al tema destino — confirmar que se pueden setear.
