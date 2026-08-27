@@ -79,7 +79,10 @@ Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/m
 ## BUILD — paso a paso (tema «Comandos», probar en el test de Copilot)
 
 ### 0) Crear el tema
-Nuevo tema → nombre **`00 Comandos`**. Disparo = **descripción** (pega):
+Nuevo tema → nombre **`00 Comandos`**. Desencadenador → **«El agente elige»** (la 1ª opción; la misma clase que
+los demás temas — convive limpio, no intercepta todo). ⛔ NO uses «Se recibe un mensaje» (se dispara en CADA mensaje;
+solo es Plan B si «El agente elige» no rutea los `/`). «Se produce una actividad»/«Se invoca» = eventos/botones de Teams (después).
+Pega esta **descripción**:
 > "Se activa cuando el usuario escribe un mensaje que EMPIEZA con `/` (un comando/atajo): `/barrido Antapaccay`,
 > `/triage rueda Antamina`, `/tendencia CA3177 MT LH`, `/acumulados CA3197`, `/comandos`. Ejecuta el atajo al módulo
 > correspondiente. ⛔ Solo mensajes que empiezan con `/`."
