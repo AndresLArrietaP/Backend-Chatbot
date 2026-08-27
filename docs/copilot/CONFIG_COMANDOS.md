@@ -76,6 +76,81 @@ Plan que sirve en AMBOS — se construye la próxima sesión, en este orden:
 Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/metalflota` (25), `/acumulados` (28),
 `/rankingacum` (27), `/triage` (19 evolucionado). Nada nuevo de lógica: los comandos **reusan** los temas/flujos ya hechos.
 
+## BUILD — paso a paso (tema «Comandos», probar en el test de Copilot)
+
+### 0) Crear el tema
+Nuevo tema → nombre **`00 Comandos`**. Disparo = **descripción** (pega):
+> "Se activa cuando el usuario escribe un mensaje que EMPIEZA con `/` (un comando/atajo): `/barrido Antapaccay`,
+> `/triage rueda Antamina`, `/tendencia CA3177 MT LH`, `/acumulados CA3197`, `/comandos`. Ejecuta el atajo al módulo
+> correspondiente. ⛔ Solo mensajes que empiezan con `/`."
+
+### 1) Nodo Condición de seguridad (1º nodo)
+Condición (Power Fx): `StartsWith(Trim(System.Activity.Text), "/")`
+- **Falso** → «Redirigir al tema» *Conversación (fallback/KomfIA SQL)* o Finalizar (no era comando).
+- **Verdadero** → sigue.
+
+### 2) Nodo «Establecer valor de variable» × parseo (Power Fx)
+Crear variables de tema (Texto) y setear:
+```
+Topic.txt    = Trim(System.Activity.Text)
+Topic.toks   = Split(Topic.txt, " ")            // tabla; columna = "Value"
+Topic.cmd    = Lower(First(Topic.toks).Value)   // ej. "/barrido"
+Topic.p1     = If(CountRows(Topic.toks) >= 2, Index(Topic.toks, 2).Value, "")
+Topic.p2     = If(CountRows(Topic.toks) >= 3, Index(Topic.toks, 3).Value, "")
+Topic.p3     = If(CountRows(Topic.toks) >= 4, Index(Topic.toks, 4).Value, "")
+Topic.p4     = If(CountRows(Topic.toks) >= 5, Index(Topic.toks, 5).Value, "")
+```
+> ⚠ Verificar en el editor que la columna de `Split` se llame **`Value`** (si no, ajustar `.Value`).
+
+### 3) Nodo Condición en cascada (Switch por `Topic.cmd`) → setea inputs y «Redirigir a otro tema»
+Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y redirigir. Defaults con `If(p="","default",p)`:
+
+| `cmd` | Redirige a | Inputs a pasar (desde p1..p4) |
+|---|---|---|
+| `/barrido` | 16 Barrido resumen | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
+| `/barridodet` | 17 Barrido detalle | proyecto=p1 · modelo=`If(p2="","(todos)",p2)` |
+| `/triage` | 19 Triage | compartimiento=`If(p1="","tracción",p1)` · proyecto=`If(p2="","Antapaccay",p2)` · modelo=`If(p3="","(todos)",p3)` |
+| `/ultimo` | 01 Último análisis | equipo=p1 · compartimiento=p2 |
+| `/diagnostico` | 03 Diagnóstico | equipo=p1 |
+| `/tendencia` | 05 Tendencia | equipo=p1 · compartimiento=p2 |
+| `/grafica` | 09 Gráfica | equipo=p1 · compartimiento=p2 · parametro=p3 |
+| `/historial` | 12 Historial equipo | equipo=p1 |
+| `/conteo` | 21 Conteo | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
+| `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · top=`If(p4="","10",p4)` |
+| `/metalflota` | 25 Último por metal flota | proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(p2="","tracción",p2)` · parametros=p3 |
+| `/acumulados` | 28 Acumulados equipo | equipo=p1 |
+| `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` |
+| `/comandos` ó `/ayuda` | (nodo Mensaje, ver 4) | — |
+| otro | (nodo Mensaje, ver 5) | — |
+
+> Si un input requerido va vacío (ej. equipo en `/ultimo`), el tema destino lo **pide en el chat** (comportamiento
+> intuitivo ya existente). Para `/ultimo`,`/diagnostico`,`/tendencia`,`/grafica`,`/historial`,`/acumulados` el equipo es obligatorio.
+
+### 4) `/comandos` → nodo Mensaje (lista, con botones de respuesta rápida opcionales)
+```
+**Comandos disponibles** (escribe `/` + módulo + parámetros):
+• /barrido <proyecto> [modelo] · /barridodet <proyecto> [modelo]
+• /triage <componente> <proyecto> [modelo]  (ej. /triage rueda Antamina)
+• /ultimo <equipo> <componente> · /diagnostico <equipo>
+• /tendencia <equipo> <componente> · /grafica <equipo> <componente> <metal>
+• /historial <equipo> · /conteo <proyecto> [modelo]
+• /ranking <proyecto> <componente> <metal> [top]
+• /metalflota <proyecto> <componente> <metal(es)>
+• /acumulados <equipo> · /rankingacum <proyecto>
+```
+(Componente = tracción/hidráulico/rueda/mando/transmisión/motor · Metal = Fe,Cu,Cr,Pb,Sn,Si,Na,K…)
+
+### 5) Comando desconocido → nodo Mensaje
+`Comando no reconocido. Escribe **/comandos** para ver la lista.`
+
+### 6) Probar en el test de Copilot
+`/comandos` → lista · `/rankingacum Antapaccay` → tema 27 · `/acumulados CA3197` → tema 28 ·
+`/triage rueda Antamina` → tema 19 · `/barrido Antapaccay 980E` → tema 16. Verifica que redirige y que los inputs llegan.
+
+### 7) Teams (después de que el dispatcher funcione)
+En el manifiesto de la app de Teams, agregar un **commandList** con los mismos comandos → aparecen en el menú del bot;
+al elegir uno envía el texto → lo maneja este mismo tema. (El dispatcher no cambia.)
+
 ## Futuro
 - **Tarjetas adaptables** (Adaptive Cards) = comandos VISUALES: un botón por módulo que dispara el mismo redirect con params.
 - Autocompletar/menú de comandos si Copilot lo permite.
