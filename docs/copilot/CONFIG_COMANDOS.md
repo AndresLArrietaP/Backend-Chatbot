@@ -78,6 +78,48 @@ Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/m
 
 ## BUILD — paso a paso (tema «Comandos», probar en el test de Copilot)
 
+### Diagrama del tema (cómo debe quedar el lienzo)
+```
+        ┌────────────────────────────────────────────┐
+        │ DESENCADENADOR: «El agente elige»           │
+        │ descripción anclada a "/" (comandos)        │
+        └───────────────────────┬────────────────────┘
+                                ▼
+             ┌───────────────────────────────────────┐
+             │ CONDICIÓN                             │
+             │ StartsWith(Trim(System.Activity.Text),│
+             │            "/")                        │
+             └───────┬───────────────────────┬────────┘
+               Verdadero                    Falso
+                     │                        │
+                     ▼                        ▼
+                     │                «Ir a otro tema» →
+                     │                (Conversación / KomfIA SQL)   ← no era comando
+                     ▼
+        ┌────────────────────────────────────────────┐
+        │ ESTABLECER VARIABLE  toks = Split(Trim(txt)," ")│
+        │ ESTABLECER VARIABLE  cmd  = Lower(First(toks).Value)│
+        │ ESTABLECER VARIABLE  p1,p2,p3,p4 = Index(toks,n).Value│
+        └───────────────────────┬────────────────────┘
+                                ▼
+        ┌────────────────────────────────────────────┐
+        │ CONDICIÓN (cascada: 1 rama por comando)     │
+        │                                            │
+        │  cmd="/barrido"     → «Ir a tema» 16  (proyecto,modelo) │
+        │  cmd="/triage"      → «Ir a tema» 19  (comp,proyecto,modelo)│
+        │  cmd="/ultimo"      → «Ir a tema» 01  (equipo,comp)     │
+        │  cmd="/tendencia"   → «Ir a tema» 05  (equipo,comp)     │
+        │  cmd="/acumulados"  → «Ir a tema» 28  (equipo)          │
+        │  cmd="/rankingacum" → «Ir a tema» 27  (proyecto)        │
+        │  cmd="/metalflota"  → «Ir a tema» 25  (proyecto,comp,metales)│
+        │  … (resto de la tabla de mapeo)                        │
+        │  cmd="/comandos"    → «Mensaje» (lista de comandos)     │
+        │  (ninguna coincide) → «Mensaje» "no reconocido"        │
+        └────────────────────────────────────────────┘
+```
+> Cada rama = un nodo **Condición** (`Topic.cmd = "/xxx"`) y dentro **«Ir a otro tema»** (Administración de temas)
+> eligiendo el tema concreto y mapeando sus entradas desde p1..p4. ⛔ NO usar «Reconocer la intención» (pide UserInput).
+
 ### 0) Crear el tema
 Nuevo tema → nombre **`00 Comandos`**. Desencadenador → **«El agente elige»** (la 1ª opción; la misma clase que
 los demás temas — convive limpio, no intercepta todo). ⛔ NO uses «Se recibe un mensaje» (se dispara en CADA mensaje;
