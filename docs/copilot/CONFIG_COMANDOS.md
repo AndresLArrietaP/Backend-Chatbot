@@ -126,8 +126,8 @@ Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/m
                Verdadero                    Falso
                      │                        │
                      ▼                        ▼
-                     │                «Ir a otro tema» →
-                     │                (Conversación / KomfIA SQL)   ← no era comando
+                     │                «Finalizar tema actual»  (red de seguridad;
+                     │                casi nunca cae aquí si el disparador está bien anclado)
                      ▼
         ┌────────────────────────────────────────────┐
         │ ESTABLECER VARIABLE  toks = Split(Trim(txt)," ")│
@@ -147,8 +147,8 @@ Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/m
         │  cmd="/metalflota"  → «Ir a tema» 25  (proyecto,modelo,comp,metales ← 4)│
         │  … (resto de la tabla de mapeo)                        │
         │  cmd="/comandos"    → «Mensaje» (lista de comandos)     │
-        │  (ninguna coincide) → «Ir a otro tema» Conversación/NL  │
-        │                       (NO "no reconocido": puede ser NL)│
+        │  (ninguna coincide) → «Mensaje» "no reconocí /…" + Fin  │
+        │  (protección NL = el DISPARADOR, no esta rama)          │
         └────────────────────────────────────────────┘
 ```
 > Cada rama = un nodo **Condición** (`Topic.cmd = "/xxx"`) y dentro **«Ir a otro tema»** (Administración de temas)
@@ -163,11 +163,14 @@ Pega esta **descripción** (anclada a la BARRA PEGADA a una palabra-comando, no 
 > `/triage`, `/ultimo`, `/tendencia`, `/acumulados`, `/rankingacum`, `/comandos`… Ejecuta el atajo directo al módulo.
 > ⛔ NO si es lenguaje natural aunque contenga `/` (ej. «/ ¿qué equipos…?» con espacio tras la barra) → eso es una consulta normal."
 
-### 1) Nodo Condición — GATE no-invasivo (1º nodo)  ⚠ clave para que el `/` no estorbe a las consultas NL
+### 1) Nodo Condición — GATE no-invasivo (1º nodo)
 Condición (Power Fx): `IsMatch(Trim(System.Activity.Text), "^/[A-Za-z]")`  ← barra **pegada a una letra**.
-- **Falso** (barra con espacio «/ ¿qué…?», barra sola, o NL sin barra) → **«Ir a otro tema» → Conversación** (lo maneja el orquestador/temas normal). ⛔ NO responder «no reconocido».
+- **Falso** (barra con espacio «/ ¿qué…?», barra sola) → **«Finalizar tema actual»** (red de seguridad; casi nunca cae aquí).
 - **Verdadero** → sigue al parseo.
-> Así, si el `/` se cuela en una consulta natural del usuario, cae a NL sin romperse. Solo `/palabra` entra al dispatcher.
+> ⚠ **La protección REAL es el DISPARADOR** (paso 0): al estar anclado a `/comando`, el orquestador NO manda NL a este
+> tema, así que «/ ¿qué equipos…?» va a su módulo normal y ni entra aquí. Dentro del tema NO existe forma limpia de
+> "devolver el mensaje a NL"; por eso ⛔ NO se usan «Varios temas relacionados» / «Restablecer conversación»
+> (borra contexto) / «Transferir conversación» (escala a humano) — ninguno re-rutea como lenguaje natural.
 
 ### 2) Nodo «Establecer valor de variable» × parseo (Power Fx)
 Crear variables de tema (Texto) y setear:
@@ -226,11 +229,11 @@ POR-FLOTA:   /barrido <proj> [modelo] · /barridodet <proj> [modelo] · /triage 
              /metalflota <proj> <comp> <metal(es)> [modelo] · /historialflota <proj> · /rankingacum <proj>
 ```
 
-### 5) Rama «ninguna coincide» → NO es error, es NL
-El gate del paso 1 ya filtró lo natural; si aun así el `/palabra` no está en la lista → **«Ir a otro tema» → Conversación**
-(deja que el orquestador lo trate como consulta normal). ⛔ NO poner «comando no reconocido» (evita rechazar NL válido).
-> (Opcional) Si quieres avisar de typos: muestra «¿Quisiste un comando? Escribe /comandos» SOLO cuando el mensaje es un
-> único token `/palabra` (CountRows(toks)=1) que no matchea — nunca cuando hay más palabras (probable NL).
+### 5) Rama «ninguna coincide» (comando `/xxx` no reconocido) → Mensaje + Finalizar
+Como el disparador ya evita que entre NL, llegar aquí = un `/palabra` que fue intento de comando pero no está en la lista
+(típico: typo `/barido`). Nodo **«Mensaje»**: `No reconocí «/…». Escribe **/comandos** para ver la lista.` → **«Finalizar tema actual»**.
+> ⛔ NO uses aquí «Varios temas relacionados» / «Restablecer conversación» / «Transferir conversación» — no re-rutean a NL
+> (son desambiguación / reset de contexto / escalado a humano, respectivamente).
 
 ### 6) Probar en el test de Copilot
 `/comandos` → lista · `/rankingacum Antapaccay` → tema 27 · `/acumulados CA3197` → tema 28 ·
