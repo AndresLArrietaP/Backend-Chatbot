@@ -961,7 +961,7 @@ GO
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_ObservadosBarridoMD] AS
 WITH obsf AS (   -- PERF: 1 sola lectura de vw_ObservadosFlota (f + compsev + metrows derivan de aqui)
-    SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Equipo, o.Estado_General, o.Grado, o.FechaMuestreo, o.HorasComponente, o.CM, o.Estado_V100, o.V100,
+    SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Equipo, o.Estado_General, o.Grado, o.FechaMuestreo, o.HorasComponente, o.HorasDeAceite, o.CM, o.Estado_V100, o.V100,
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
         o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
@@ -970,7 +970,7 @@ WITH obsf AS (   -- PERF: 1 sola lectura de vw_ObservadosFlota (f + compsev + me
 ),
 f AS (
     SELECT
-        Proyecto, Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, CM,
+        Proyecto, Modelo, Compartimiento, Equipo, Estado_General, Grado, FechaMuestreo, HorasComponente, HorasDeAceite, CM,
         CASE WHEN Estado_General = 'CRITICO' THEN 1 ELSE 2 END AS sev,
         STUFF(CONCAT(
             CASE WHEN Fe_ppm>ISNULL(Fe_LC,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':C' WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe='+CONVERT(varchar(20),CAST(Fe_ppm AS decimal(18,1)))+':P' ELSE '' END,
@@ -1000,6 +1000,7 @@ fila AS (
           + N' | ' + ISNULL(Grado, N'—')
           + N' | ' + ISNULL(FORMAT(FechaMuestreo, 'dd-MMM'), N'—')
           + N' | ' + ISNULL(CONVERT(nvarchar(12), HorasComponente), N'—')
+          + N' | ' + ISNULL(CONVERT(nvarchar(12), CAST(HorasDeAceite AS decimal(18,0))), N'—')
           + N' | ' + ISNULL(CM, N'—')
           + N' | ' + CASE Estado_General WHEN 'CRITICO' THEN N'🟥' WHEN 'PRECAUCION' THEN N'🟨' ELSE N'' END
           + N' | ' + ISNULL(REPLACE(REPLACE(chipsCell, ':C', N' 🟥'), ':P', N' 🟨'), N'—')
@@ -1011,8 +1012,8 @@ t_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
-          + N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Grado | Fec. | Hor.Comp. | Hrs Ace. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
         AS nvarchar(max)) AS seccionMD
     FROM fila
@@ -1027,8 +1028,8 @@ c_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
-          + N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Grado | Fec. | Hor.Comp. | Hrs Ace. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
         AS nvarchar(max)) AS seccionMD
     FROM fila WHERE Estado_General='CRITICO'
@@ -1043,8 +1044,8 @@ p_sec AS (
     SELECT Proyecto, Modelo, Compartimiento, MIN(sev) AS sev,
         CAST(
             N'**' + Compartimiento + N'** (' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos)' + NCHAR(10)
-          + N'| Equipo | Grado | Fec. | Hor.Comp. | CM | Est. | Observado |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Grado | Fec. | Hor.Comp. | Hrs Ace. | CM | Est. | Observado |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(filaMD, NCHAR(10)) WITHIN GROUP (ORDER BY sev, Equipo)
         AS nvarchar(max)) AS seccionMD
     FROM fila WHERE Estado_General='PRECAUCION'
@@ -1148,7 +1149,6 @@ WITH r AS (
           + N' | ' + CAST(NumCrit AS nvarchar(10))
           + N' | ' + CAST(NumPrec AS nvarchar(10))
           + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(Horometro AS decimal(18,0))), N'—')
-          + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(HorasDeAceite AS decimal(18,0))), N'—')
           + N' | ' + ISNULL(FORMAT(FechaUltima, 'dd-MMM'), N'—')
           + N' | ' + ISNULL(CM, N'—')
           + N' | ' + ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(Comp_Obs,'MOTOR DE TRACCION LH','MT LH'),'MOTOR DE TRACCION RH','MT RH'),'RUEDA DELANTERA LH','RD LH'),'RUEDA DELANTERA RH','RD RH'),'SISTEMA HIDRAULICO','Hidr'),'MOTOR','Motor'), N'—')
@@ -1229,10 +1229,13 @@ SELECT
       + N'**' + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos con ≥1 componente observado — '
         + CAST(c.NumCriticos AS nvarchar(10)) + N' con CRÍTICO · '
         + CAST(c.NumSoloPrecau AS nvarchar(10)) + N' solo PRECAUCIÓN**' + NCHAR(10) + NCHAR(10)
-      + N'| Equipo | 🔴 Crít | 🟡 Prec | Horóm. | Hrs Ace. | Últ. | CM | Comp. Observados | Met. Obs. |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
+      + N'| Equipo | 🔴 Crít | 🟡 Prec | Horóm. | Últ. | CM | Comp. Observados | Met. Obs. |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
       + t.FilasMD
       + NCHAR(10) + NCHAR(10) + l.LimitesMD
+      + NCHAR(10) + NCHAR(10)
+      + N'_Resumen por equipo. Para el **detalle por componente** (con horas de aceite por componente, salud y todos los observados) pide **el detalle** o usa **/barridodet**._' + NCHAR(10)
+      + N'_¿Profundizar? **Tendencia** de un componente · **Diagnóstico** de un equipo · **solo críticos** / **solo precauciones**._'
     AS nvarchar(max)) AS MD
 FROM tabla t
 JOIN cnt    c ON c.Proyecto=t.Proyecto AND ISNULL(c.Modelo,N'')=ISNULL(t.Modelo,N'')
