@@ -696,5 +696,8 @@
       "size": "Small",
       "spacing": "Medium"
     }
+  ],
+  "actions": [
+    { "type": "Action.Submit", "title": "✓ Entendido" }
   ]
 }
