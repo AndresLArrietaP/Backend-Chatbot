@@ -1,0 +1,700 @@
+{
+  "type": "AdaptiveCard",
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "🛠️ Comandos KomfIA",
+      "weight": "Bolder",
+      "size": "Large",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "Escribe **/** + módulo + parámetros. Componente = tracción/hidráulico/rueda/mando/transmisión/motor · Metal = Fe, Cu, Cr, Pb, Sn, Si, Na, K…",
+      "wrap": true,
+      "isSubtle": true,
+      "spacing": "None"
+    },
+    {
+      "type": "TextBlock",
+      "text": "🔧 Por equipo",
+      "weight": "Bolder",
+      "spacing": "Medium",
+      "color": "Accent"
+    },
+    {
+      "type": "Table",
+      "columns": [
+        {
+          "width": 2
+        },
+        {
+          "width": 3
+        }
+      ],
+      "gridStyle": "default",
+      "firstRowAsHeaders": true,
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Comando",
+                  "wrap": true,
+                  "size": "Small",
+                  "weight": "Bolder"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Qué hace",
+                  "wrap": true,
+                  "size": "Small",
+                  "weight": "Bolder"
+                }
+              ]
+            }
+          ],
+          "style": "accent"
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/ultimo <eq> <comp>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Último análisis de un componente",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/condicion <eq>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Condición de los MT del equipo",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/diagnostico <eq>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Diagnóstico (observados) del equipo",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/diagcompleto <eq>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Diagnóstico con TODOS los parámetros",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/tendencia <eq> <comp>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Tendencia (últimas muestras) de un componente",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/tendenciadet <eq> <comp>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Tendencia detalle (metales × fechas)",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/tendenciametal <eq> <metal>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Tendencia de un metal en todos los comp.",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/grafica <eq> <comp> <metal>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Gráfica de un metal",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/historial <eq> <comp>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Historial (bitácora) de un componente",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/historialeq <eq>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Historial de todo el equipo",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/historialmetal <eq> <metal> [comp]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Historial de un metal",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/acumulados <eq>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Acumulados del motor diésel del equipo",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "🚛 Por flota",
+      "weight": "Bolder",
+      "spacing": "Medium",
+      "color": "Accent"
+    },
+    {
+      "type": "Table",
+      "columns": [
+        {
+          "width": 2
+        },
+        {
+          "width": 3
+        }
+      ],
+      "gridStyle": "default",
+      "firstRowAsHeaders": true,
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Comando",
+                  "wrap": true,
+                  "size": "Small",
+                  "weight": "Bolder"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Qué hace",
+                  "wrap": true,
+                  "size": "Small",
+                  "weight": "Bolder"
+                }
+              ]
+            }
+          ],
+          "style": "accent"
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/barrido <proj> [modelo]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Barrido: equipos observados de la flota",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/barridodet <proj> [modelo]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Barrido detalle por componente",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/triage <comp> <proj> [modelo]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Triage: estado de un componente en la flota",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/incipiente <proj>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Tendencia incipiente (alerta temprana MT)",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/conteo <proj> [modelo]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Conteo de la flota",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/ranking <proj> <comp> <metal> [top]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Ranking de un metal",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/metalflota <proj> <comp> <metal(es)> [modelo]",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Último de un metal en la flota",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/historialflota <proj>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Historial de observados de la flota",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/rankingacum <proj>",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Ranking de acumulados (motor diésel)",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "Si falta un dato requerido, te lo pido en el chat. El `/` solo actúa pegado a un comando; tu lenguaje natural sigue igual.",
+      "wrap": true,
+      "isSubtle": true,
+      "size": "Small",
+      "spacing": "Medium"
+    }
+  ]
+}
