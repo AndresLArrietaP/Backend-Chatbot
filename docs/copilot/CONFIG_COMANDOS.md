@@ -223,16 +223,16 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 En la rama `cmd="/comandos"` (y `="/ayuda"`) → **«Enviar un mensaje»** → dentro del mensaje **agrega una tarjeta adaptable**
 → pega el JSON de **`docs/copilot/tarjetas/comandos_card.json`** (Por-equipo + Por-flota, 21 comandos, v1.5, **SIN** botón).
 Así solo se MUESTRA y el tema termina → el usuario puede lanzar otro comando enseguida. ⚠ Ajusta si el canal soporta ≤1.4.
-**Opción B (texto plano, fallback):**
+**Opción B (texto plano, fallback):** ⚠ usa **‹ ›** para los requeridos, NO `< >` (en cards y mensajes markdown los `<x>` se leen como etiqueta HTML y **se borran** → perderías el parámetro, ej. `/barrido <proj>` salía como `/barrido`).
 ```
 **Comandos** (escribe `/` + módulo + parámetros). Componente = tracción/hidráulico/rueda/mando/transmisión/motor.
-POR-EQUIPO:  /ultimo <eq> <comp> · /condicion <eq> · /diagnostico <eq> · /diagcompleto <eq>
-             /tendencia <eq> <comp> · /tendenciadet <eq> <comp> · /tendenciametal <eq> <metal>
-             /grafica <eq> <comp> <metal> · /historial <eq> <comp> · /historialeq <eq>
-             /historialmetal <eq> <metal> [comp] · /acumulados <eq>
-POR-FLOTA:   /barrido <proj> [modelo] · /barridodet <proj> [modelo] · /triage <comp> <proj> [modelo]
-             /incipiente <proj> · /conteo <proj> [modelo] · /ranking <proj> <comp> <metal> [top]
-             /metalflota <proj> <comp> <metal(es)> [modelo] · /historialflota <proj> · /rankingacum <proj>
+POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicion ‹eq› · /diagnostico ‹eq› · /diagcompleto ‹eq›
+             /tendencia ‹eq› ‹comp› · /tendenciadet ‹eq› ‹comp› · /tendenciametal ‹eq› ‹metal›
+             /grafica ‹eq› ‹comp› ‹metal› · /historial ‹eq› ‹comp› · /historialeq ‹eq›
+             /historialmetal ‹eq› ‹metal› [comp] · /acumulados ‹eq›
+POR-FLOTA:   /barrido ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
+             /incipiente ‹proj› · /conteo ‹proj› [modelo] · /ranking ‹proj› ‹comp› ‹metal› [top]
+             /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj›
 ```
 
 ### 5) Rama «ninguna coincide» (comando `/xxx` no reconocido) → Mensaje + Finalizar

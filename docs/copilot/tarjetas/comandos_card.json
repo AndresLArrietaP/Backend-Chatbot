@@ -75,7 +75,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/ultimo <eq> <comp>",
+                  "text": "/ultimo ‹eq› ‹comp›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -102,7 +102,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/condicion <eq>",
+                  "text": "/condicion ‹eq›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -129,7 +129,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/diagnostico <eq>",
+                  "text": "/diagnostico ‹eq›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -156,7 +156,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/diagcompleto <eq>",
+                  "text": "/diagcompleto ‹eq›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -183,7 +183,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/tendencia <eq> <comp>",
+                  "text": "/tendencia ‹eq› ‹comp›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -210,7 +210,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/tendenciadet <eq> <comp>",
+                  "text": "/tendenciadet ‹eq› ‹comp›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -237,7 +237,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/tendenciametal <eq> <metal>",
+                  "text": "/tendenciametal ‹eq› ‹metal›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -264,7 +264,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/grafica <eq> <comp> <metal>",
+                  "text": "/grafica ‹eq› ‹comp› ‹metal›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -291,7 +291,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historial <eq> <comp>",
+                  "text": "/historial ‹eq› ‹comp›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -318,7 +318,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historialeq <eq>",
+                  "text": "/historialeq ‹eq›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -345,7 +345,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historialmetal <eq> <metal> [comp]",
+                  "text": "/historialmetal ‹eq› ‹metal› [comp]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -372,7 +372,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/acumulados <eq>",
+                  "text": "/acumulados ‹eq›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -451,7 +451,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/barrido <proj> [modelo]",
+                  "text": "/barrido ‹proj› [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -478,7 +478,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/barridodet <proj> [modelo]",
+                  "text": "/barridodet ‹proj› [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -505,7 +505,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/triage <comp> <proj> [modelo]",
+                  "text": "/triage ‹comp› ‹proj› [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -532,7 +532,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/incipiente <proj>",
+                  "text": "/incipiente ‹proj›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -559,7 +559,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/conteo <proj> [modelo]",
+                  "text": "/conteo ‹proj› [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -586,7 +586,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/ranking <proj> <comp> <metal> [top]",
+                  "text": "/ranking ‹proj› ‹comp› ‹metal› [top]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -613,7 +613,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/metalflota <proj> <comp> <metal(es)> [modelo]",
+                  "text": "/metalflota ‹proj› ‹comp› ‹metal(es)› [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -640,7 +640,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historialflota <proj>",
+                  "text": "/historialflota ‹proj›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -667,7 +667,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/rankingacum <proj>",
+                  "text": "/rankingacum ‹proj›",
                   "wrap": true,
                   "size": "Small"
                 }
