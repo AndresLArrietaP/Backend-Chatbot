@@ -18,11 +18,57 @@
       "spacing": "None"
     },
     {
-      "type": "TextBlock",
-      "text": "**‹campo›** = obligatorio · **[campo]** = opcional (tiene valor por defecto). Componente = tracción/hidráulico/rueda/mando/transmisión/motor · Metal = Fe, Cu, Cr, Pb, Sn, Si, Na, K…",
-      "wrap": true,
-      "isSubtle": true,
-      "spacing": "None"
+      "type": "Container",
+      "style": "emphasis",
+      "spacing": "Small",
+      "bleed": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "📖 Cómo leer los comandos",
+          "weight": "Bolder",
+          "size": "Small",
+          "spacing": "None"
+        },
+        {
+          "type": "FactSet",
+          "spacing": "Small",
+          "facts": [
+            {
+              "title": "‹campo›",
+              "value": "OBLIGATORIO"
+            },
+            {
+              "title": "[campo]",
+              "value": "opcional (tiene un valor por defecto)"
+            },
+            {
+              "title": "‹proj›",
+              "value": "proyecto / mina — ej. Antapaccay, Antamina"
+            },
+            {
+              "title": "‹eq›",
+              "value": "equipo — ej. CA3177 (traduce «el 3177»)"
+            },
+            {
+              "title": "‹comp›",
+              "value": "componente — tracción · hidráulico · rueda · mando · transmisión · motor"
+            },
+            {
+              "title": "‹metal›",
+              "value": "metal — Fe, Cu, Cr, Ni, Pb, Sn, Si, PQ, Na, K… (o su nombre)"
+            },
+            {
+              "title": "[modelo]",
+              "value": "modelo — ej. 980E (por defecto: todos)"
+            },
+            {
+              "title": "[top]",
+              "value": "cuántos mostrar (por defecto: 10)"
+            }
+          ]
+        }
+      ]
     },
     {
       "type": "TextBlock",
