@@ -40,6 +40,7 @@ Redacta un análisis BREVE y GERENCIAL, basándote EXCLUSIVAMENTE en la tabla:
   distingue 🟧 acelerada (subida fuerte) de 🔵 incipiente (leve); ⛔ no digas que superan límites.
 - NO menciones otros equipos ni datos que no estén en la tabla.
 - Máximo 4-5 viñetas, tono directo, gerencial.
+- ⛔ SIEMPRE produce salida (2-4 viñetas como mínimo); NUNCA respondas vacío ni en blanco. Si nada está fuera de límite, dilo explícitamente ("Todos los parámetros dentro de límite; sin observaciones") — esa es la razón de que el análisis 'a veces aparezca y a veces no'.
 
 Tabla:
 {tabla}

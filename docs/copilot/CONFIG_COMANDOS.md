@@ -217,11 +217,12 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 > ⚠ **Tema 25 (`/metalflota`) tiene 4 entradas** (proyecto, modelo, compartimiento, parametros): mapea las 4, con `modelo=If(p4="","(todos)",p4)`.
 > Si un input requerido va vacío (equipo en los por-equipo), el tema destino lo **pide en el chat** (ya existente).
 
-### 4) `/comandos` y `/ayuda` → nodo Mensaje con **TARJETA ADAPTABLE** (tabla completa)
-**Opción A (recomendada, visual): Adaptive Card.** En la rama `cmd="/comandos"` (y `="/ayuda"`) → nodo **«Mensaje»**
-→ **«…» → Agregar tarjeta adaptable** → pega el JSON de **`docs/copilot/tarjetas/comandos_card.json`** (tabla
-Por-equipo + Por-flota, 21 comandos, versión 1.5). Así el usuario ve la tabla completa aunque aún falten comandos por
-cablear (la tarjeta ya los lista todos). ⚠ Ajusta si tu canal soporta ≤1.4 (el `Table` es 1.5; en Teams va bien).
+### 4) `/comandos` y `/ayuda` → **«Enviar un mensaje»** con TARJETA ADAPTABLE (tabla completa)
+**Opción A (recomendada): Adaptive Card en un nodo «Enviar un mensaje».** ⚠ **NO** uses el **«Nodo de tarjeta adaptable»**
+(ese es la variante PREGUNTA: exige un `Action.Submit` y **BLOQUEA** el tema hasta que el usuario haga clic → invasivo).
+En la rama `cmd="/comandos"` (y `="/ayuda"`) → **«Enviar un mensaje»** → dentro del mensaje **agrega una tarjeta adaptable**
+→ pega el JSON de **`docs/copilot/tarjetas/comandos_card.json`** (Por-equipo + Por-flota, 21 comandos, v1.5, **SIN** botón).
+Así solo se MUESTRA y el tema termina → el usuario puede lanzar otro comando enseguida. ⚠ Ajusta si el canal soporta ≤1.4.
 **Opción B (texto plano, fallback):**
 ```
 **Comandos** (escribe `/` + módulo + parámetros). Componente = tracción/hidráulico/rueda/mando/transmisión/motor.
