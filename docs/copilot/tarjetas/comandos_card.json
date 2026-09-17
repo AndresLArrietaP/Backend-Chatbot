@@ -12,7 +12,14 @@
     },
     {
       "type": "TextBlock",
-      "text": "Escribe **/** + módulo + parámetros. Componente = tracción/hidráulico/rueda/mando/transmisión/motor · Metal = Fe, Cu, Cr, Pb, Sn, Si, Na, K…",
+      "text": "Escribe **/** + módulo + parámetros.",
+      "wrap": true,
+      "isSubtle": true,
+      "spacing": "None"
+    },
+    {
+      "type": "TextBlock",
+      "text": "**‹campo›** = obligatorio · **[campo]** = opcional (tiene valor por defecto). Componente = tracción/hidráulico/rueda/mando/transmisión/motor · Metal = Fe, Cu, Cr, Pb, Sn, Si, Na, K…",
       "wrap": true,
       "isSubtle": true,
       "spacing": "None"
