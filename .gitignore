@@ -16,10 +16,12 @@ CLAUDE.md
 # ── Documentos ────────────────────────────────────────────────────
 # Los .docx de docs/copilot/ SÍ se versionan: son la fuente de verdad de las
 # instrucciones desplegadas en Copilot Studio (se editan directo, no por generador).
-# Los .docx de arquitectura son regenerables con tools/ → se ignoran.
+# En docs/arquitectura/ no debe quedar ningun .docx (los historicos estan en legado/).
 docs/arquitectura/*.docx
-# Presentación de gerencia: pesada y no necesaria en el repo.
-docs/gerencia/
+# Gerencia: archivos pesados del área y el acta (se editan fuera del repo).
+# El README que los clasifica SÍ se versiona.
+docs/gerencia/*
+!docs/gerencia/README.md
 # PDFs de pruebas: pesados y regenerables desde el .docx (Word/LibreOffice).
 docs/pruebas/*.pdf
 

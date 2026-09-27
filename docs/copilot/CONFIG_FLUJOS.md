@@ -1,7 +1,10 @@
 # Config canónica — FLUJOS (Power Automate)
 
-Parte de la config a aplicar en Copilot Studio. Ver también [CONFIG_TEMAS.md](CONFIG_TEMAS.md),
-[CONFIG_PROMPTS.md](CONFIG_PROMPTS.md), auditoría [AUDITORIA_KOMFIA_2026-08.md](AUDITORIA_KOMFIA_2026-08.md).
+> **Familia CONFIG** — lo que está aplicado en Copilot Studio:
+> [CONFIG_TEMAS](CONFIG_TEMAS.md) (temas/tópicos) · [CONFIG_FLUJOS](CONFIG_FLUJOS.md) (Power Automate) ·
+> [CONFIG_COMANDOS](CONFIG_COMANDOS.md) (atajos `/`) · [CONFIG_PROMPTS](CONFIG_PROMPTS.md) (nodos de IA) ·
+> [CONFIG_TIMEOUT](CONFIG_TIMEOUT.md) (reintentos y cortes).
+> Backlog único: [PENDIENTES](PENDIENTES.md). Historia del proyecto: [../BITACORA.md](../BITACORA.md).
 
 **Reglas:** query FIJO por flujo (nunca cambia); solo cambia el valor de la entrada `vista` desde cada tema.
 Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada salida usa
@@ -53,10 +56,6 @@ Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada sa
 
 > **H3:** `MD_metal` hoy solo mapea la salida `md`. Para uniformar el contrato, agregar también las salidas
 > `observados` y `recomendaciones` (vienen NULL en sus vistas). Menor, pero deja los 4 flujos idénticos.
-
-## Flujos NUEVOS a crear (ver [ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md](ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md))
-- **(opcional) `MD_ranking`** — si el ranking necesita una firma propia (proyecto, compartimiento, parametro);
-  si no, se resuelve con `MD_flota` + una vista `vw_RankingMD`. Conteo se resuelve con `MD_flota`.
 
 ## Flujo `MD_ranking` (dedicado — Ranking; honra el top N)
 Vista FIJA `vw_RankingMD` (formato largo: 1 fila por posición). El flujo ARMA la tabla y filtra `pos <= top`.

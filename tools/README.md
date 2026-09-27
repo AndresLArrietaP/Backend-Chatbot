@@ -1,28 +1,29 @@
-# tools/ — Generadores de documentación
+# tools/
 
-Scripts que producen los entregables de `docs/`. No forman parte del runtime del backend;
-se ejecutan manualmente cuando hay que actualizar un documento. El TEXTO fuente de cada
-documento vive dentro de su script (son la fuente de verdad).
+Un solo script vivo. Los generadores de `.docx` de las etapas anteriores están archivados en
+[`../legado/generadores/`](../legado/generadores/) y **no deben ejecutarse**: los `.docx` que quedan
+(`docs/copilot/*_MD.docx`) se editan directo y son la fuente de verdad.
 
-Ejecutar desde la raíz del proyecto con el intérprete del venv:
+## `gen_comandos_card.py`
+
+Genera la Adaptive Card del comando `/comandos` a partir del catálogo que tiene dentro:
 
 ```bash
-python tools/generar_instrucciones.py    # → docs/copilot/KomfIA_central.docx + KomfIA_SQL.docx
-python tools/generar_conocimiento.py     # → docs/copilot/knowledge/*.docx (3 documentos)
-python tools/generar_plan_pivote.py      # → docs/arquitectura/PLAN_PIVOTE_MULTIAGENTE.docx (desde el .md)
-python tools/generar_documentacion.py    # → docs/arquitectura/DocumentacionTecnica_BackendChatbot.docx
-python tools/generar_ppt_confia.py       # → docs/gerencia/CONFIA_Presentacion_Gerencia.pptx
+python tools/gen_comandos_card.py     # → docs/copilot/tarjetas/comandos_card.json
 ```
 
-| Script | Salida | Notas |
-|---|---|---|
-| `generar_instrucciones.py` | `docs/copilot/KomfIA_central.docx`, `KomfIA_SQL.docx` | ⚠️ DESFASADO: las instrucciones son v2.5/v2 hand-edited (matriz vertical, semáforo, Ca/Zn/K/Mg). Los .docx son la fuente canónica; editar el .docx directamente, NO regenerar. |
-| `generar_conocimiento.py` | `docs/copilot/knowledge/*.docx` | ⚠️ DESFASADO: los .docx fueron editados a mano (vistas v3.2, DDI asimétrico). Los .docx son la fuente canónica; NO regenerar sin portar esas ediciones. Editar el .docx directamente. |
-| `generar_formatos.py` | `docs/copilot/knowledge/Formatos_de_Respuesta.docx` | Plantillas de presentación (matriz vertical + semáforo) con respuestas-modelo completas y anti-ejemplo. Fuente del FORMATO de salida; escalable (agregar tipo de consulta = agregar plantilla). |
-| `generar_plan_pivote.py` | `docs/arquitectura/PLAN_PIVOTE_MULTIAGENTE.docx` | Renderiza el `.md` fuente a Word. El `.md` es la fuente única. |
-| `generar_documentacion.py` | `docs/arquitectura/DocumentacionTecnica_BackendChatbot.docx` | Documentación técnica del backend. |
-| `generar_ppt_confia.py` | `docs/gerencia/CONFIA_Presentacion_Gerencia.pptx` | Presentación ejecutiva para gerencia. |
-| `agregar_comparativa.py` | — | ⚠️ OBSOLETO: editaba un docx que ya no existe. No usar. |
+⚠ **Al agregar, editar o quitar un comando hay que tocar los tres, en el mismo cambio:**
 
-Dependencias: `python-docx`, `python-pptx` (en el venv). Si faltan:
-`pip install python-docx python-pptx`.
+1. `docs/copilot/CONFIG_COMANDOS.md` — la config canónica (y el tema 00 en Copilot Studio)
+2. este script — el catálogo que arma la tarjeta
+3. `docs/copilot/tarjetas/comandos_card.json` — regenerándolo con el script
+
+Trampas de la tarjeta, ya pagadas:
+
+- Los placeholders van con `‹ ›`, **nunca con `< >`**: el markdown de la tarjeta los borra como si fueran
+  etiquetas HTML y el parámetro desaparece.
+- La tarjeta se envía desde un nodo **«Enviar un mensaje»**, no desde el nodo de tarjeta adaptable: ese
+  exige un `Action.Submit` y el botón bloquea la conversación.
+- Las Adaptive Cards **no tienen scroll**. Si no cabe, se pagina; no se comprime.
+
+Dependencias: ninguna fuera de la librería estándar.

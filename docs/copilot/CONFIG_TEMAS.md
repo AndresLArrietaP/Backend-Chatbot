@@ -1,7 +1,10 @@
 # Config canónica — TEMAS (Tópicos de Copilot Studio)
 
-Parte de la config a aplicar. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_PROMPTS.md](CONFIG_PROMPTS.md),
-[AUDITORIA_KOMFIA_2026-08.md](AUDITORIA_KOMFIA_2026-08.md).
+> **Familia CONFIG** — lo que está aplicado en Copilot Studio:
+> [CONFIG_TEMAS](CONFIG_TEMAS.md) (temas/tópicos) · [CONFIG_FLUJOS](CONFIG_FLUJOS.md) (Power Automate) ·
+> [CONFIG_COMANDOS](CONFIG_COMANDOS.md) (atajos `/`) · [CONFIG_PROMPTS](CONFIG_PROMPTS.md) (nodos de IA) ·
+> [CONFIG_TIMEOUT](CONFIG_TIMEOUT.md) (reintentos y cortes).
+> Backlog único: [PENDIENTES](PENDIENTES.md). Historia del proyecto: [../BITACORA.md](../BITACORA.md).
 
 **Reglas de tema:**
 - ⚠ **La DESCRIPCIÓN del tema (ModelDescription) tiene tope de 1024 caracteres** (mídela en UTF-16, como el central; los astrales cuentan 2). Copilot rechaza al guardar si se pasa. Mantener margen; recortar ejemplos antes que anclas de ruteo (⛔…).
@@ -174,3 +177,23 @@ Cuando agregas una **entrada** a un tema que otro tema ya invoca con «Ir a otro
    quedó sin tipo definido).
 
 Ocurrió al añadir `rango` a los Temas 12/13/14/15 en P4.
+
+
+## Sub-agente de RESPALDO — «KomfIA SQL» (descripción canónica)
+
+No es un tema: es el agente conectado que genera SQL ad-hoc. El orquestador elige **por descripción**, y
+una descripción amplia («responder CUALQUIER consulta… triage… barrido… llama siempre») hacía que lo
+eligiera **antes** que los temas en consultas ambiguas — «barrido… de cada motor de tracción» caía ahí y
+devolvía JSON crudo (fix 10/08/26). **La descripción se escribe por lo que NO hace:**
+
+> «Agente de RESPALDO (fallback). Genera y ejecuta SQL ad-hoc SOLO para consultas de datos que NINGÚN tema
+> cubre (imprevistas/exploratorias). ⛔ NO usar para barrido/flota, triage MT, diagnóstico/estado de equipo,
+> último análisis, condición MT, tendencia, gráfico, historial, conteo ni ranking — cada uno tiene su TEMA
+> determinista. Úsalo solo cuando la consulta no encaje en ningún tema.»
+
+Reglas que lo acompañan:
+- **Nunca se niega** ni escala a un superior: siempre responde con un `SELECT`. Si se niega, Copilot dispara
+  «Remitir a un superior» y la conversación muere.
+- **Solo `SELECT` simple** (TOP N + WHERE + ORDER BY). Pre-agregar desde el fallback producía `BadGateway`.
+- Formatea su propia salida con el prompt `Presentación de filas` (ver [prompts/formateo_fallback.md](prompts/formateo_fallback.md)); no devuelve JSON crudo.
+- Instrucción desplegada: [KomfIA_SQL_MD.docx](KomfIA_SQL_MD.docx). Central: [KomfIA_central_MD.docx](KomfIA_central_MD.docx).

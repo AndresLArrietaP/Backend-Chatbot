@@ -1,5 +1,11 @@
 # Config canónica — PROMPTS (AI Builder / nodo Solicitud)
 
+> **Familia CONFIG** — lo que está aplicado en Copilot Studio:
+> [CONFIG_TEMAS](CONFIG_TEMAS.md) (temas/tópicos) · [CONFIG_FLUJOS](CONFIG_FLUJOS.md) (Power Automate) ·
+> [CONFIG_COMANDOS](CONFIG_COMANDOS.md) (atajos `/`) · [CONFIG_PROMPTS](CONFIG_PROMPTS.md) (nodos de IA) ·
+> [CONFIG_TIMEOUT](CONFIG_TIMEOUT.md) (reintentos y cortes).
+> Backlog único: [PENDIENTES](PENDIENTES.md). Historia del proyecto: [../BITACORA.md](../BITACORA.md).
+
 Parte de la config. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_TEMAS.md](CONFIG_TEMAS.md).
 
 ## Prompt ÚNICO universal: `Análisis de aceite`
