@@ -2,28 +2,27 @@
 import json, os
 EQUIPO = [
  ("/ultimo <eq> <comp>", "Último análisis de un componente"),
- ("/condicion <eq>", "Condición de los MT del equipo"),
- ("/diagnostico <eq>", "Diagnóstico (observados) del equipo"),
- ("/diagcompleto <eq>", "Diagnóstico con TODOS los parámetros"),
- ("/tendencia <eq> <comp>", "Tendencia (últimas muestras) de un componente"),
- ("/tendenciadet <eq> <comp>", "Tendencia detalle (metales × fechas)"),
+ ("/condicionmt <eq>", "Condición de los MT del equipo"),
+ ("/diagcompleto <eq>", "Diagnóstico del equipo: todos sus componentes"),
+ ("/tendencia <eq> <comp>", "Tendencia de un componente: contexto + parámetros × fechas"),
  ("/tendenciametal <eq> <metal>", "Tendencia de un metal en todos los comp."),
  ("/grafica <eq> <comp> <metal>", "Gráfica de un metal"),
- ("/historial <eq> <comp>", "Historial (bitácora) de un componente"),
- ("/historialeq <eq>", "Historial de todo el equipo"),
- ("/historialmetal <eq> <metal> [comp]", "Historial de un metal"),
+ ("/historial <eq> <comp> [rango]", "Historial (bitácora) de un componente"),
+ ("/historialeq <eq> [rango]", "Historial de todo el equipo"),
+ ("/historialmetal <eq> <metal> [comp] [rango]", "Historial de un metal"),
  ("/acumulados <eq>", "Acumulados del motor diésel del equipo"),
 ]
 FLOTA = [
  ("/barrido <proj> [modelo]", "Barrido: equipos observados de la flota"),
  ("/barridodet <proj> [modelo]", "Barrido detalle por componente"),
  ("/triage <comp> <proj> [modelo]", "Triage: estado de un componente en la flota"),
- ("/incipiente <proj>", "Tendencia incipiente (alerta temprana MT)"),
+ ("/incipiente <proj> [comp]", "Tendencia incipiente (alerta temprana)"),
  ("/conteo <proj> [modelo]", "Conteo de la flota"),
  ("/ranking <proj> <comp> <metal> [top]", "Ranking de un metal"),
  ("/metalflota <proj> <comp> <metal(es)> [modelo]", "Último de un metal en la flota"),
- ("/historialflota <proj>", "Historial de observados de la flota"),
+ ("/historialflota <proj> [rango]", "Historial de observados de la flota"),
  ("/rankingacum <proj>", "Ranking de acumulados (motor diésel)"),
+ ("/rankinggraf <proj>", "Ranking de acumulados en gráfica de barras"),
 ]
 # Adaptive Card borra los <...> (los lee como etiqueta HTML) -> usar guillemets ‹ › para requeridos
 EQUIPO=[(c.replace("<","‹").replace(">","›"), q) for c,q in EQUIPO]
@@ -46,9 +45,10 @@ card={
            {"title":"[campo]","value":"opcional (tiene un valor por defecto)"},
            {"title":"‹proj›","value":"proyecto / mina — ej. Antapaccay, Antamina"},
            {"title":"‹eq›","value":"equipo — ej. CA3177 (traduce «el 3177»)"},
-           {"title":"‹comp›","value":"componente — tracción · hidráulico · rueda · mando · transmisión · motor"},
+           {"title":"‹comp›","value":"componente — MT LH · MT RH · RD LH · RD RH · Hidr · Motor. Otros se escriben completos: Mando Final LH/RH, Transmisión, PTO, Caja Giro Front/Rear, Diferencial, Freno…"},
            {"title":"‹metal›","value":"metal — Fe, Cu, Cr, Ni, Pb, Sn, Si, PQ, Na, K… (o su nombre)"},
            {"title":"[modelo]","value":"modelo — ej. 980E (por defecto: todos)"},
+           {"title":"[rango]","value":"ventana de tiempo — ej. «2 años», «5 meses», «14 días» (por defecto: todo)"},
            {"title":"[top]","value":"cuántos mostrar (por defecto: 10)"}
        ]}
    ]},
@@ -56,7 +56,8 @@ card={
    table(EQUIPO),
    {"type":"TextBlock","text":"🚛 Por flota","weight":"Bolder","spacing":"Medium","color":"Accent"},
    table(FLOTA),
-   {"type":"TextBlock","text":"Si falta un dato requerido, te lo pido en el chat. El `/` solo actúa pegado a un comando; tu lenguaje natural sigue igual.","wrap":True,"isSubtle":True,"size":"Small","spacing":"Medium"}
+   {"type":"TextBlock","text":"También funcionan **/diagnostico** (= /diagcompleto) y **/tendenciadet** (= /tendencia).","wrap":True,"isSubtle":True,"size":"Small","spacing":"Medium"},
+   {"type":"TextBlock","text":"Si falta un dato requerido, te lo pido en el chat. El `/` solo actúa pegado a un comando; tu lenguaje natural sigue igual.","wrap":True,"isSubtle":True,"size":"Small","spacing":"None"}
  ]
 }
 json.dumps(card)  # valida

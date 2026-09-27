@@ -50,16 +50,27 @@ vs promedio histórico (`vw_TendenciaElemento.Prom`/`Sigma`); marcar los que se 
 Debe **mostrar el equipo afectado** y los params implicados (el bug reportado: no mostraba el equipo).
 Firma `proyecto` (+modelo), flujo `MD_flota`. Análisis con el prompt universal.
 
-## 4) Orden de archivos (docs/copilot/)
-- `prompts/analisis_prompts.md` — prompt universal (ya existe). ✅
-- `AUDITORIA_KOMFIA_2026-08.md` — hallazgos.
-- `CONFIG_FLUJOS.md` / `CONFIG_TEMAS.md` / `CONFIG_PROMPTS.md` — config canónica (aplicar en Copilot).
-- `ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md` — este.
+## 4) Orden de archivos (actualizado 2026-09-20)
+**`docs/copilot/` = configuración del agente + qué falta:**
+- `PENDIENTES.md` — **backlog ÚNICO y vivo**. Si algo está pendiente, está ahí (nadie más lista pendientes).
+- `CONFIG_TEMAS.md` / `CONFIG_FLUJOS.md` / `CONFIG_PROMPTS.md` / `CONFIG_COMANDOS.md` / `CONFIG_TIMEOUT.md`
+  — config canónica (lo que se aplica en Copilot Studio).
+- `AUDITORIA_KOMFIA_2026-08.md` — hallazgos de la auditoría de agosto (histórico).
+- `ROADMAP_KOMFIA_SQL_CONOCIMIENTOS.md` — este (histórico de agosto).
+- `prompts/` · `knowledge/` · `tarjetas/` — prompt universal, conocimientos (fuera del agente) y Adaptive Cards.
+
+**`docs/pruebas/` = sets de prueba y registros de marcha:**
+- `PRUEBAS_ALFA_PRODUCCION.pdf/.docx` (NL, sellado 22-jun) · `PRUEBAS_ALFA_COMANDOS.md` (comandos, 18-sep).
+- `MARCHA_ALFA_0918.md` — registro de la 1ª marcha viva con gerencia.
+- ⛔ Los backlogs NO van aquí: van a `docs/copilot/PENDIENTES.md`.
 - Instrucciones `KomfIA_central.docx`/`KomfIA_SQL.docx` — se conservan; se **vacían** por handoff limpio a
   medida que cada módulo vive en su tema (liberar los 8000 chars). Conocimientos `.docx` — quedan en repo,
   sin cargar (opción B).
 
-## 5) Pendientes priorizados (post-auditoría)
+## 5) Pendientes priorizados (post-auditoría) — ⚠ HISTÓRICO, SUPERADO
+> Esta lista es de **agosto 2026** y se conserva como registro. El backlog vigente es
+> **[PENDIENTES.md](PENDIENTES.md)**; lo que de aquí siga abierto (H1, H2, H3, V100, consultas compuestas)
+> está recogido allí en «Heredado de la auditoría de agosto».
 1. **H1 — quitar `columna` de Entradas** en los temas listados (fijar en Acción). *(alto impacto, bajo esfuerzo)*
 2. **H2 — Barrido detalle → MD_flota**, retirar flujo `Barrido_Detalle`. *(consistencia)*
 3. **#6b/#7 — Grado + Horas Comp + V100/salud en el barrido** (gerencia). *(vistas)*

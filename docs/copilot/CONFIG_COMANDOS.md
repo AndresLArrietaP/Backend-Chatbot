@@ -12,44 +12,184 @@ La conversación natural sigue igual (los temas por descripción no se tocan); e
 ```
 POR-EQUIPO
 /ultimo <equipo> <componente>                → 01 Último análisis de componente
-/condicion <equipo>                          → 02 Condición MT
-/diagnostico <equipo>                        → 03 Diagnóstico equipo
-/diagcompleto <equipo>                        → 04 Diagnóstico completo
-/tendencia <equipo> <componente>             → 05 Tendencia (paso 1)
-/tendenciadet <equipo> <componente>          → 06 Tendencia detalle
+/condicionmt <equipo>                        → 02 Condición MT   (antes /condicion; ver §alias)
+/diagcompleto <equipo>                       → 04 Diagnóstico completo   (alias: /diagnostico)
+/tendencia <equipo> <componente>             → 06 Tendencia             (alias: /tendenciadet)
 /tendenciametal <equipo> <metal>             → 08 Tendencia de un metal (todos los comp)
 /grafica <equipo> <componente> <metal>       → 09 Gráfica de un metal
-/historial <equipo> <componente>             → 11 Historial de componente
-/historialeq <equipo>                        → 12 Historial general del equipo
-/historialmetal <equipo> <metal> [componente]→ 13/14 Historial de un metal (equipo / componente)
+/historial <equipo> <componente> [rango]     → 11 Historial de componente  (rango: «2 años», «5 meses», «14 días»)
+/historialeq <equipo> [rango]                → 12 Historial general del equipo
+/historialmetal <equipo> <metal> [comp] [rango] → 13/14 Historial de un metal (equipo / componente)
 /acumulados <equipo>                         → 28 Acumulados de un equipo (motor diésel)
 
 POR-FLOTA
 /barrido <proyecto> [modelo]                 → 16 Barrido resumen
 /barridodet <proyecto> [modelo]              → 17 Barrido detalle
 /triage <componente> <proyecto> [modelo]     → 19 Triage de un componente en la flota
-/incipiente <proyecto>                       → 20 Tendencia incipiente
+/incipiente <proyecto> [componente]          → 20 Tendencia incipiente (comp default: tracción)
 /conteo <proyecto> [modelo]                  → 21 Conteo de flota
 /ranking <proyecto> <componente> <metal> [top]      → 22 Ranking de un metal
 /metalflota <proyecto> <componente> <metal(es)> [modelo] → 25 Último por metal en la flota  (metales: coma-sin-espacio Fe,Cu)
-/historialflota <proyecto>                   → 15 Historial de observados de flota
+/historialflota <proyecto> [rango]           → 15 Historial de observados de flota
 /rankingacum <proyecto>                      → 27 Ranking de acumulados (motor diésel)
+/rankinggraf <proyecto>                      → 29 Ranking gráfico (mismas cifras, en barras)
 
 META
 /comandos  ó  /ayuda                         → lista de comandos
 ```
 > Posicional. Si un parámetro requerido falta, el tema destino lo **pide en el chat** (comportamiento ya existente).
+
+## § Diccionario CANÓNICO de componentes (inventario real, BLOQUE 73 · 2026-09-20)
+
+**Regla:** documentamos los nombres CORTOS (lo que ve el usuario en `/comandos` y `/ayuda`), pero el
+dispatcher **tolera variantes**. Si no reconoce una variante, **pasa el texto tal cual** — y eso funciona,
+porque para todo lo no-abreviado `compAbbr` **es** el nombre completo.
+
+### A · Los 6 ABREVIADOS (únicos donde `compAbbr` ≠ `Compartimiento` → hay que traducir)
+| El usuario escribe (cualquiera) | Se envía | `Compartimiento` real | Muestras |
+|---|---|---|---|
+| `MT LH` · `tracción LH` · `motor de tracción LH` | **`MT LH`** | MOTOR DE TRACCION LH | 6 677 |
+| `MT RH` · `tracción RH` | **`MT RH`** | MOTOR DE TRACCION RH (+ typo `MOTORO DE TRACCION RH`) | 6 437 + 209 |
+| `RD LH` · `rueda LH` · `rueda delantera LH` | **`RD LH`** | RUEDA DELANTERA LH | 2 167 |
+| `RD RH` · `rueda RH` | **`RD RH`** | RUEDA DELANTERA RH | 2 157 |
+| `Hidr` · `hidráulico` · `SH` | **`Sist. Hidr.`** | SISTEMA HIDRAULICO | 4 643 |
+| `Motor` · `motor diésel` | **`Motor`** | MOTOR | 8 145 |
+
+### B · Los NO abreviados (se escriben TAL CUAL; `compAbbr` = nombre completo → ya funcionan)
+`MANDO FINAL LH/RH` · `MANDO FINAL DELANTERO LH/RH` · `MANDO FINAL POSTERIOR LH/RH` · `TRANSMISION` ·
+`DAMPER` · `PTO` · `PTO LH/RH` · `CAJA GIRO FRONT` · `CAJA GIRO REAR` · `DIFERENCIAL DELANTERO` ·
+`DIFERENCIAL POSTERIOR` · `FRENO` · `MOTOR DIESEL LH/RH` · `REDUCTOR DE GIRO LH/RH` ·
+`REDUCTOR DE GIRO POSTERIOR` · `REDUCTOR DE TRASLADO LH/RH`
+> Ojo al reparto por proyecto: **Toquepala** concentra REDUCTOR/PTO LH-RH/MOTOR DIESEL LH-RH y **Antapaccay**
+> MANDO FINAL/TRANSMISION/DAMPER/CAJA GIRO/DIFERENCIAL/FRENO. Antamina, Cerro Verde, Cuajone y Toromocho
+> solo tienen los 6 abreviados.
+
+### C · ⚠ Trampa: `motor` NO siempre es `Motor`
+`MOTOR DE TRACCION *` y `MOTOR DIESEL LH/RH` **también** contienen la palabra «motor». Por eso la regla de
+`Motor` debe excluir `tracc` y `diesel/diésel`, y evaluarse DESPUÉS de las de tracción.
+
+### D · ⚠ Datos sucios detectados (no es tema de comandos, pero conviene saberlo)
+`Compartimiento` **NULL** = 1 595 muestras / 66 equipos / 3 proyectos · `'nan'` = 45 / 7 equipos ·
+`'M'` = 1. Son ~1 641 muestras sin componente utilizable. Registrado aparte, no se arregla desde KomfIA.
+
+### § Alias de comandos renombrados (24/09)
+| Nombre nuevo | Alias que sigue funcionando | Hasta cuándo |
+|---|---|---|
+| `/condicionmt` | `/condicion` | **decidir** — ver abajo |
+| `/tendencia` | `/tendenciadet` | alias — los dos van al Tema 06 fusionado (25/09) |
+| `/diagcompleto` | `/diagnostico` | alias — los dos van al Tema 04 (24/09) |
+
+⚠ **Por qué un alias y no un corte seco:** quien memorizó `/condicion` se queda sin respuesta si desaparece
+de un día para otro, y el síntoma es el mensaje genérico de comando no reconocido. La rama del dispatcher
+acepta **los dos** nombres y apunta al mismo Tema 02.
+⛔ Cuando se retire el alias, avisarlo en `/comandos` antes, no después.
+
+### § FÓRMULA CANÓNICA de normalización de componente (2026-09-24) — **úsala en TODOS**
+
+🔴 **Bug que la originó (24/09):** `/ultimo 3160 mt lh` funcionaba y **`/ultimo 3160 mtlh` no**.
+La normalización anterior reconocía «tracción LH» y «MT LH», pero **no la forma pegada**: `mtlh` no caía en
+ninguna regla, se enviaba tal cual, y `compAbbr` es `MT LH` **con espacio** → `LIKE '%mtlh%'` → **0 filas**.
+Y el mensaje era «No encontré datos», que suena a «ese equipo no tiene muestras»: **un bug silencioso**.
+
+**El arreglo de fondo:** normalizar sobre el texto **sin espacios, sin guiones y en minúscula**, de modo que
+`MT LH`, `mtlh`, `Mt-Lh`, `motor de traccion LH` y `tracción lh` colapsen todos a lo mismo **antes** de decidir.
+
+```
+With( { c: Lower(Substitute(Substitute(Trim(<ORIGEN>), " ", ""), "-", "")) },
+  With( { lado: If( EndsWith(c,"lh"), " LH", If( EndsWith(c,"rh"), " RH", "" ) ) },
+    If( IsBlank(c), "",
+        StartsWith(c,"mt")   || IsMatch(c,".*tracc.*"), Trim("MT" & lado),
+        StartsWith(c,"rd")   || IsMatch(c,".*rueda.*"), Trim("RD" & lado),
+        IsMatch(c,".*hidr.*")|| c = "sh",               "Sist. Hidr.",
+        IsMatch(c,"^motor(diesel|diésel)?$"),            "Motor",
+        Trim(<ORIGEN>) ) ) )
+```
+
+**Dónde va `<ORIGEN>`** — en **todos** los lugares donde entra un componente, no solo en los de cola:
+
+| Variable | `<ORIGEN>` | Comandos |
+|---|---|---|
+| `Topic.comp` | `Topic.resto2` | `/ultimo` `/tendencia` `/tendenciadet` `/historial` |
+| `Topic.comp3` | `Topic.resto3` | `/historialmetal` |
+| `Topic.comp2` *(nuevo)* | `Topic.p2` | `/grafica` `/metalflota` (va **en medio**) |
+
+🔴 **`/triage` y `/incipiente` quedan FUERA de esta fórmula (corregido 25/09).** Filtran por
+**`CompTipo`** (`TRACCION` / `RUEDA` / `HIDRAULICO` / `MANDO`…), y la fórmula normaliza a **`compAbbr`**
+(`MT LH` / `Sist. Hidr.`…). Aplicarla ahí convierte `tracción` en `MT` y `hidráulico` en `Sist. Hidr.`,
+y `CompTipo LIKE '%MT%'` devuelve **0 filas**. Rompió los dos comandos el 25/09.
+⇒ `/triage` recibe `Topic.p1` **crudo** y `/incipiente` recibe `Topic.resto2` **crudo**.
+⚠ Es lo que ya decía [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md): *«`MD_triage` y `MD_incipiente` filtran por
+`CompTipo` con palabra natural, sin lado»*.
+
+⚠ **Los de un solo token también la necesitan.** Un token no puede tener espacio, pero **sí puede venir
+pegado**: `/grafica 3160 mtlh PQ` fallaba por lo mismo. Por eso la fórmula se aplica a los cuatro.
+
+**Por qué esta forma y no una lista de variantes:** una lista hay que ampliarla cada vez que alguien escribe
+distinto (`mtlh`, `MT-LH`, `mt  lh`…). Colapsar espacios y comparar por **contenido** (`tracc`, `rueda`,
+`hidr`) cubre las variantes que ni se nos ocurrieron. El `else` final devuelve el texto **tal cual**, que es
+lo correcto para los ~27 componentes no abreviados (`MANDO FINAL LH`, `TRANSMISION`…), donde `compAbbr`
+**es** el nombre completo.
+
+⚠ **El orden de las ramas importa:** `tracc` y `rueda` van **antes** que `motor`, porque
+`MOTOR DE TRACCION LH` contiene la palabra «motor». La rama de `Motor` usa `^...$` (coincidencia exacta)
+justo para no tragarse `motordetraccionlh`.
+
+### § Compartimiento de cola — `resto2` / `resto3` y su normalización (2026-09-20)
+El compartimiento puede ser **compuesto** («tracción LH») y va al final, así que se toma como **cola de tokens**,
+no como un token suelto. Hay dos casos según cuántos parámetros lo preceden:
+
+| Comando | Precede | Variable de cola | Normalizada |
+|---|---|---|---|
+| `/ultimo` `/tendencia` `/tendenciadet` `/grafica` `/historial` | equipo | `Topic.resto2` | `Topic.comp` |
+| `/historialmetal` | equipo + metal | **`Topic.resto3`** | **`Topic.comp3`** |
+
+```
+Topic.resto3 = If( CountRows(Topic.toks) >= 4,
+                   Trim(Concat(LastN(Topic.toks, CountRows(Topic.toks) - 3), Value, " ")), "" )
+```
+`Topic.comp3` = la MISMA fórmula de normalización de `Topic.comp` (ver §Diccionario), pero sobre
+`Lower(Trim(Topic.resto3))`.
+
+⚠ **Y la Condición que decide Tema 13 vs 14 pasa a mirar `Topic.resto3 está en blanco`**, no `p3`.
+Con `p3` se rompía el compartimiento compuesto (se quedaba solo con «tracción» y perdía «LH») — era el
+**Ajuste B** del set de pruebas.
+⛔ **No uses `Topic.comp` en `/historialmetal`**: `resto2` ahí incluiría el metal («Fe tracción LH»), y sin
+componente («/historialmetal CA3171 Fe») devolvería «Fe» como compartimiento.
+
+### § Rango — se extrae POR PATRÓN, no por posición (2026-09-20)
+⚠ **Por qué no es posicional:** `/historial` mapea `comp = resto2` (TODO lo que va tras el equipo, para que
+«tracción LH» llegue completo). Un `[rango]` al final se lo tragaría `resto2` y volvería el bug del componente
+compuesto. Por eso el rango se **detecta y se quita del texto ANTES** del parseo, y `toks`/`cmd`/`p1..p4`/
+`resto1`/`resto2` siguen exactamente igual.
+
+En el nodo de parseo del tema «00 Comandos», **antes** de `Topic.toks`:
+```
+Topic.txt0  = Trim(System.Activity.Text)
+Topic.rango = If( IsMatch(Topic.txt0, "(?i).*\s\d+\s*(a(ñ|n)os?|mes(es)?|d(í|i)as?)\s*$"),
+                  Trim(Match(Topic.txt0, "(?i)\d+\s*(a(ñ|n)os?|mes(es)?|d(í|i)as?)\s*$").FullMatch), "" )
+Topic.txt   = If( Topic.rango = "", Topic.txt0,
+                  Trim(Left(Topic.txt0, Len(Topic.txt0) - Len(Topic.rango))) )
+```
+y `Topic.toks` pasa de `Split(Trim(System.Activity.Text)," ")` a **`Split(Topic.txt," ")`**.
+
+✅ **Seguro para el resto de comandos:** el patrón exige la palabra de unidad (años/meses/días), así que
+`/ranking Antapaccay tracción Fe 5` NO matchea (el «5» va solo) y `/barrido Antapaccay 980E` tampoco.
+En los comandos sin rango, `Topic.rango` simplemente no se mapea.
+
+El tema destino convierte `rango` → fecha `yyyy-MM-dd` con Power Fx (ver `PENDIENTES.md` paso 5.2) y se la
+pasa al flujo `MD_historial` como `desde`. **Hoy solo lo consume el Tema 11**; los Temas 12/13/14/15 entran
+en la 2.ª tanda (paso 8).
 > ⚠ **`/metalflota` pasa 4 inputs al Tema 25** (proyecto, modelo, compartimiento, parametros) — mapear `modelo=If(p4="","(todos)",p4)`.
 
 ## Cobertura de temas (re-auditoría 2026-09-05)
 | Tema | Comando | Tema | Comando |
 |---|---|---|---|
 | 01 Último comp. | `/ultimo` | 15 Historial flota | `/historialflota` |
-| 02 Condición MT | `/condicion` | 16 Barrido resumen | `/barrido` |
+| 02 Condición MT | `/condicionmt` | 16 Barrido resumen | `/barrido` |
 | 03 Diagnóstico | `/diagnostico` | 17 Barrido detalle | `/barridodet` |
 | 04 Diag. completo | `/diagcompleto` | 18 Barrido filtrado | — *(variante: "solo críticos" como follow-up del barrido)* |
-| 05 Tendencia p1 | `/tendencia` | 19 Triage | `/triage` |
-| 06 Tendencia det. | `/tendenciadet` | 20 Incipiente | `/incipiente` |
+| ⛔ 05 Tendencia p1 — **DESACTIVADO** | — | 19 Triage | `/triage` |
+| **06 Tendencia** (fusionado) | `/tendencia` · `/tendenciadet` | 20 Incipiente | `/incipiente` |
 | 07 Tend. relevantes | — *(continuación de 05/06)* | 21 Conteo | `/conteo` |
 | 08 Tend. de un metal | `/tendenciametal` | 22 Ranking | `/ranking` |
 | 09 Gráfica | `/grafica` | 23/24 flota | — *(DESACTIVADOS; los cubre el fallback)* |
@@ -144,6 +284,7 @@ Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/m
         │  cmd="/tendencia"   → «Ir a tema» 05  (equipo,comp)     │
         │  cmd="/acumulados"  → «Ir a tema» 28  (equipo)          │
         │  cmd="/rankingacum" → «Ir a tema» 27  (proyecto)        │
+        │  cmd="/rankinggraf" → «Ir a tema» 29  (proyecto)        │
         │  cmd="/metalflota"  → «Ir a tema» 25  (proyecto,modelo,comp,metales ← 4)│
         │  … (resto de la tabla de mapeo)                        │
         │  cmd="/comandos"    → «Mensaje» (lista de comandos)     │
@@ -182,40 +323,53 @@ Topic.p1     = If(CountRows(Topic.toks) >= 2, Index(Topic.toks, 2).Value, "")
 Topic.p2     = If(CountRows(Topic.toks) >= 3, Index(Topic.toks, 3).Value, "")
 Topic.p3     = If(CountRows(Topic.toks) >= 4, Index(Topic.toks, 4).Value, "")
 Topic.p4     = If(CountRows(Topic.toks) >= 5, Index(Topic.toks, 5).Value, "")
+// RESTO (une los tokens de cola) — para componentes COMPUESTOS: "MT RH", "tracción RH", "rueda delantera LH"
+Topic.resto1 = If(CountRows(Topic.toks) >= 2, Trim(Concat(LastN(Topic.toks, CountRows(Topic.toks) - 1), Value, " ")), "")  // todo tras el /comando
+Topic.resto2 = If(CountRows(Topic.toks) >= 3, Trim(Concat(LastN(Topic.toks, CountRows(Topic.toks) - 2), Value, " ")), "")  // todo tras p1 (equipo)
 ```
 > ⚠ Verificar en el editor que la columna de `Split` se llame **`Value`** (si no, ajustar `.Value`).
+> ⚠ **Componente COMPUESTO (bug 18/09):** `/tendenciadet 3177 MT RH` → el split mete `RH` en `p3` y el tema tomaba
+> `comp="MT"` (perdía el lado → caía a LH). **FIX:** cuando el compartimiento es el ÚLTIMO parámetro, pásale **`resto2`**
+> (todo lo que viene tras el equipo), no `p2`. Así `comp="MT RH"`, `"tracción RH"`, `"rueda delantera LH"` llegan completos.
 
 ### 3) Nodo Condición en cascada (Switch por `Topic.cmd`) → setea inputs y «Redirigir a otro tema»
 Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y redirigir. Defaults con `If(p="","default",p)`:
 
 | `cmd` | Redirige a | Inputs a pasar (desde p1..p4) |
 |---|---|---|
-| `/ultimo` | 01 Último análisis | equipo=p1 · compartimiento=p2 |
-| `/condicion` | 02 Condición MT | equipo=p1 |
-| `/diagnostico` | 03 Diagnóstico | equipo=p1 |
+| `/ultimo` | 01 Último análisis | equipo=p1 · compartimiento=**resto2** ⟵ comp compuesto |
+| `/condicionmt` · alias `/condicion` | 02 Condición MT | equipo=p1 |
+| `/diagnostico` · **alias de `/diagcompleto`** | 04 Diagnóstico completo | equipo=p1 |
 | `/diagcompleto` | 04 Diagnóstico completo | equipo=p1 |
-| `/tendencia` | 05 Tendencia p1 | equipo=p1 · compartimiento=p2 |
-| `/tendenciadet` | 06 Tendencia detalle | equipo=p1 · compartimiento=p2 |
+| `/tendencia` · **alias `/tendenciadet`** | **06 Tendencia** (fusionado 25/09) | equipo=p1 · compartimiento=**resto2** ⟵ comp compuesto |
+
 | `/tendenciametal` | 08 Tendencia de un metal | equipo=p1 · parametro=p2 |
-| `/grafica` | 09 Gráfica | equipo=p1 · compartimiento=p2 · parametro=p3 |
-| `/historial` | 11 Historial componente | equipo=p1 · compartimiento=p2 |
-| `/historialeq` | 12 Historial equipo | equipo=p1 |
-| `/historialmetal` | 13/14 Historial de un metal | equipo=p1 · parametro=p2 · compartimiento=p3 (vacío→13; con comp→14) |
+| `/grafica` | 09 Gráfica | equipo=p1 · compartimiento=p2 · parametro=p3 ⚠ comp de 1 token (metal va después) |
+| `/historial` | 11 Historial componente | equipo=p1 · compartimiento=**resto2** · **rango=`Topic.rango`** (extraído por patrón, ver §Rango) |
+| `/historialeq` | 12 Historial equipo | equipo=p1 · **rango=`Topic.rango`** |
+| `/historialmetal` | 13/14 Historial de un metal | equipo=p1 · parametro=p2 · compartimiento=**`Topic.comp3`** · **rango=`Topic.rango`** · la Condición 13-vs-14 pasa a mirar **`Topic.resto3` está en blanco** (ya no `p3`) |
 | `/acumulados` | 28 Acumulados equipo | equipo=p1 |
 | `/barrido` | 16 Barrido resumen | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
 | `/barridodet` | 17 Barrido detalle | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
 | `/triage` | 19 Triage | compartimiento=`If(p1="","tracción",p1)` · proyecto=`If(p2="","Antapaccay",p2)` · modelo=`If(p3="","(todos)",p3)` |
-| `/incipiente` | 20 Tendencia incipiente | proyecto=`If(p1="","Antapaccay",p1)` |
+| `/incipiente` | 20 Tendencia incipiente | proyecto=`If(p1="","Antapaccay",p1)` · **compartimiento=`If(Topic.resto2="","tracción",Topic.resto2)`** ⟵ 2º input |
 | `/conteo` | 21 Conteo | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
 | `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · top=`If(p4="","10",p4)` |
 | `/metalflota` | 25 Último por metal flota | proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(p2="","tracción",p2)` · parametros=p3 · **modelo=`If(p4="","(todos)",p4)`** ⟵ 4º input |
-| `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` |
+| `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` · **rango=`Topic.rango`** |
 | `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` |
+| `/rankinggraf` | 29 Ranking gráfico | proyecto=`If(p1="","Antapaccay",p1)` |
 | `/comandos` ó `/ayuda` | (nodo Mensaje, ver 4) | — |
 | (ninguna coincide) | **«Ir a otro tema» → Conversación** | — (era NL con `/`, no un comando) |
 
 > ⚠ **Tema 25 (`/metalflota`) tiene 4 entradas** (proyecto, modelo, compartimiento, parametros): mapea las 4, con `modelo=If(p4="","(todos)",p4)`.
 > Si un input requerido va vacío (equipo en los por-equipo), el tema destino lo **pide en el chat** (ya existente).
+> ⚠ **Componente compuesto y posición del token:** el arreglo `resto2` funciona cuando el compartimiento es lo ÚLTIMO
+> (`/ultimo`, `/tendencia`, `/tendenciadet`, `/historial`). En comandos donde el compartimiento va **en medio** seguido de
+> otro parámetro (`/grafica ‹eq› ‹comp› ‹metal›`, `/metalflota ‹proj› ‹comp› ‹metal(es)› [modelo]`) o **primero**
+> (`/triage ‹comp› ‹proj›`), el compartimiento debe ser de **UN solo token** (ej. `tracción`, no `MT RH`) — el lado RH/LH
+> ahí lo resuelve el propio tema (agrega/pregunta). Si más adelante se necesita lado en esos, se hará detección explícita del
+> sufijo `RH|LH` (`IsMatch(Last(toks).Value,"(?i)^(RH|LH)$")`), no está implementado aún.
 
 ### 4) `/comandos` y `/ayuda` → **«Enviar un mensaje»** con TARJETA ADAPTABLE (tabla completa)
 **Opción A (recomendada): Adaptive Card en un nodo «Enviar un mensaje».** ⚠ **NO** uses el **«Nodo de tarjeta adaptable»**
@@ -226,13 +380,13 @@ Así solo se MUESTRA y el tema termina → el usuario puede lanzar otro comando 
 **Opción B (texto plano, fallback):** ⚠ usa **‹ ›** para los requeridos, NO `< >` (en cards y mensajes markdown los `<x>` se leen como etiqueta HTML y **se borran** → perderías el parámetro, ej. `/barrido <proj>` salía como `/barrido`).
 ```
 **Comandos** (escribe `/` + módulo + parámetros). Componente = tracción/hidráulico/rueda/mando/transmisión/motor.
-POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicion ‹eq› · /diagnostico ‹eq› · /diagcompleto ‹eq›
-             /tendencia ‹eq› ‹comp› · /tendenciadet ‹eq› ‹comp› · /tendenciametal ‹eq› ‹metal›
-             /grafica ‹eq› ‹comp› ‹metal› · /historial ‹eq› ‹comp› · /historialeq ‹eq›
+POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicionmt ‹eq› · /diagcompleto ‹eq›
+             /tendencia ‹eq› ‹comp› · /tendenciametal ‹eq› ‹metal›
+             /grafica ‹eq› ‹comp› ‹metal› · /historial ‹eq› ‹comp› [rango] · /historialeq ‹eq›
              /historialmetal ‹eq› ‹metal› [comp] · /acumulados ‹eq›
 POR-FLOTA:   /barrido ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
-             /incipiente ‹proj› · /conteo ‹proj› [modelo] · /ranking ‹proj› ‹comp› ‹metal› [top]
-             /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj›
+             /incipiente ‹proj› [comp] · /conteo ‹proj› [modelo] · /ranking ‹proj› ‹comp› ‹metal› [top]
+             /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj› · /rankinggraf ‹proj›
 ```
 
 ### 5) Rama «ninguna coincide» (comando `/xxx` no reconocido) → Mensaje + Finalizar

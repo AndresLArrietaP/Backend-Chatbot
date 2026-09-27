@@ -52,7 +52,7 @@
             },
             {
               "title": "‹comp›",
-              "value": "componente — tracción · hidráulico · rueda · mando · transmisión · motor"
+              "value": "componente — MT LH · MT RH · RD LH · RD RH · Hidr · Motor. Otros se escriben completos: Mando Final LH/RH, Transmisión, PTO, Caja Giro Front/Rear, Diferencial, Freno…"
             },
             {
               "title": "‹metal›",
@@ -61,6 +61,10 @@
             {
               "title": "[modelo]",
               "value": "modelo — ej. 980E (por defecto: todos)"
+            },
+            {
+              "title": "[rango]",
+              "value": "ventana de tiempo — ej. «2 años», «5 meses», «14 días» (por defecto: todo)"
             },
             {
               "title": "[top]",
@@ -155,7 +159,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/condicion ‹eq›",
+                  "text": "/condicionmt ‹eq›",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -182,33 +186,6 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/diagnostico ‹eq›",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            },
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "Diagnóstico (observados) del equipo",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "TableRow",
-          "cells": [
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
                   "text": "/diagcompleto ‹eq›",
                   "wrap": true,
                   "size": "Small"
@@ -220,7 +197,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "Diagnóstico con TODOS los parámetros",
+                  "text": "Diagnóstico del equipo: todos sus componentes",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -247,34 +224,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "Tendencia (últimas muestras) de un componente",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "TableRow",
-          "cells": [
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "/tendenciadet ‹eq› ‹comp›",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            },
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "Tendencia detalle (metales × fechas)",
+                  "text": "Tendencia de un componente: contexto + parámetros × fechas",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -344,7 +294,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historial ‹eq› ‹comp›",
+                  "text": "/historial ‹eq› ‹comp› [rango]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -371,7 +321,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historialeq ‹eq›",
+                  "text": "/historialeq ‹eq› [rango]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -398,7 +348,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historialmetal ‹eq› ‹metal› [comp]",
+                  "text": "/historialmetal ‹eq› ‹metal› [comp] [rango]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -585,7 +535,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/incipiente ‹proj›",
+                  "text": "/incipiente ‹proj› [comp]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -596,7 +546,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "Tendencia incipiente (alerta temprana MT)",
+                  "text": "Tendencia incipiente (alerta temprana)",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -693,7 +643,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/historialflota ‹proj›",
+                  "text": "/historialflota ‹proj› [rango]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -738,8 +688,43 @@
               ]
             }
           ]
+        },
+        {
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "/rankinggraf ‹proj›",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Ranking de acumulados en gráfica de barras",
+                  "wrap": true,
+                  "size": "Small"
+                }
+              ]
+            }
+          ]
         }
       ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "También funcionan **/diagnostico** (= /diagcompleto) y **/tendenciadet** (= /tendencia).",
+      "wrap": true,
+      "isSubtle": true,
+      "size": "Small",
+      "spacing": "Medium"
     },
     {
       "type": "TextBlock",
@@ -747,7 +732,7 @@
       "wrap": true,
       "isSubtle": true,
       "size": "Small",
-      "spacing": "Medium"
+      "spacing": "None"
     }
   ]
 }

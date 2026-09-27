@@ -22,3 +22,6 @@ docs/arquitectura/*.docx
 docs/gerencia/
 # PDFs de pruebas: pesados y regenerables desde el .docx (Word/LibreOffice).
 docs/pruebas/*.pdf
+
+# Accesos directos de Windows
+*.lnk

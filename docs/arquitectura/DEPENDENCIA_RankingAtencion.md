@@ -39,3 +39,22 @@ hechas para un **dashboard Power BI** (proyecto aparte, chat con MCP). KomfIA so
 - **Métricas fuera de alcance (pedido gerencia):** sin ppm/h, sin Specto, sin NumMuestras; la alerta de tendencia de Pb
   (`vw_AlertaTendencia`) sigue **en prueba** → no se incluye aún.
 - 7 metales como el dashboard: Fe, Cr, Pb, Cu, Na, K, Si (Sn/Hollin existen en la vista base pero no se muestran).
+
+## ◆ Equipos INTERVENIDOS — lista manual (espejo del DAX del PBI) · al 2026-09-21
+
+El rombo ◆ del dashboard **no sale de los datos**: está escrito a mano en el DAX. Se compone de **dos** piezas,
+y hay que mirar las dos o la lista sale incompleta:
+
+1. Columna `Motores[Intervenido]` — **9 equipos**:
+   `{ 3196, 3168, 3166, 3180, 3194, 3165, 3161, 3193, 3175 }`
+2. Medida `Marca Intervenido al corte` — añade **3 forzados** en el `OR`: `CA3193` (ya estaba), `CA3197`, `CA3195`.
+   Además posiciona el rombo en `[Ranking Maximo al corte] + _tope * 0.05` (5% sobre el máximo) — eso es
+   **cosmética del PBI**, no dato: en KomfIA el ◆ va junto a la barra.
+
+**Unión = 11 equipos** (confirmado por el usuario 21/09):
+`CA3161 · CA3165 · CA3166 · CA3168 · CA3175 · CA3180 · CA3193 · CA3194 · CA3195 · CA3196 · CA3197`
+
+⚠ **Deuda declarada:** es una lista manual copiada de otro artefacto. **Se desincroniza sola** cuando alguien
+edita el DAX, y nada lo avisa. Al revisar el módulo Acumulados, re-contrastar contra el PBI.
+⚠ En el DAX los equipos van **sin el prefijo `CA`** (enteros); en nuestras vistas el `Equipo` es `CA3196`.
+
