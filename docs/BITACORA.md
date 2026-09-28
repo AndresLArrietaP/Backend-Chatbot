@@ -377,7 +377,7 @@ Registro oficial: `docs/gerencia/ACTA DE REUNION_PROYECTOS DE DESARROLLO CONFIAB
   vieja», revisar la **fuente** antes que los filtros de fecha.
 - **Solo lectura.** No hay permisos DDL/DML: `CREATE OR ALTER VIEW` y los `SELECT` sí; `CREATE FUNCTION` y
   `CREATE INDEX` requieren al DBA.
-- **Esquema canónico:** `docs/schemaaceites 1 (1).xlsx` — 1964 filas, e **incluye las 49 vistas** `vw_*`, a
+- **Esquema canónico:** `arquitectura/ESQUEMA_BD.xlsx` — 1964 filas, e **incluye las 49 vistas** `vw_*`, a
   diferencia del `schema_bd.json` que se usaba antes. Toda columna se cruza contra ese Excel antes de
   escribir SQL.
 - `[Mine].[MiningEquipment]` **no** tiene columna `Model`: el modelo está en `[Mine].[EquipmentFleet].[Model]`.
@@ -399,6 +399,7 @@ Backend-Chatbot/
 │   ├── pruebas/                 ← set vigente + registros de marcha congelados
 │   ├── gerencia/                ← actas y fuentes oficiales del área
 │   └── avance-semanal/          ← un reporte por semana y por proyecto
+│        └── (también alimenta una automatización propia en Claude Desktop)
 ├── tools/                       ← generador de la tarjeta de comandos
 └── legado/                      ← hitos 1 y 2, archivados
     ├── 01-python-api/

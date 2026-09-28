@@ -27,8 +27,6 @@ docs/gerencia/*
 !docs/gerencia/ACTA DE REUNION_PRUEBA DE ACEITES EN MTs_ANTAMINA.xlsx
 !docs/gerencia/LIMITES CONDENATORIOS 1.xlsm
 !docs/gerencia/Requerimientos Analisis Aceite 1.xlsx
-!docs/gerencia/Limites.xlsx
-!docs/gerencia/formatos 1.xlsx
 # PDFs de pruebas: pesados y regenerables desde el .docx (Word/LibreOffice).
 docs/pruebas/*.pdf
 

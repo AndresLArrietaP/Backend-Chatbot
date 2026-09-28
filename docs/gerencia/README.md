@@ -29,11 +29,6 @@ la hoja y el `ref` de `table1.xml`. Se sincroniza con `INVERTEX v3/refs/gerencia
 | Archivo | Por qué se conserva |
 |---|---|
 | `ACTA DE REUNION_PRUEBA DE ACEITES EN MTs_ANTAMINA.xlsx` (18/07/26) | Acta de la prueba de Antamina. No se edita. |
-| `Limites.xlsx` (07/08/26) | **Predecesor** de `LIMITES CONDENATORIOS 1.xlsm`. Es el documento donde salió que **Pb y Sn sí tienen LC crítico**, y sigue siendo la referencia del **BLOQUE 50** de `VALIDACION_SSMS.sql`. |
-| `formatos 1.xlsx` (21/06/26) | **Predecesor** de `Requerimientos Analisis Aceite 1.xlsx`: los 4 formatos por componente en su primera versión. |
-
-> Los dos «predecesor» quedan solo por trazabilidad; **para escribir SQL se usa el de 24/09**. Si los quieres
-> fuera, se borran en una línea (ya están versionados, así que el borrado es recuperable).
 
 ## Borrados el 27/09/26
 
@@ -41,3 +36,7 @@ la hoja y el `ref` de `table1.xml`. Se sincroniza con `INVERTEX v3/refs/gerencia
 |---|---|
 | `CONFIA_Presentacion_Gerencia.pptx` (28/05/26) | Presentación ejecutiva de la etapa del backend Python. Superada por el acta viva y por las demostraciones en Teams. |
 | `SEGUIMIENTO_Pedidos_partes_interesadas.docx` (23/07/26) | El seguimiento de pedidos vive hoy en la columna «seguimiento» del acta. |
+| `Limites.xlsx` (07/08/26) | **Predecesor** de `LIMITES CONDENATORIOS 1.xlsm`. Fue el documento donde salió que Pb y Sn sí tienen LC crítico; ese hallazgo ya está en la vista y en la [BITACORA](../BITACORA.md). El **BLOQUE 50** de `VALIDACION_SSMS.sql` lo cita como origen histórico. |
+| `formatos 1.xlsx` (21/06/26) | **Predecesor** de `Requerimientos Analisis Aceite 1.xlsx`: los 4 formatos por componente en su 1ª versión. |
+
+> Los cuatro quedaron en el historial de git (commit `aa2a534`), así que son recuperables si hicieran falta.

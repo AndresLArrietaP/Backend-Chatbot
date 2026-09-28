@@ -56,7 +56,7 @@
      BLOQUE 47   vw_HistorialEquipoMD (equipo) + vw_HistorialFlotaMD (proyecto)
      BLOQUE 48   vw_HistorialMetalEquipoMD (firma equipo+parametro, flujo MD_metal comp=todos)
      BLOQUE 49   vw_TriageMD EVOLUCIONADO (base ligera; flujo MD_triage: proyecto+modelo+compartimiento)
-     BLOQUE 50   CORROBORAR límites gerencia (docs/gerencia/Limites.xlsx) vs [Eqpcare].[lc]
+     BLOQUE 50   CORROBORAR límites gerencia (Limites.xlsx, 07/08/26) vs [Eqpcare].[lc]
      BLOQUE 51   VALIDAR fix Pb/Sn LC (crítico) tras re-correr la cadena
      BLOQUE 52   VALIDAR Pb/Sn LC en BARRIDO (vw_ObservadosFlota)
      BLOQUE 53   VALIDAR salud (V100/viscosidad) en la fundación
@@ -1033,7 +1033,11 @@ GO
 -- Verifica: salen TODOS (🟩 OK incluidos), criticos/precaucion arriba, metales tipo 'Fe(199.0) · Cr(29.0)'.
 -- PERF: comparar elapsed vs la version anterior (deberia bajar; base = rankeadas rn=1, 1 pasada).
 
--- ==== BLOQUE 50 — CORROBORAR límites gerencia (docs/gerencia/Limites.xlsx) vs [Eqpcare].[lc] ====
+-- ==== BLOQUE 50 — CORROBORAR límites gerencia (Limites.xlsx, 07/08/26) vs [Eqpcare].[lc] ====
+--      ⚠ Limites.xlsx se retiró el 27/09/26 (queda en el historial de git, commit aa2a534).
+--      La fuente oficial de límites es hoy docs/gerencia/LIMITES CONDENATORIOS 1.xlsm → ver
+--      LIMITES_FALLBACK.md + DDL_vw_LimitesFallback.sql. Este bloque se conserva como origen
+--      del hallazgo «Pb y Sn sí tienen LC crítico».
 -- Origen gerencia = matriz Proyecto x Componente x Modelo, ~60 parámetros (Fe,Al,Cu,Pb,Sn,Cr,Ni,Si,
 -- Na,K,Zn,P,B,Ca,Mg,PQ,TBN,Visc,ISO...). HALLAZGO: Pb/Sn SÍ tienen LC (Antapaccay MT: Pb LC=5, Sn LC=5).
 -- Objetivo: (a) ver qué columnas/valores tiene realmente Eqpcare.lc; (b) detectar faltantes vs gerencia.
@@ -2344,7 +2348,7 @@ ORDER BY v.name;
 -- (2) Que NO quede ningun rotulo viejo en ninguna salida MD. Este es el chequeo que importa.
 -- ⚠ CORREGIDO 24/09: la primera version ponia Equipo en vistas que no lo tienen (vw_ObservadosResumenMD,
 --    vw_ObservadosBarridoMD, vw_CondicionCompMD y vw_AcumuladosFlotaMD son de FLOTA: su clave es Proyecto)
---    -> Msg 207 'Invalid column name Equipo'. Columnas cruzadas contra docs/schemaaceites 1 (1).xlsx.
+--    -> Msg 207 'Invalid column name Equipo'. Columnas cruzadas contra docs/arquitectura/ESQUEMA_BD.xlsx.
 WITH mds AS (
     SELECT 'vw_UltimoAnalisisMD'   AS Vista, MD FROM [dbo].[vw_UltimoAnalisisMD]  WHERE Equipo='CA3160' AND compAbbr='MT LH'
     UNION ALL SELECT 'vw_TendenciaMD',        MD FROM [dbo].[vw_TendenciaMD]      WHERE Equipo='CA3160' AND compAbbr='MT LH'
@@ -2808,7 +2812,7 @@ GROUP BY p.Parametro ORDER BY p.Parametro;
 --       analisis -> el arreglo va en el PROMPT (bloque E), no en la vista;
 --   (b) la marca es incorrecta -> el arreglo va en la vista (bloque C2).
 -- ⚠ CORREGIDO 24/09: vw_TendenciaElemento NO tiene compAbbr (si tiene Compartimiento y CompTipo)
---    -> Msg 207. Columnas cruzadas contra docs/schemaaceites 1 (1).xlsx.
+--    -> Msg 207. Columnas cruzadas contra docs/arquitectura/ESQUEMA_BD.xlsx.
 SELECT te.Equipo, te.Compartimiento, te.Parametro, te.LP, te.Inf,
        te.d1, te.d2, te.d3, te.d4, te.d5, te.d6, te.NVecesObs
 FROM [dbo].[vw_TendenciaElemento] te
@@ -3072,7 +3076,7 @@ GROUP BY CompTipo ORDER BY CompTipo;
 -- (3) (b) EL CAMBIO DE FONDO: cuantas alertas NUEVAS aparecen por aditivo agotado, y donde.
 --     Antes del cambio eran 0 (Ca/Zn/Mg eran informativos en todos los componentes).
 -- ⚠ CORREGIDO 24/09: vw_TendenciaElemento expone Inf pero NO Inv (es interno del CTE). Se lee de
---    vw_FormatoParametro, que es donde vive. Columnas cruzadas contra docs/schemaaceites 1 (1).xlsx.
+--    vw_FormatoParametro, que es donde vive. Columnas cruzadas contra docs/arquitectura/ESQUEMA_BD.xlsx.
 SELECT te.CompTipo, te.Parametro, COUNT(*) AS Equipos_con_aditivo_bajo
 FROM [dbo].[vw_TendenciaElemento] te
 JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = te.CompTipo AND f.Parametro = te.Parametro

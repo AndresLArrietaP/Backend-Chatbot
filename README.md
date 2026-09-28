@@ -47,7 +47,7 @@ imprime tal cual. Ningún modelo toca la tabla, así que la misma pregunta da si
   requieren al DBA. Nunca sugerir `ALTER TABLE`.
 - **Todo SQL de prueba** va a `docs/arquitectura/VALIDACION_SSMS.sql` en un bloque numerado. El SQL que se
   despliega, a `docs/arquitectura/DDL_*.sql`. Nada de SQL suelto en otros documentos.
-- **Verificar cada columna** contra el esquema canónico `docs/schemaaceites 1 (1).xlsx` antes de escribir
+- **Verificar cada columna** contra el esquema canónico `docs/arquitectura/ESQUEMA_BD.xlsx` antes de escribir
   SQL. Es el único que incluye las vistas `vw_*`.
 - **Editar un comando = editar su módulo completo:** descripción + tema + nodos + flujo + vista.
 - Antes de un cambio, auditar el sistema completo, no solo el archivo que se toca.

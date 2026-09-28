@@ -2,13 +2,17 @@
 
 ## Qué es y para qué sirve
 
-Un `.md` corto por **semana** y por **proyecto**, con frontmatter YAML, que cuenta qué se avanzó. Tiene dos
+Un `.md` corto por **semana** y por **proyecto**, con frontmatter YAML, que cuenta qué se avanzó. Tiene tres
 consumidores:
 
 1. **La automatización con Claude** — el frontmatter (`proyecto`, `semana_inicio`, `magnitud`,
    `responsables`) es lo que se lee de forma programática; el cuerpo es lo que se resume.
 2. **El acta de gerencia** — `../gerencia/ACTA DE REUNION_PROYECTOS DE DESARROLLO CONFIABILIDAD.xlsx`, que se
    presenta cada viernes. El avance semanal es el insumo; el acta es la salida.
+3. **Una automatización aparte en Claude Desktop**, que también lee esta carpeta como fuente.
+
+⚠ Por el punto 3, la carpeta **no se reorganiza ni se renombra sin avisar**: hay algo fuera de este
+repositorio que depende de su ruta y de su formato.
 
 Por eso **se escribe todas las semanas, aunque el avance sea mínimo o nulo**: una semana sin archivo es un
 hueco en la serie, y la automatización no distingue «no pasó nada» de «nadie lo escribió». Para eso está

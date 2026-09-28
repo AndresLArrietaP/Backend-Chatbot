@@ -7,7 +7,7 @@
 
 **Reglas permanentes:** (1) auditar TODO el sistema **antes** de cambiar · (2) editar un comando = editar su
 módulo completo (descripción + tema + nodos + flujo + vista) · (3) nunca escribir SQL sin cruzar
-`docs/schemaaceites 1 (1).xlsx` · (4) SQL de prueba → `VALIDACION_SSMS.sql` en bloques numerados ·
+`docs/arquitectura/ESQUEMA_BD.xlsx` · (4) SQL de prueba → `VALIDACION_SSMS.sql` en bloques numerados ·
 (5) rendimiento: **aislar y medir antes de teorizar** · (6) tras desplegar DDL, correr el **BLOQUE 89**
 (smoke test: un `CREATE VIEW` se guarda aunque su cuerpo sea inválido).
 

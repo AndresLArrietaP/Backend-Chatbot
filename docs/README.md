@@ -16,6 +16,8 @@ docs/
 │   ├── FORMATO_POR_COMPONENTE.md   Orden y agrupación oficiales de parámetros, por componente
 │   ├── LIMITES_FALLBACK.md         Cómo funciona el respaldo de límites
 │   ├── DEPENDENCIA_RankingAtencion.md  De qué vistas del dashboard depende Acumulados
+│   ├── ESQUEMA_BD.xlsx             ESQUEMA CANÓNICO de la BD: 1964 columnas, incluye las 49 vistas
+│   ├── ESQUEMA_BD.md               Su ficha: qué trae, qué le falta y las 9 vistas ajenas
 │   └── KOMFIA.drawio               Diagrama del sistema
 │
 ├── copilot/                    ← configuración del agente (lo que está aplicado en Copilot Studio)
@@ -39,8 +41,7 @@ docs/
 │
 ├── gerencia/                   ← actas y fuentes oficiales del área (ver su README)
 │                                  versionadas por EXCEPCIÓN, una por una, en el .gitignore
-├── avance-semanal/             ← un .md por semana y por proyecto (ver su README + _PLANTILLA)
-└── schemaaceites 1 (1).xlsx    ← ESQUEMA CANÓNICO de la BD (1964 filas, incluye las 49 vistas)
+└── avance-semanal/             ← un .md por semana y por proyecto (ver su README + _PLANTILLA)
 ```
 
 ## Qué archivo abrir
@@ -51,7 +52,7 @@ docs/
 | Saber qué falta / qué está abierto | [copilot/PENDIENTES.md](copilot/PENDIENTES.md) |
 | Crear o modificar una vista | [arquitectura/DDL_vistas.sql](arquitectura/DDL_vistas.sql) |
 | Probar algo en SSMS | [arquitectura/VALIDACION_SSMS.sql](arquitectura/VALIDACION_SSMS.sql) — **bloque nuevo numerado ahí, nunca SQL suelto** |
-| Verificar una columna antes de escribir SQL | `schemaaceites 1 (1).xlsx` (canónico; incluye las vistas) |
+| Verificar una columna antes de escribir SQL | [arquitectura/ESQUEMA_BD.xlsx](arquitectura/) — su ficha en [ESQUEMA_BD.md](arquitectura/ESQUEMA_BD.md) |
 | Cambiar la descripción o los nodos de un tema | [copilot/CONFIG_TEMAS.md](copilot/CONFIG_TEMAS.md) |
 | Agregar o editar un comando `/` | [copilot/CONFIG_COMANDOS.md](copilot/CONFIG_COMANDOS.md) — y **siempre** los 3 a la vez: el doc, `tarjetas/comandos_card.json` y `../tools/gen_comandos_card.py` |
 | Cambiar el texto del análisis | [copilot/prompts/analisis_prompts.md](copilot/prompts/analisis_prompts.md) |
