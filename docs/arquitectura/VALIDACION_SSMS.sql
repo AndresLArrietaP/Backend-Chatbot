@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   136 bloques · índice regenerado el 25/09/2026 desde los encabezados reales.
+   141 bloques · índice regenerado el 25/09/2026; bloques 136-140 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -154,6 +154,13 @@
      BLOQUE 133  vw_TriageMD reestructurada (25/09)
      BLOQUE 134  G2 modo A: los dos fallos silenciosos que quedaban
      BLOQUE 135  comprobar el CA3175 antes de llamarlo error (25/09)
+
+   ── Ronda 28/09 (Carlos + Franco) — reconocimiento
+     BLOQUE 136  ComponentStatus: que valores tiene y cual es el "En Uso"
+     BLOQUE 137  REPRODUCIR el acumulado de Carlos: CA3195 MT LH Fe = 3718.6
+     BLOQUE 138  los 22 limites que lc SI tiene y la fundacion NO lee
+     BLOQUE 139  COBERTURA de limites por proyecto/componente/modelo
+     BLOQUE 140  H3/H4: el scope del ranking y el parametro Hollin
    ============================================================================ */
 
 /* ============================================================================
@@ -4561,3 +4568,182 @@ FROM [dbo].[vw_UltimoAnalisisMD] WHERE Equipo = 'CA3175' AND compAbbr LIKE 'RD%'
 --    de aditivos practicamente agotado (Ca al 12% de su minimo). Es EXACTAMENTE lo que el bloque E3 vino
 --    a destapar: antes esas alertas no salian porque se juzgaban al reves.
 -- ⚠ Vale la pena comentarselo a Carlos: no es un falso positivo, es un hallazgo.
+
+
+/* ============================================================================
+   RONDA 28/09 — bloques 136-140. Reconocimiento ANTES de tocar nada.
+   ⛔ Todos filtran por equipo/proyecto y NINGUNO lee una vista *MD entera:
+      es la leccion de los bloques 119(2), 123(2) y 134(5) (12 min sin devolver).
+   ============================================================================ */
+
+-- ==== BLOQUE 136 - ComponentStatus: que valores tiene y cual es el "En Uso" ====
+-- POR QUE: Carlos dio el metodo del acumulado de vida y empieza por "filtrar lo que esta en uso".
+--   La columna existe y jamas la usamos: [Oil].[LaboratoryData].[ComponentStatus] (varchar).
+--   Sin saber sus valores exactos no se puede escribir el filtro. Barato: GROUP BY sobre una sola
+--   columna, sin JOIN y sin window.
+SELECT LD.[ComponentStatus], COUNT(*) AS Filas,
+       MIN(LD.[FechaMuestreo]) AS Desde, MAX(LD.[FechaMuestreo]) AS Hasta
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+GROUP BY LD.[ComponentStatus]
+ORDER BY Filas DESC;
+GO
+-- 136.2 Lo mismo pero SOLO del componente de referencia, para ver como se reparte dentro de un
+--       componente concreto (el que Carlos uso de ejemplo).
+SELECT LD.[ComponentStatus], LD.[CM], COUNT(*) AS Filas,
+       MIN(LD.[FechaMuestreo]) AS Desde, MAX(LD.[FechaMuestreo]) AS Hasta,
+       CAST(SUM(LD.[Fe_ppm]) AS decimal(18,1)) AS SumaFe
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] = 'CA3195' AND LD.[Compartimiento] LIKE '%TRACCION%LH'
+GROUP BY LD.[ComponentStatus], LD.[CM]
+ORDER BY LD.[ComponentStatus], Filas DESC;
+GO
+-- 136.3 Universo de valores de CM por tipo de componente (para confirmar ADI/C/M/MONI/PM/DDI).
+--       Confirma la regla que dio Carlos: MT suma ADI+C, Rueda solo C, MODI todos, SH solo C.
+SELECT CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
+            WHEN LD.[Compartimiento] LIKE '%RUEDA%'       THEN 'RUEDA'
+            WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+            WHEN LD.[Compartimiento] LIKE 'MOTOR%'        THEN 'MOTOR'
+            ELSE 'OTRO' END AS CompTipo,
+       LD.[CM], COUNT(*) AS Filas
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+WHERE MP.[Name] LIKE '%Antapaccay%'
+GROUP BY CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
+              WHEN LD.[Compartimiento] LIKE '%RUEDA%'       THEN 'RUEDA'
+              WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+              WHEN LD.[Compartimiento] LIKE 'MOTOR%'        THEN 'MOTOR'
+              ELSE 'OTRO' END, LD.[CM]
+ORDER BY CompTipo, Filas DESC;
+GO
+
+
+-- ==== BLOQUE 137 - REPRODUCIR el acumulado de Carlos: CA3195 MT LH Fe = 3718.6 ====
+-- POR QUE: es el bloque B de la ronda 23/09, que llevaba bloqueado desde el 25/09 porque la cifra
+--   no salia con ningun criterio. Carlos dio el metodo: En Uso + CM por componente + TODA la vida.
+--   Hoy la vista muestra 5124.2 (38 muestras) porque (a) no filtra ComponentStatus, (b) no filtra CM
+--   y (c) la fundacion ventanea a 12 MESES -> lo que hoy llamamos "Sigma vida" son 12 meses.
+-- ⚠ Ajustar el literal de ComponentStatus con lo que devuelva el BLOQUE 136.1.
+DECLARE @EnUso nvarchar(50) = N'En Uso';   -- <== poner aqui el valor real de 136.1
+SELECT COUNT(*)                              AS Muestras,
+       CAST(SUM(LD.[Fe_ppm]) AS decimal(18,1)) AS SumaFe,
+       MIN(LD.[FechaMuestreo])               AS Desde,
+       MAX(LD.[FechaMuestreo])               AS Hasta
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] = 'CA3195'
+  AND LD.[Compartimiento] LIKE '%TRACCION%LH'
+  AND LD.[ComponentStatus] = @EnUso
+  AND LD.[CM] IN ('ADI','C');           -- regla de MOTOR DE TRACCION
+GO
+-- 137.2 Las mismas filas, una por una, para cuadrar 1:1 contra la tabla dinamica de Carlos.
+--       TOP acotado: un componente en uso no deberia pasar de unas decenas de muestras.
+SELECT TOP (200) LD.[FechaMuestreo], LD.[CM], LD.[ComponentStatus],
+       LD.[Fe_ppm], LD.[Indice_PQ], LD.[Cr_ppm], LD.[Horometro], LD.[HorasDeAceite]
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] = 'CA3195'
+  AND LD.[Compartimiento] LIKE '%TRACCION%LH'
+  AND LD.[ComponentStatus] = N'En Uso'
+ORDER BY LD.[FechaMuestreo] DESC;
+GO
+-- 137.3 CUANTO CUESTA leer toda la vida (sin la ventana de 12 meses). Es el riesgo del bloque C:
+--       el GROUP BY va sobre 9 anos. Mirar "elapsed time" y "logical reads" en Messages.
+--       Si esto es caro, la vista dedicada vw_AcumuladoVida NO se cablea sin resolverlo antes.
+SET STATISTICS IO ON; SET STATISTICS TIME ON;
+SELECT ME.[Code] AS Equipo, LD.[Compartimiento],
+       CAST(SUM(LD.[Fe_ppm]) AS decimal(18,1)) AS Fe_Acum, COUNT(*) AS Muestras
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+WHERE MP.[Name] LIKE '%Antapaccay%'
+  AND LD.[ComponentStatus] = N'En Uso'
+  AND LD.[Compartimiento] LIKE '%TRACCION%'
+  AND LD.[CM] IN ('ADI','C')
+GROUP BY ME.[Code], LD.[Compartimiento];
+SET STATISTICS IO OFF; SET STATISTICS TIME OFF;
+GO
+
+
+-- ==== BLOQUE 138 - Los 22 limites que [Eqpcare].[lc] SI tiene y la fundacion NO lee ====
+-- POR QUE: es la raiz del bloque D. vw_LimitesPorComponente mapea 16 de los 38 parametros de lc.
+--   Esto muestra, para el caso que Carlos miro en pantalla, que el dato ESTA.
+SELECT [Proyecto], [COMPONENTE], [MODELO],
+       [FOSFORO - LP], [FOSFORO - LC],           -- P, invertido (LP 280 > LC 240)
+       [BORO - LP], [BORO - LC],
+       [MOLIBDENO - LP], [MOLIBDENO - LC],
+       [TAN - LP], [TAN - LC],
+       [ISO 4um - LP], [ISO 4um - LC], [ISO 6um - LP], [ISO 6um - LC],
+       [ISO 14um - LP], [ISO 14um - LC],
+       [VISC - LPI], [VISC - LCI], [VISC - LPS], [VISC - LCS],       -- los 4 niveles de V100
+       [VISC40 - LPI], [VISC40 - LCI], [VISC40 - LPS], [VISC40 - LCS],
+       [H20 - LP], [H20 - LC], [HOLLIN - LP], [HOLLIN - LC],
+       [TBN - LP], [TBN - LC]                     -- de TBN hoy solo se lee el LP
+FROM [Eqpcare].[lc] WITH (NOLOCK)
+WHERE [Proyecto] LIKE '%ANTAPACCAY%' AND [COMPONENTE] LIKE '%TRACCION%';
+GO
+-- 138.2 Lo mismo para el MOTOR de Antapaccay (donde Carlos dijo que SI van los 4 niveles de
+--       viscosidad, y donde el codigo de limpieza NO se mide).
+SELECT [Proyecto], [COMPONENTE], [MODELO],
+       [VISC - LPI], [VISC - LCI], [VISC - LPS], [VISC - LCS],
+       [ISO 4um - LP], [ISO 6um - LP], [ISO 14um - LP],
+       [HOLLIN - LP], [HOLLIN - LC], [OXI - LP], [SULF - LP], [NIT - LP],
+       [TBN - LP], [TBN - LC], [TAN - LP], [TAN - LC]
+FROM [Eqpcare].[lc] WITH (NOLOCK)
+WHERE [Proyecto] LIKE '%ANTAPACCAY%' AND [COMPONENTE] LIKE 'MOTOR%'
+  AND [COMPONENTE] NOT LIKE '%TRACCION%';
+GO
+
+
+-- ==== BLOQUE 139 - COBERTURA: cuantos de los 38 parametros trae cada proyecto/componente/modelo ====
+-- POR QUE: antes de mapear los 22 hay que saber cuales estan realmente cargados y cuales vienen NULL.
+--   Un parametro sin fila NO es lo mismo que un parametro que no se mide en ese componente: hoy los
+--   dos se pintan '—' y se confunden. Tabla chica (64 filas): barato.
+SELECT [Proyecto], [COMPONENTE], [MODELO],
+       CASE WHEN [FOSFORO - LP]  IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [BORO - LP]     IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [MOLIBDENO - LP]IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [TAN - LP]      IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [ISO 4um - LP]  IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [ISO 6um - LP]  IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [ISO 14um - LP] IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [VISC - LPI]    IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [VISC40 - LPI]  IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [H20 - LP]      IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [HOLLIN - LP]   IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [OXI - LP]      IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [SULF - LP]     IS NULL THEN 0 ELSE 1 END
+     + CASE WHEN [NIT - LP]      IS NULL THEN 0 ELSE 1 END AS DeLos14NuevosRelevantes,
+       CASE WHEN [TBN - LC] IS NULL THEN 'sin LC' ELSE 'con LC' END AS TBN
+FROM [Eqpcare].[lc] WITH (NOLOCK)
+ORDER BY [Proyecto], [COMPONENTE], [MODELO];
+GO
+
+
+-- ==== BLOQUE 140 - H3/H4: el scope del ranking y el parametro Hollin ====
+-- H3: /ranking antapaccay mtlh PQ 20 mezclo equipos 3114..3118 (sin limites) con los CA####.
+--     Ver que son y de que proyecto/modelo cuelgan.
+SELECT ME.[Code] AS Equipo, MP.[Name] AS Proyecto, EF.[Model] AS Modelo, COUNT(*) AS Muestras
+FROM [Mine].[MiningEquipment] ME WITH (NOLOCK)
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+LEFT JOIN [Mine].[EquipmentFleet] EF WITH (NOLOCK) ON EF.[Id] = ME.[EquipmentFleetId]
+LEFT JOIN [Oil].[LaboratoryData]  LD WITH (NOLOCK) ON LD.[MiningEquipmentId] = ME.[Id]
+WHERE ME.[Code] IN ('3114','3115','3116','3117','3118','6114','6116','8108')
+GROUP BY ME.[Code], MP.[Name], EF.[Model]
+ORDER BY Proyecto, Equipo;
+GO
+-- H4: el fallback dijo que "Hollin no esta en la base". Comprobar las dos caras:
+--     (a) el LIMITE existe en lc  (b) existe o no la COLUMNA de valor en LaboratoryData.
+SELECT [Proyecto], [COMPONENTE], [MODELO], [HOLLIN - LP], [HOLLIN - LC]
+FROM [Eqpcare].[lc] WITH (NOLOCK)
+WHERE [HOLLIN - LP] IS NOT NULL;
+GO
+SELECT c.name AS Columna, t.name AS Tipo
+FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id
+WHERE c.object_id = OBJECT_ID('[Oil].[LaboratoryData]')
+  AND (c.name LIKE '%ollin%' OR c.name LIKE '%oot%' OR c.name LIKE '%TAN%'
+       OR c.name LIKE '%ISO%' OR c.name LIKE '%V40%' OR c.name LIKE '%Agua%'
+       OR c.name LIKE '%H2%' OR c.name LIKE '%Mo[_]%')
+ORDER BY c.name;
+GO

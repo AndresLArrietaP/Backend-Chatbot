@@ -1,6 +1,6 @@
-# Pendientes KomfIA — backlog único · foco: **ronda 23/09 (Carlos)**
+# Pendientes KomfIA — backlog único · foco: **ronda 28/09 (Carlos + Franco)**
 
-> **Este es EL backlog.** Si algo está pendiente, está aquí. Actualizado 2026-09-24.
+> **Este es EL backlog.** Si algo está pendiente, está aquí. Actualizado 2026-09-28.
 > Config canónica → [CONFIG_TEMAS](CONFIG_TEMAS.md) · [CONFIG_FLUJOS](CONFIG_FLUJOS.md) · [CONFIG_PROMPTS](CONFIG_PROMPTS.md) · [CONFIG_COMANDOS](CONFIG_COMANDOS.md) · [CONFIG_TIMEOUT](CONFIG_TIMEOUT.md)
 > **Formato y límites (nuevo, 24/09)** → [FORMATO_POR_COMPONENTE](../arquitectura/FORMATO_POR_COMPONENTE.md) · [LIMITES_FALLBACK](../arquitectura/LIMITES_FALLBACK.md)
 > Pruebas → [../pruebas/PRUEBAS_ALFA_COMANDOS.md](../pruebas/PRUEBAS_ALFA_COMANDOS.md) · Marchas → [../pruebas/MARCHA_ALFA_0918.md](../pruebas/MARCHA_ALFA_0918.md) · [../pruebas/MARCHA_ALFA_0923.md](../pruebas/MARCHA_ALFA_0923.md)
@@ -650,7 +650,247 @@ por qué. **Hay que re-pegar el prompt.**
 
 ---
 
-# 🔥 RONDA 23/09 — feedback dCarlos · **foco actual**
+# 🔥 RONDA 28/09 — Carlos + Franco · **foco actual**
+
+> Sesión del 28/09 (3 audios + la marcha completa en Teams). Es **más grande que la del 23/09** y toca
+> sobre todo lo que creíamos resuelto: **los límites**. Además llega el detalle de que el formato de
+> `Requerimientos Analisis Aceite 1.xlsx` aplica a **más módulos de los que creíamos**, incluido Historial.
+>
+> ⚠ **Compromiso de fecha:** Franco pidió la presentación interna «final» para el **viernes 02/10, 19:30**.
+
+## La raíz, antes de los bloques: los límites SÍ están en la base
+
+Carlos repitió cinco veces «acá no sale el límite» (fósforo, viscosidad, código de limpieza ISO, TAN…).
+Lo di por «falta cargarlo en `lc`». **Era nuestro.**
+
+`[Eqpcare].[lc]` tiene **38 parámetros** con su par LP/LC. `vw_LimitesPorComponente` — la vista que los
+lleva a la fundación — lee **16**. Nunca se mapearon los otros **22**:
+
+```
+FOSFORO · BORO · BARIO · CADMIO · VANADIO · OXI · SULF · NIT · HOLLIN · MOLIBDENO
+ISO 4um · ISO 6um · ISO 14um · Glycol · H20 · VISC40 · AW% · TAN · Diesel
+PLATA · ANTIMONIO · LITIO        (+ de TBN solo se lee el LP, nunca el LC)
+```
+
+Eso explica, de una sola causa, **todos** los «—» que Carlos señaló en `/ultimo 3195 mtlh`: `P`, `B`, `Mo`,
+`Agua`, `ISO>4`, `ISO>6`, `ISO>14`, `V40`. No falta dato: falta leerlo.
+
+📌 **Y de paso corrige una conclusión mía del 24/09.** El BLOQUE 102 declaró `vw_LimitesFallback`
+descartada porque `lc` «tiene exactamente las mismas 64 filas» que el Excel. Las **filas** sí — son
+proyecto+componente+modelo. Las **columnas** no las miré. El fallback no hacía falta; el mapeo sí.
+
+---
+
+## Mapa: el feedback → dónde se arregla
+
+| # | Pedido | Dónde | Bloque |
+|---|---|---|---|
+| 1 | `/grafica` absorbe `/tendenciametal` (un solo comando) | `vw_TendenciaGraficoMD` + tema + comando | **A** |
+| 2 | `/tendencia`: quitar la tabla de límites | `vw_TendenciaMD` | **B** |
+| 3 | Σvida: filtrar **En Uso** + `CM` por componente | fundación + `vw_TendenciaElemento` | **C** |
+| 4 | Faltan los límites en `/ultimo` (y en todo lo demás) | `vw_LimitesPorComponente` + fundación | **D** |
+| 5 | Encabezado de muestra en `/diagcompleto` y `/condicionmt` | `vw_DiagnosticoMD`, `vw_CondicionMT_MD` | **E** |
+| 6 | Historial: todos los metales + 2 formatos a tantear | las 5 vistas de historial | **F** |
+| 7 | Acumulados y ranking: componente + renombres | `vw_Acumulados*MD`, comandos | **G** |
+| 8 | Bugs sueltos de la marcha | varios | **H** |
+
+**Orden de ataque propuesto:** **D → C → A → B → E → F → G → H.**
+`D` primero porque es la raíz y desbloquea lo que Carlos ve en pantalla en casi todos los módulos.
+`C` segundo porque **cierra el bloque B de la ronda 23/09**, que llevaba bloqueado desde el 25/09.
+
+---
+
+## 🅳 Bloque D — los 22 parámetros de límite que nunca se leyeron  ⭐ RAÍZ
+
+**Qué hacer:** ampliar `vw_LimitesPorComponente` para mapear los 22 pares que faltan, y propagarlos a la
+tabla de parámetros de cada vista. Es aditivo y es SQL puro.
+
+**Lo que Carlos precisó sobre cada uno (audio 09.14):**
+
+- **Fósforo (`P`) es INVERSO.** `LP 280 / LC 240`: parte de un número y lo que se vigila es que **no caiga**.
+  Ya está en la lista `Inv` de aditivos, pero sin límite mapeado nunca se evaluó.
+- **Viscosidad: cuatro niveles, no dos.** `LC inferior · LP inferior · LP superior · LC superior`. La
+  viscosidad **parte con un valor** y puede irse para arriba o para abajo; se vigila que se mantenga en la
+  banda entre los precautorios.
+  ⚠ **Y no es igual para todos los componentes:** en **MT solo existe el crítico** (así está en el manual);
+  en **motor diésel sí van los cuatro**. Hay que personalizar por componente, no aplicar los 4 a todo.
+- **V100 vs V40** = la misma medida a 100 °C y a 40 °C. 100 °C para motores, 40 °C para aceites
+  industriales. **Antapaccay solo mide V100; Antamina mide las dos.** Depende de la mina → mostrar la que
+  tenga dato, no asumir.
+- **Código de limpieza ISO 4/6/14:** es un contador de partículas por tamaño (4, 6 y 14 micras), y el número
+  es **adimensional y logarítmico**: cada punto que sube **duplica** las partículas (20 ≈ 40 000 → 21 ≈
+  80 000). En Antapaccay **el motor no lo mide**; el resto de componentes sí.
+- **TAN vs TBN:** el TBN mide reserva alcalina (**solo motor**); el TAN mide acidificación. En Antapaccay el
+  TAN sale en **ruedas e hidráulico**, no en MT. En otras minas puede medirse en todo.
+- **PQ:** en hidráulico y transmisión normalmente **no se mide**; lo sacan esporádicamente cuando la muestra
+  viene con particulado concentrado. Que no salga no es un hueco.
+
+**Regla que ordena todo esto:** un parámetro puede **no medirse** en un componente, y eso es distinto de
+**no tener límite**. Hoy los dos se pintan `—` y se confunden.
+
+⚠ **Carlos va a modificar la base:** va a **eliminar los límites de aditivos en las ruedas** («no tiene
+mucho sentido»), cargándolos desde el externo. O sea que `lc` va a cambiar bajo nuestros pies.
+→ El mapeo debe ser **data-driven** (si no hay fila, no hay límite), nunca una lista fija.
+
+**Verificación:** BLOQUES **139** y **140** de `VALIDACION_SSMS.sql`.
+
+---
+
+## 🅲 Bloque C — Σvida: «En Uso» + `CM` por componente  ⭐ CIERRA EL BLOQUE B DEL 23/09
+
+Esto es **la respuesta que faltaba**. El 25/09 el bloque B quedó bloqueado porque la cifra de Carlos
+(**6 785,39**) no se reproducía con ningún criterio. Ahora dio el método completo:
+
+**1 · Filtrar por «En Uso».** Existe: **`[Oil].[LaboratoryData].[ComponentStatus]`** — está en la tabla
+viva, nunca la usamos (`grep` en `DDL_vistas.sql`: 0 apariciones). Marca las muestras que pertenecen al
+componente **actualmente instalado**. Es lo que convierte «suma de muestras» en «vida del componente».
+> 📌 Esto corrige la nota de [[komfia_esddi_filtro_no_opera]]: `CM` no marca el cambio de componente, pero
+> **`ComponentStatus` sí** dice cuál está en uso.
+
+**2 · Filtrar `CM`, y es distinto por componente:**
+
+| Componente | `CM` que suma |
+|---|---|
+| **Motor de Tracción** | `ADI` y `C` |
+| **Rueda delantera** | solo `C` |
+| **Motor diésel (MODI)** | **todos** |
+| **Sistema hidráulico** | solo `C` |
+
+Tiene sentido físico: se cuenta la muestra **antes** del dializado (`ADI`), no la de después (`DDI`), que
+mediría aceite ya filtrado.
+
+**3 · Quitar el «(nº de muestras)»** del display: queda solo el acumulado.
+
+🔴 **El obstáculo real, y hay que decirlo antes de tocar nada:** hoy el Σvida se calcula sobre
+`vw_MuestrasRankeadas`, que cuelga de la fundación, que tiene **`WHERE FechaMuestreo >= DATEADD(MONTH,-12,…)`**.
+Es decir, **el Σvida de hoy son 12 meses, no la vida del componente** — por eso nunca iba a cuadrar.
+Para cuadrar hay que leer **toda la historia** (9 años) con el filtro de `ComponentStatus`, y eso choca de
+frente con la razón por la que existe esa ventana (**ley 2/3**: la fundación se rankea sobre 1 año porque
+el window function bloquea el push-down).
+
+**Diseño propuesto:** una vista **dedicada** `vw_AcumuladoVida`, que lea `[Oil].[LaboratoryData]`
+**directo** (sin la fundación, sin window functions), filtre `ComponentStatus` + `CM` por componente y
+haga `GROUP BY equipo+compartimiento+parámetro`. `vw_TendenciaElemento` la consume con un `LEFT JOIN`.
+Un `GROUP BY` sin ventana sobre un índice existente es barato; **medir antes de cablearla**.
+
+**Objetivo de verificación (dato de Carlos):** `CA3195 · MT LH · Fe` debe dar **3 718,6**.
+Hoy la vista muestra **5 124,2 (38)**. BLOQUES **137** y **138**.
+
+---
+
+## 🅰 Bloque A — `/grafica` absorbe `/tendenciametal`
+
+**Por qué:** «no le veo sentido tener la tendencia del PQ de todos los elementos cuando lo que quiero
+analizar es un elemento en particular» + «para no tener tantos comandos».
+
+**Firma nueva:** `/grafica ‹equipo› ‹componente› ‹metal›` — los tres **obligatorios** (hoy el componente y
+el metal eran opcionales). `/tendenciametal` se desactiva (**no se borra el nodo**, ley 8).
+
+**La tabla que pidió, de arriba abajo:**
+
+1. **Encabezado de campos × las 6 fechas** — el bloque que ya existe (SMR · Hrs Aceite · Hrs Comp · CM ·
+   Estado · Grado). De aquí se «sobreentienden» el grado, las horas de componente y la última muestra: por
+   eso las columnas equivalentes del viejo `/tendenciametal` **sobran**.
+2. **Bajo ese mismo encabezado, las filas del metal elegido** — y aquí está el pedido fino: `Σvida`,
+   `Prom`, `σ` y `Nº fuera de límite` dejan de ser una tabla aparte y pasan a ser **filas repartidas en las
+   6 columnas de fecha**, para ver **cómo fue cambiando cada indicador en las 6 últimas muestras**.
+3. **Límites de referencia** — como **texto**, en una línea (`LP 130.0 · LC 150.0`), no como tabla.
+4. **La gráfica ASCII.**
+5. **Sin `Spark`** — la gráfica lo reemplaza.
+
+⚠ **Decisión abierta (la planteó él mismo):** «raro de ver, pero es eso o quitarlos». Un `Prom` o un `σ`
+que cambian columna a columna son **acumulados móviles**, y en una tabla de 6 fechas se leen mal.
+**Mi recomendación:** `Σvida` **sí** como fila de 6 columnas (es acumulativo por naturaleza y se lee
+solo); `Prom`, `σ` y `Nº fuera de límite` **una sola vez**, en la línea de texto junto a los límites. Se
+puede prototipar de las dos formas en un bloque de validación y que él elija. **Pendiente de su visto bueno.**
+
+---
+
+## 🅱 Bloque B — `/tendencia`: fuera la tabla de límites
+
+Literal: «en tendencia quito los límites». Molesta porque la matriz ya trae muchos parámetros y la tabla
+de límites de abajo repite a lo ancho. Se quita de `vw_TendenciaMD`.
+⚠ Ojo: **no** se quita de `/grafica` (bloque A), donde queda como línea de texto, ni de los módulos de flota.
+
+---
+
+## 🅴 Bloque E — encabezado de muestra en `/diagcompleto` y `/condicionmt`
+
+Hoy solo `/ultimo` lo tiene:
+`Mod. 980E · Lubric. SHELL OMALA S4 GXV 680 · SMR 36279 · Hor.Comp. 8491 · T. muestra ADI · 26-Sep-26`
+
+Carlos lo pidió en los otros dos: «acá deberías añadirle como encabezado los datos: aceite, el SMR, horas
+del componente, la fecha, asociada a esa muestra».
+
+⚠ **Y aquí hay un detalle que él no mencionó y que conviene resolver antes de construir:** en
+`/condicionmt` y `/diagcompleto` hay **varios componentes**, cada uno con **su** fecha, su grado y sus
+horas. Un encabezado único mentiría. Opciones: (a) filas de encabezado **dentro** de la matriz, una por
+campo, con una columna por componente — coherente con la tabla que ya existe; (b) un encabezado por
+componente encima de su columna. **(a) es la que encaja con el formato actual.**
+
+⛔ Lo que **no** quiere: columnas de límite en esas dos tablas («No, no. Todavía se entiende que se está
+observando»).
+
+---
+
+## 🅵 Bloque F — Historial: todos los metales, y dos formatos a tantear
+
+**Lo que falta:** hoy el historial muestra solo `Met. Obs.` (los observados). Carlos quiere **todos los
+parámetros**, en el **orden oficial del formato**: salud → aditivos → contaminación → desgaste → código de
+limpieza. Es decir, el formato de `Requerimientos Analisis Aceite 1.xlsx` **también aplica aquí** — ese es
+el hallazgo que amplía el alcance.
+
+**Los dos formatos a probar** (él mismo dudó y pidió tantear los dos):
+
+| | Filas | Columnas | A favor | En contra |
+|---|---|---|---|---|
+| **Horizontal** | parámetros | **fechas** | es el formato del Excel que él pasó; se lee como la tendencia | con un rango largo (2 años) se va a lo ancho y **las tarjetas no tienen scroll** (ley 9) |
+| **Vertical** | **fechas** | parámetros | crece hacia abajo, que sí scrollea en Teams | ~25 columnas de metales es mucho a lo ancho igual |
+
+Él se inclina por el horizontal («para mí sería más chévere así, pero qué limitante hay»). **Se construyen
+los dos y elige viendo.** Aplica a las 5 variantes: `/historial`, `/historialmetal`, `/historialflota` y las
+de equipo.
+
+---
+
+## 🅶 Bloque G — Acumulados y ranking
+
+- **`/acumulados` necesita componente.** Hoy es solo motor diésel (envuelve el dashboard *Ranking de
+  Atención*). Carlos quiere ver también **MT**, ruedas e hidráulico: «hay acumulado de MT, hay acumulado de
+  ruedas». Con el bloque **C** resuelto, el acumulado por componente sale de la misma fórmula.
+  → Dependencia: **C antes que G**.
+- **Renombre:** el ranking de acumulados de motor diésel debería llamarse por lo que es.
+  Propuesta de Carlos: **`/rankingmod`** (o `rmod`), liberando `/rankingacum`.
+- ⚠ Sigue en pie que **Acumulados solo existe para Antapaccay** (`/rankingacum antamina` responde que no
+  hay datos). Eso es correcto y está explicado, pero conviene decirlo en la descripción del tema.
+
+---
+
+## 🅷 Bloque H — bugs sueltos de la marcha del 28/09
+
+| | Qué pasó | Nota |
+|---|---|---|
+| **H1** | **`/ranking` a secas** respondió literalmente **«Tas a una»** | Basura. Sin parámetros debe pedirlos o mandar a `/comandos`, no inventar texto |
+| **H2** | **`/ayuda`** respondió dos cosas distintas seguidas: primero «indica específicamente qué concepto…», luego la tabla completa | La aleatoriedad del 17/09 **no está cerrada** |
+| **H3** | `/ranking antapaccay mtlh PQ 20` mezcló equipos **`3114`…`3118`** sin límites (`—/—`) junto a los `CA####` | ¿Otro modelo/mina en el mismo ranking? Verificar el scope |
+| **H4** | `/ranking antapaccay motor hollin 20` → «alta demanda», y al reintentar respondió que `Hollín` no existe | **Sí existe**: `HOLLIN - LP/LC` está en `lc` (bloque D). La respuesta era falsa |
+| **H5** | `/conteo antapaccay d475` lista un componente llamado **`nan`** | Ya estaba anotado; sigue vivo |
+| **H6** | `/triage mtrh antapaccay 980` salió con columnas descuadradas (`Salud`, `Hrs Comp`) | Solo en la variante `mtrh`; con `mt` sale bien |
+| **H7** | `/rankingacum antamina` devolvió **el de Antapaccay** y debajo el aviso de que Antamina no tiene datos | Contradictorio: imprime una tabla que no corresponde |
+
+---
+
+## ❓ Preguntas abiertas antes de construir
+
+1. **El último punto del mensaje quedó cortado** (termina en «`-`»). ¿Qué faltaba?
+2. **Bloque A:** ¿`Prom`/`σ`/`Nº fuera de límite` como filas de 6 columnas, o una sola vez como texto?
+3. **Qué parámetros pasan de opcionales a obligatorios**, exactamente. Confirmado `/grafica` (equipo +
+   componente + metal). ¿Alguno más?
+4. **Cuándo va a tocar Carlos los límites de aditivos en ruedas**, para no medir contra un `lc` que cambia.
+
+---
+
+# ✅ RONDA 23/09 — feedback de Carlos · **CERRADA (27/09)**
 
 **Contexto:** primera prueba **directa por gerencia**, no por el dev. El ingeniero Carlos recibió la cuenta
 de Confiabilidad y probó KomfIA en Teams. Salieron 14 observaciones. Plazo de trabajo: esta semana.
