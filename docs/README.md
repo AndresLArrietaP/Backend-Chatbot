@@ -29,6 +29,7 @@ docs/
 │   ├── CONFIG_TIMEOUT.md           Las 3 capas contra el corte del conector
 │   ├── KomfIA_central_MD.docx      Instrucción DESPLEGADA del orquestador (tope 8000 UTF-16)
 │   ├── KomfIA_SQL_MD.docx          Instrucción DESPLEGADA del sub-agente de respaldo
+│   ├── pendientes-legado/          Versiones retiradas del backlog (NO son el backlog)
 │   ├── prompts/                    analisis_prompts.md · ayuda_glosario.md · formateo_fallback.md
 │   ├── tarjetas/                   Adaptive Cards + el plan de tarjetas con datos
 │   └── knowledge/                  .docx de referencia — NO cargados en el agente (ver su README)
