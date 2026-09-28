@@ -27,19 +27,19 @@ docs/
 │   ├── CONFIG_TIMEOUT.md           Las 3 capas contra el corte del conector
 │   ├── KomfIA_central_MD.docx      Instrucción DESPLEGADA del orquestador (tope 8000 UTF-16)
 │   ├── KomfIA_SQL_MD.docx          Instrucción DESPLEGADA del sub-agente de respaldo
-│   ├── prompts/                    Texto de cada prompt (análisis universal, ayuda, fallback)
+│   ├── prompts/                    analisis_prompts.md · ayuda_glosario.md · formateo_fallback.md
 │   ├── tarjetas/                   Adaptive Cards + el plan de tarjetas con datos
 │   └── knowledge/                  .docx de referencia — NO cargados en el agente (ver su README)
 │
-├── pruebas/                    ← bancos de prueba y registros de marcha
-│   ├── PRUEBAS_ALFA_COMANDOS.md    Set vigente: 32 pruebas, cada consulta con su comando
-│   ├── KomfIA_Preguntas y Respuestas 2.xlsx           Banco con espacio para capturas
-│   ├── KomfIA_Pruebas con imagenes (pre-cambios limites) 2026-07.xlsx   Evidencia histórica
-│   ├── MARCHA_ALFA_0918.md         Registro de la 1ª alfa viva con gerencia
-│   └── MARCHA_ALFA_0923.md         Registro de la ronda de feedback de Carlos
+├── pruebas/                    ← sets de prueba y registros de marcha (ver su README)
+│   ├── PRUEBAS_ALFA_COMANDOS.md    SET VIGENTE: 32 pruebas, cada consulta con su comando
+│   ├── MARCHA_ALFA_0918.md         Registro congelado: 1ª alfa viva con gerencia
+│   ├── MARCHA_ALFA_0923.md         Registro congelado: ronda de feedback de Carlos
+│   └── *.xlsx (julio)             Evidencia «antes de los límites» — no son sets reutilizables
 │
-├── gerencia/                   ← fuentes oficiales del área y el acta (FUERA del repositorio)
-├── avance-semanal/             ← un reporte por semana
+├── gerencia/                   ← actas y fuentes oficiales del área (ver su README)
+│                                  versionadas por EXCEPCIÓN, una por una, en el .gitignore
+├── avance-semanal/             ← un .md por semana y por proyecto (ver su README + _PLANTILLA)
 └── schemaaceites 1 (1).xlsx    ← ESQUEMA CANÓNICO de la BD (1964 filas, incluye las 49 vistas)
 ```
 

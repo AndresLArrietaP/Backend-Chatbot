@@ -1734,7 +1734,7 @@ GO
 
 /* ==== vw_Recomendaciones (diccionario de indicios, para el bloque determinístico) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_Recomendaciones] AS
-/* Diccionario de indicios (verbatim de Recomendaciones_MT.docx). metal -> unidad+indicio.
+/* Diccionario de indicios (verbatim de legado/02-copilot-multiagente/knowledge/Recomendaciones_MT.docx). metal -> unidad+indicio.
    Fe/PQ comparten unidad; Pb/Sn comparten. Extensible: agregar filas por (CompTipo,)metal. */
 SELECT metal, ord, label, indicio
 FROM (VALUES

@@ -18,10 +18,17 @@ CLAUDE.md
 # instrucciones desplegadas en Copilot Studio (se editan directo, no por generador).
 # En docs/arquitectura/ no debe quedar ningun .docx (los historicos estan en legado/).
 docs/arquitectura/*.docx
-# Gerencia: archivos pesados del área y el acta (se editan fuera del repo).
-# El README que los clasifica SÍ se versiona.
+# Gerencia: por defecto NADA se versiona (pueden caer .pptx/.xlsm pesados ahi).
+# Se versionan por EXCEPCION las actas y las fuentes oficiales del area: son
+# irreemplazables y pesan poco (<1 MB cada una, muy lejos del limite de GitHub).
 docs/gerencia/*
 !docs/gerencia/README.md
+!docs/gerencia/ACTA DE REUNION_PROYECTOS DE DESARROLLO CONFIABILIDAD.xlsx
+!docs/gerencia/ACTA DE REUNION_PRUEBA DE ACEITES EN MTs_ANTAMINA.xlsx
+!docs/gerencia/LIMITES CONDENATORIOS 1.xlsm
+!docs/gerencia/Requerimientos Analisis Aceite 1.xlsx
+!docs/gerencia/Limites.xlsx
+!docs/gerencia/formatos 1.xlsx
 # PDFs de pruebas: pesados y regenerables desde el .docx (Word/LibreOffice).
 docs/pruebas/*.pdf
 

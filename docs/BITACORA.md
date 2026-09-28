@@ -396,9 +396,9 @@ Backend-Chatbot/
 │   ├── BITACORA.md              ← este documento
 │   ├── arquitectura/            ← SQL y diseño (lo que se despliega en la BD)
 │   ├── copilot/                 ← configuración del agente + backlog único
-│   ├── pruebas/                 ← bancos de prueba y registros de marcha
-│   ├── gerencia/                ← fuentes oficiales del área y el acta (fuera del repo)
-│   └── avance-semanal/          ← un reporte por semana
+│   ├── pruebas/                 ← set vigente + registros de marcha congelados
+│   ├── gerencia/                ← actas y fuentes oficiales del área
+│   └── avance-semanal/          ← un reporte por semana y por proyecto
 ├── tools/                       ← generador de la tarjeta de comandos
 └── legado/                      ← hitos 1 y 2, archivados
     ├── 01-python-api/
