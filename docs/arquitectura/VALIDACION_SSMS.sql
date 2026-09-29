@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   165 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   166 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -185,6 +185,7 @@
      BLOQUE 162  PASO 5c (N): el contador del triage sale de las celdas
      BLOQUE 163  PASO 6 (B): /tendencia sin la tabla de limites
      BLOQUE 164  Rehacer las dos comprobaciones del 163 que no probaban nada
+     BLOQUE 165  B2: el aviso se dispara por los limites QUE HACEN FALTA
    ============================================================================ */
 
 /* ============================================================================
@@ -7121,3 +7122,81 @@ FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
 WHERE Equipo IN (N'HT079', N'HT080')
 GROUP BY Equipo, Compartimiento;
 GO
+
+
+-- RESULTADOS BLOQUE 164.4/164.5 (29/09) -- 🔴 EL AVISO NO SALTABA, Y LA CAUSA VENIA DE ANTES.
+--   HT079 y HT080 (930E de Antamina, CERO limites de desgaste) dieron ConAviso = 0, y
+--   MD_Relevantes dijo «Sin parametros fuera de umbral - el componente opera en condicion
+--   normal». Justo la afirmacion que yo di por corregida en el 163.
+--   164.5 descarto la otra explicacion: esos equipos SI llegan a vw_TendenciaElemento (HT079
+--   MOTOR con 27 filas, MT LH/RH con 23). O sea que el problema era el aviso, no el alcance.
+--   CAUSA: 'limflag' preguntaba "¿tiene ALGUN limite?", y estos componentes tienen alguno suelto
+--   (un V100, un TBN) aunque no tengan NI UNO de los metales de desgaste.
+--   ⚑ Y NO ERA UNA REGRESION MIA: el aviso original usaba la misma condicion (limbody NULL solo
+--     si ningun parametro tenia limite). Lo que hice en B fue conservar fielmente un aviso que
+--     casi nunca se disparaba. Conservarlo estuvo bien; darlo por bueno sin probarlo, no.
+
+
+-- ==== BLOQUE 165 - B2: el aviso se dispara por los limites QUE HACEN FALTA ====
+-- QUE CAMBIO: 'limflag' gana 'nLimDesgaste' -- cuantos de los 9 parametros que decide
+--   Estado_General (Fe, PQ, Cr, Ni, Cu, Pb, Sn, Al, Si) tienen limite. El aviso salta cuando ese
+--   numero es 0, no cuando no hay ningun limite en absoluto.
+-- POR QUE ESOS 9: son exactamente los que mira Estado_General. Sin ellos el semaforo verde no
+--   significa nada, que es el problema de los 885 componentes del BLOQUE 164.3.
+-- El texto tambien cambia: dice «para los metales de desgaste» y «el estado no se puede evaluar».
+
+-- 165.1 ⭐⭐ LA PRUEBA QUE FALTABA. HT079/HT080 tienen que dar ConAviso = 1, y MD_Relevantes tiene
+--   que decir «no se puede decir», NO «opera en condicion normal».
+SELECT Equipo, compAbbr,
+       CASE WHEN CHARINDEX(N'Sin límites (LP/LC) cargados', MD) > 0 THEN 1 ELSE 0 END AS ConAviso,
+       LEFT(MD_Relevantes, 240) AS Relevantes
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo IN (N'HT079', N'HT080');
+GO
+
+-- 165.2 ⚠ Y QUE NO SE DISPARE DE MAS. CA3160 tiene limites de desgaste: ConAviso = 0 y sus
+--   relevantes como antes. Si aqui sale 1, el aviso pasa a ser ruido y no se lee mas.
+SELECT Equipo, compAbbr,
+       CASE WHEN CHARINDEX(N'Sin límites (LP/LC) cargados', MD) > 0 THEN 1 ELSE 0 END AS ConAviso
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo IN (N'CA3160', N'3115', N'3117')
+ORDER BY Equipo, compAbbr;
+GO
+
+-- 165.3 ⭐ EL TYPO 'MOTORO DE TRACCION RH', DIMENSIONADO. Andres pregunta si depurarlo o dejarlo.
+--   La respuesta depende de CUANTA data cuelga de el y de si convive con el nombre correcto en el
+--   MISMO equipo -- si convive, ese camion muestra TRES motores de traccion en vez de dos.
+SELECT ME.[Code] AS Equipo,
+       SUM(CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH' THEN 1 ELSE 0 END) AS ConTypo,
+       SUM(CASE WHEN LD.[Compartimiento] = N'MOTOR DE TRACCION RH'  THEN 1 ELSE 0 END) AS Correcto,
+       MIN(CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH' THEN LD.[FechaMuestreo] END) AS TypoDesde,
+       MAX(CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH' THEN LD.[FechaMuestreo] END) AS TypoHasta
+FROM [Oil].[LaboratoryData] LD
+INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE LD.[Compartimiento] IN (N'MOTORO DE TRACCION RH', N'MOTOR DE TRACCION RH')
+GROUP BY ME.[Code]
+HAVING SUM(CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH' THEN 1 ELSE 0 END) > 0
+ORDER BY ConTypo DESC;
+GO
+
+-- 165.4 ¿HAY MAS TYPOS ASI? Si 'MOTORO' no es el unico, normalizar a mano uno por uno es perder
+--   el tiempo: seria una lista de sinonimos, y eso ya es otra decision.
+SELECT LD.[Compartimiento], COUNT(*) AS Muestras, COUNT(DISTINCT ME.[Code]) AS Equipos
+FROM [Oil].[LaboratoryData] LD
+INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
+GROUP BY LD.[Compartimiento]
+ORDER BY COUNT(*) DESC;
+GO
+
+/* SOBRE EL TYPO, MI RECOMENDACION (con el 165.3 delante, no antes):
+   NO normalizarlo en SQL, salvo que el 165.3 muestre que convive con el nombre correcto en los
+   mismos equipos. Razones:
+   - Si se normaliza en la vista, el sintoma desaparece y la carga lo SIGUE metiendo. El error se
+     vuelve invisible, que es como se acumulan los otros cinco que van a Carlos.
+   - Fusionar historiales es irreversible de facto: si alguna vez ese nombre correspondiera a otra
+     cosa, ya no habria como separarlos.
+   - El coste del error hoy es VISIBLE (un componente de mas en la lista), no silencioso. Los
+     errores visibles se arreglan; los silenciosos se heredan.
+   ⇒ Si el 165.3 muestra que SI convive en el mismo equipo, cambia la cosa: ahi el camion aparece
+     con tres motores de traccion y eso ya engana al que lo lee. En ese caso si vale una
+     normalizacion, pero DECLARADA en el codigo y con fecha, no silenciosa. */

@@ -97,7 +97,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5i** | **S** · Cerro Verde: **1 579 muestras sin componente** → **Carlos** | ⏸ **no es SQL** — es carga | **161.1** | dato |
 | **5k** | **U** · **885 componentes sin ningún límite** → **Carlos** | ⏸ **no es SQL** — la más grande | **164.3** | dato |
 | **5l** | **V** · typo en la BD: `MOTORO DE TRACCION RH` | ⏸ **no es SQL** — duplica componente | **164.2** | dato |
-| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** — aviso **por confirmar** | **163** · **164** | determinista |
+| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** · **B2** corrige el aviso — falta ver | **163** · **164** · **165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -1582,3 +1582,41 @@ tienen algún límite.
 
 Lo dejé **comentado y con `'XXXX'` de plantilla**: 0 filas, y 0 filas se lee como «todo bien». Rehecho con
 `HT079`/`HT080`, más un **164.5** que distingue *«el aviso no sale»* de *«ese equipo no llega a la vista»*.
+
+### 🔴 El aviso **no saltaba**, y la causa venía de antes (BLOQUE 164.4)
+
+`HT079`/`HT080` —cero límites de desgaste— dieron `ConAviso = 0`, y `MD_Relevantes` dijo *«el componente
+opera en condición normal»*. Justo la afirmación que di por corregida. El **164.5** descartó la otra
+explicación: esos equipos **sí** llegan a `vw_TendenciaElemento` (27 y 23 filas).
+
+**Causa:** `limflag` preguntaba *«¿tiene **algún** límite?»*, y esos componentes tienen alguno suelto —un
+`V100`, un `TBN`— aunque **ni uno solo** de los metales de desgaste.
+
+⚑ **No era una regresión mía:** el aviso original usaba la misma condición. Lo que hice en B fue
+**conservar fielmente un aviso que casi nunca se disparaba**. Conservarlo estuvo bien; darlo por bueno sin
+probarlo, no.
+
+### ✅ B2 — la pregunta correcta
+
+`limflag` gana `nLimDesgaste`: cuántos de los **9 que decide `Estado_General`** (`Fe`, `PQ`, `Cr`, `Ni`,
+`Cu`, `Pb`, `Sn`, `Al`, `Si`) tienen límite. El aviso salta cuando ese número es **0**. Sin ellos el
+semáforo verde **no significa nada** — que es exactamente el problema de los **885**.
+
+El texto también cambia: «para los **metales de desgaste** de este componente» y «**el estado no se puede
+evaluar**».
+
+### Sobre `MOTORO DE TRACCION RH` — mi recomendación, con una condición
+
+**No normalizarlo en SQL**, salvo que el **165.3** muestre que **convive con el nombre correcto en los
+mismos equipos**. Razones:
+
+- Si se normaliza en la vista, **el síntoma desaparece y la carga lo sigue metiendo**. El error se vuelve
+  invisible, que es como se acumularon los otros cinco que van a Carlos.
+- Fusionar historiales es **irreversible de facto**.
+- El coste hoy es **visible** (un componente de más en la lista), no silencioso. *Los errores visibles se
+  arreglan; los silenciosos se heredan.*
+
+⇒ **Pero si el 165.3 muestra que sí convive en el mismo equipo, cambia la cosa**: ese camión aparecería con
+**tres** motores de tracción, y eso ya engaña a quien lo lee. Ahí sí vale una normalización — **declarada
+en el código y con fecha**, nunca silenciosa. El **165.4** dice además si `MOTORO` es el único typo o hay
+una familia, porque eso cambia la respuesta entera.

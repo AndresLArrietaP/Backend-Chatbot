@@ -2462,9 +2462,20 @@ rowcte AS (
            + ISNULL(REPLACE(REPLACE(CAST(d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
-limflag AS (   -- B (29/09): ya no se arma la tabla de limites, solo se pregunta SI HAY alguno.
-               -- Una cuenta en vez de un STRING_AGG: mas barato y es todo lo que hace falta.
-    SELECT Equipo, Compartimiento, COUNT(*) AS nLim
+limflag AS (   -- B (29/09): ya no se arma la tabla de limites, solo se cuenta.
+    /* ⛔ B2 (29/09) -- LA PREGUNTA ERA LA EQUIVOCADA, Y VENIA DE ANTES.
+       El aviso original se disparaba con "este componente no tiene NINGUN limite". Medido con
+       HT079/HT080 (930E de Antamina, BLOQUE 164.4): no salta, porque tienen algun limite suelto
+       -- un V100, un TBN -- aunque NO TENGAN NI UNO SOLO de los metales de desgaste. Y con eso
+       MD_Relevantes llegaba a afirmar "opera en condicion normal" de un componente que nadie
+       puede evaluar. Son 885 componentes (BLOQUE 164.3).
+       La pregunta correcta no es "¿hay algun limite?" sino "¿hay limite de lo que decide el
+       estado?". Los 9 de desgaste son exactamente los que mira Estado_General: sin ellos el
+       semaforo verde no significa nada. */
+    SELECT Equipo, Compartimiento,
+           COUNT(*) AS nLim,
+           SUM(CASE WHEN Parametro IN (N'Fe',N'PQ',N'Cr',N'Ni',N'Cu',N'Pb',N'Sn',N'Al',N'Si')
+                    THEN 1 ELSE 0 END) AS nLimDesgaste
     FROM te WHERE LP IS NOT NULL OR LC IS NOT NULL
     GROUP BY Equipo, Compartimiento
 ),
@@ -2538,9 +2549,9 @@ SELECT
          tabla, y son 45 combinaciones proyecto+modelo las que lo necesitan (BLOQUE 102). Sin el,
          un componente sin limites se lee igual que uno en regla: fallo silencioso. Sobrevive como
          LINEA DE TEXTO, que era la unica condicion. */
-      + CASE WHEN lf.nLim IS NULL
-             THEN N'_⚠ **Sin límites (LP/LC) cargados** para este componente en este proyecto: los valores se '
-                + N'muestran, pero no hay contra qué compararlos. Esto **no** significa que estén dentro de límite._' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN ISNULL(lf.nLimDesgaste, 0) = 0
+             THEN N'_⚠ **Sin límites (LP/LC) cargados** para los metales de desgaste de este componente: los valores se '
+                + N'muestran, pero no hay contra qué compararlos, y el estado **no se puede evaluar**. Esto **no** significa que estén dentro de límite._' + NCHAR(10) + NCHAR(10)
              ELSE N'' END
       /* Dos 'acumulados' distintos con el mismo nombre coloquial confunden: se dice cual es cual. */
       + N'_**Acum** = suma del metal, solo en metales de desgaste y con el criterio del área: en **Motor de Tracción** las muestras previas al dializado y los cambios, en **Motor** todas, y en **Rueda** e **Hidráulico** solo los cambios. En MT y Motor está acotado al componente instalado hoy; en rueda e hidráulico no, porque la base no registra cuál lo está. Un `—` significa **no se puede calcular**, no cero._' + NCHAR(10) + NCHAR(10)
@@ -2564,8 +2575,8 @@ SELECT
            silencioso que ya estaba: sin limites cargados NADA puede ser 'relevante', asi que la
            vista afirmaba «opera en condicion normal» -- de un componente que nadie pudo evaluar.
            Ahora distingue los dos casos. */
-        ELSE CASE WHEN lf.nLim IS NULL
-                  THEN N'_⚠ **Sin límites (LP/LC) cargados** para este componente: no se puede decir si hay parámetros fuera de umbral._'
+        ELSE CASE WHEN ISNULL(lf.nLimDesgaste, 0) = 0
+                  THEN N'_⚠ **Sin límites (LP/LC) cargados** para los metales de desgaste de este componente: **no se puede decir** si hay parámetros fuera de umbral._'
                   ELSE N'_Sin parámetros fuera de umbral — el componente opera en condición normal._' END END
     AS nvarchar(max)) AS MD_Relevantes
 FROM datehdr d
