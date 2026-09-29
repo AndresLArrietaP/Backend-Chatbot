@@ -81,7 +81,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | # | Qué | DDL | Prueba | Tipo |
 |---|---|---|---|---|
 | **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
-| **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | 📋 patrón listo | **148** nuevo | determinista + rendimiento |
+| **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **escrito** — falta medir | **150** | determinista + rendimiento |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **149** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
@@ -145,12 +145,20 @@ los pasos **2-8** son los que Carlos y Franco van a **ver**. La deuda queda medi
 **Lo que sí se llevó el paso 1, y no es poco:** dos bugs cerrados (uno latente, uno mío) y `[Eqpcare].[lc]`
 de **2 185 scans / 52 440 lecturas** a **17 / 408**.
 
-**2 · L3** — El patrón está escrito en el bloque L. Dos comprobaciones **antes** de aplicarlo:
-(a) que las 9 fuentes expongan `Proyecto` —las de las líneas 3039 y 3448 leen un CTE `base` propio, y si
-no lo lleva es `Msg 207` **al consultar**, no al desplegar—; (b) **medir**, porque es un `EXISTS` por fila
-en vistas de flota.
-**Criterio:** `/triage mt antapaccay` deja de mostrar `### 930E · 18 equipos (0 obs)`, y `/barrido
-antapaccay` sigue diciendo **18 equipos**.
+**2 · L3** — ✅ **escrito el 29/09 (BLOQUE 150).** Las dos comprobaciones previas se hicieron:
+**(a)** los 9 sitios exponen `Proyecto` — verificado uno a uno, incluidos los dos que leen un CTE `base`
+propio (`vw_TriageMD` y `vw_UltimoMetalFlotaMD`); **(b)** la medición va en el 150.6.
+
+⛔ **Lo que NO se tocó, a propósito:** la fila **por-modelo**. Si el usuario nombra un modelo, sale
+aunque no tenga límites. Solo cambia el **default**. Es la salvaguarda de
+[[komfia_barrido_modelo_duplicacion]], que avisa de que colapsar el rollup rompe ese caso.
+
+📌 `vw_ModeloConLimites` pasa a leer `[Eqpcare].[lc]` **directo** (64 filas, sin agregados) en vez de
+`vw_LimitesPorComponente`, que es un `GROUP BY` de 60+ agregados: esto se evalúa **por fila** en vistas de
+flota y no queremos re-derivar ese agregado cada vez.
+
+**Criterio:** `/triage mt antapaccay` deja de mostrar `### 930E · 18 equipos (0 obs)`; **nombrar** `930E`
+sigue devolviendo sus equipos; y `/barrido antapaccay` sigue diciendo **18 equipos**.
 
 **3 · L4** — `vw_RankingMD` tiene que exponer `Modelo` y el flujo filtrarlo. Cierra **H3**.
 
