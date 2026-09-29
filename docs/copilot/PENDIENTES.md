@@ -85,7 +85,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL CERRADO** (152) — el resto es Copilot | **152** | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **CERRADO** (154) | **154** | determinista + rendimiento |
-| **5** | **J** · triage: agrupar metales por familia | ✅ **escrito** — falta ver | **155** | determinista |
+| **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
+| **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | ⏳ **medir antes de escribir** | **156** | decisión |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -259,13 +260,60 @@ componente** — el `Ca` es contaminante en Motor de Tracción y aditivo en el r
 `(CRUZADO)` para `MANDO` y `TRANSMISION`, que no están en el formato por-componente: sin él sus
 parámetros desaparecerían **sin ruido**.
 
-🔴 **El hueco que abre este diseño, y cómo se tapó.** `Estado_General` sigue mirando solo desgaste y
-contaminación, así que **puede haber una fila 🟢 con algo marcado en Aditivos, Salud o Código de
-limpieza**. Sin avisar, eso se lee como contradicción — **el bug E0**. No se arregla cambiando el
-contador (eso es decisión del área): se arregla **diciéndolo**. El pie de la tabla ahora explica que el
-`Estado` y esas tres familias **miden cosas distintas**.
+### ✅ Resultado del BLOQUE 155 (29/09): **J cerrado**
 
-⇒ Que los parámetros nuevos **disparen** `Estado_General` sigue siendo decisión abierta, la misma de **D**.
+`V100(63.5) 🟨` — ya sale con su número. El reparto en familias es correcto: `CA3196` pone `Al` en
+Desgaste, `Si` y `Hollin` en Contaminación y `Sulfatacion`+`Nitracion` en Salud, **tres columnas
+distintas**. El fallback `(CRUZADO)` funciona (`MANDO 8108 → Fe(288.3)`). Contador **sin regresión**:
+sigue en «6 de 54 (3 críticos)». Coste: **Scan count 1**, 2 387 ms (antes ~1 723 ms) — sube por los 20
+parámetros extra, pero **ningún scan nuevo**, que era la condición. `LargoMD` 6 258 « 28 000 de Teams.
+
+El `Warning: Null value is eliminated by an aggregate` es **benigno**: el `MAX(CASE…)` del pivote
+devuelve NULL para las familias sin marcas. No silenciarlo con `SET ANSI_WARNINGS OFF` — apagaría avisos
+que sí importan en otras vistas.
+
+---
+
+## 🔴 5b · M — la pregunta que abrió J, y que es la de fondo
+
+Andrés, viendo el resultado: *«la política que se maneja ahora es que para todos los parámetros a medir,
+si sale fuera de sus límites (si tiene), está observado, desde el hierro o plomo hasta los ISO»*. Y con
+eso, que el triage **liste solo los observados**, filtrando por `‹modelo›`, como `/barrido` pero con otro
+formato.
+
+**Qué mira el triage hoy, literal** ([`DDL_vistas.sql:693`](../arquitectura/DDL_vistas.sql)): `Estado_General`
+solo evalúa **9 parámetros y medio** — `Fe`, `Cr`, `Ni`, `Cu`, `Si`, `Al`, `Pb`, `Sn`, `PQ` sobre LC
+(crítico) o LP (precaución), más `TBN` por debajo. Y eso **tiene sentido**: esos nueve son metal que
+*salió de una pieza*. El triage contesta una sola pregunta — **¿qué componente se está dañando?** — y por
+eso se llama triage. Lo que **no** contesta es si el aceite está bien: Zn agotado, ISO alto, agua, TAN,
+oxidación son **salud del lubricante**, causas y no daños.
+
+⇒ **El triage es un detector de daño, no de desvío.** Lo que lo rompió fue J: las 5 columnas ponen el
+desvío **al lado** del daño, y el contador y la tabla pasan a hablar de cosas distintas.
+
+**A favor de la política de Carlos, y es fuerte:** el resto del sistema **ya cuenta así**.
+`vw_CondicionMTMD` lo cambió en el BLOQUE 118 — *«el contador sale de las celdas marcadas, no de
+Estado_General»* — y eran **119 componentes** con el encabezado contradiciendo a la tabla. El
+inconsistente es **el triage**, no la propuesta. Y si solo se imprimen los observados, la tabla se acorta
+y las 11 columnas caben: resuelve el ancho de paso.
+
+**⚠ El riesgo no es de lógica, es de CANTIDAD.** En la captura del 29/09 el `Zn` sale marcado en casi
+todas las filas de 980E MT (40, 45, 70, 57, 194, 100) y el `ISO>6` también. Si esos disparan, el triage
+pasa de «6 de 54» a algo cercano a «**50 de 54**». **Un triage que marca al 90 % no prioriza nada**, que
+es lo contrario de para qué existe. Y abre una pregunta que no es de SQL: ¿ese `Zn` en MT es real, o el
+límite está mal puesto?
+
+⇒ **BLOQUE 156 — medir antes de escribir.** No toca ninguna vista. Da, por proyecto × componente, cuántos
+saldrían observados con la regla nueva, qué parámetro aporta las marcas, y la distribución de `Zn` e
+`ISO` contra su límite. La lectura está escrita **dentro del bloque**:
+
+| `Nuevo / Total` | Qué se hace |
+|---|---|
+| hasta ~40 % | La propuesta **tal cual**: `Estado_General` mira todo, el triage imprime **solo observados**, `‹modelo›` filtra. |
+| 40–60 % | Igual, pero el **orden** manda: críticos primero, y tope de filas con aviso de recorte. |
+| más de 60 % | **No volver atrás: separar las dos preguntas.** (a) que solo los **críticos** de las familias nuevas disparen; (b) dos contadores: «6 dañados · 48 con desvío»; (c) revisar el límite que el 156.2 señale. |
+
+Esto **también cierra D**, que quedó abierta con exactamente la misma pregunta.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

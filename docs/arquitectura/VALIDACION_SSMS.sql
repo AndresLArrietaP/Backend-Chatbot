@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   156 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   157 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -175,7 +175,8 @@
      BLOQUE 152  PASO 3 (L4): el ranking y el <modelo> -- H3 y el tope silencioso
      BLOQUE 153  PASO 4 (C): reconocimiento ANTES de escribir el Acum
      BLOQUE 154  PASO 4 (C): el Acum desplegado
-     BLOQUE 155  PASO 5 (J): el triage agrupa los metales por familia
+     BLOQUE 155  PASO 5 (J): el triage pasa a 5 COLUMNAS por familia
+     BLOQUE 156  DECISION: 'fuera de limite = observado' para TODO parametro
    ============================================================================ */
 
 /* ============================================================================
@@ -5877,3 +5878,149 @@ GO
 SELECT LEN(MD) AS LargoMD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
 GO
+
+-- RESULTADOS BLOQUE 155 (29/09) -- las 5 columnas funcionan. J CERRADO EN LO TECNICO,
+-- pero ABRE una decision de diseno que se mide en el BLOQUE 156 (leerlo antes de seguir).
+--
+-- 155.1/155.2 ⭐ V100 YA SALE CON SU VALOR. Era la observacion de Andres sobre la captura
+--   anterior: la columna Salud mostraba 'V100' a secas. Ahora: CA3163 MT LH -> V100(63.5) 🟨.
+--
+-- 155.3 ⭐ EL REPARTO EN FAMILIAS ES CORRECTO. MODI, CA3196:
+--     Desgaste Al(2.1) | Contaminacion Si(6.8), Hollin(0.4) | Salud Sulfatacion(3.2), Nitracion(9.1)
+--   Tres familias distintas en tres columnas distintas, cada una con su valor. Y el Hollin cayo
+--   en Contaminacion, no en Salud: eso lo decidio vw_FormatoParametro, no una lista mia.
+--
+-- 155.4 ✅ EL FALLBACK '(CRUZADO)' FUNCIONA. MANDO 8108 -> Fe(288.3) en Desgaste; 8109 ->
+--   ISO>6(23.0) en Cod. Limpieza. Sin el fallback esos parametros habrian desaparecido sin ruido
+--   (MANDO y TRANSMISION no estan en el formato por-componente).
+--
+-- 155.5 ✅ SIN REGRESION DEL CONTADOR. Antapaccay TRACCION sigue en "6 de 54 observados
+--   (3 criticos)", identico al 28/09. Estado_General no se toco.
+--
+-- 155.6 COSTE ACEPTABLE. LaboratoryData: Scan count 1 · 18 211 lecturas. Elapsed 2 387 ms
+--   (antes ~1 723 ms). Sube ~660 ms por los ~20 parametros extra y los 30 TOP 1 contra
+--   vw_FormatoParametro, pero NO aparecio ningun scan nuevo, que era la condicion. Worktable
+--   scan count 1 537 = el pivote MAX(CASE...), esperado.
+--
+-- 155.7 ✅ ANCHO. LargoMD = 6 258 chars, muy por debajo de los ~28 000 de Teams. El limite de
+--   canal no es el problema; lo que hay que MIRAR en Teams es si 11 columnas entran sin cortarse.
+--
+-- ⚑ "Warning: Null value is eliminated by an aggregate or other SET operation."
+--   Es BENIGNO y esperado: el MAX(CASE WHEN GrupoOrden = ...) devuelve NULL para las familias sin
+--   marcas. No hay que silenciarlo con SET ANSI_WARNINGS OFF -- eso apagaria avisos que si
+--   importan en otras vistas.
+--
+-- 🔴 LO QUE ESTE BLOQUE DEJA A LA VISTA, Y QUE ES EL VERDADERO TEMA:
+--   En la captura hay filas 🟢 con Zn y ISO>6 marcados. El pie de la tabla lo explica, pero la
+--   explicacion es un PARCHE: el contador mira 9 metales y la tabla muestra 30. Andres planteo la
+--   politica del area -- "fuera de su limite (si lo tiene) = observado", del Fe al ISO -- que es
+--   la cura de fondo y ya es como cuenta /condicionmt. Antes de implementarla hay que saber a
+--   cuantos equipos marca: ver BLOQUE 156.
+
+
+-- ==== BLOQUE 156 - DECISION: "fuera de limite = observado" para TODO parametro ====
+-- LA PREGUNTA DE ANDRES (29/09): la politica del area es que CUALQUIER parametro fuera de su
+--   limite (si lo tiene) deja el componente observado, del Fe al ISO. Hoy Estado_General solo
+--   mira 9 metales de desgaste + TBN, asi que el triage cuenta una cosa y la tabla muestra otra.
+--
+-- ⚑ ESTO NO ES UNA VALIDACION, ES UNA MEDICION PREVIA. No toca ninguna vista. Decide el diseno
+--   ANTES de escribirlo, que es mas barato que escribirlo y descubrirlo.
+--
+-- POR QUE IMPORTA MEDIRLO. En la captura del 29/09 el Zn sale marcado en casi todas las filas de
+--   980E MT (40, 45, 70, 57, 194, 100) y el ISO>6 tambien. Si esos disparan, el triage puede
+--   pasar de "6 de 54" a "~50 de 54". Un triage que marca al 90% NO prioriza nada, que es lo
+--   contrario de para que existe. La regla es correcta; el riesgo es de CANTIDAD.
+--
+-- PRECEDENTE A FAVOR DE LA REGLA: vw_CondicionMTMD ya cuenta asi desde el BLOQUE 118 ("el
+--   contador sale de las celdas marcadas, no de Estado_General"): eran 119 componentes con el
+--   encabezado contradiciendo a la tabla. El inconsistente es el TRIAGE, no la propuesta.
+
+-- 156.1 ⭐ LA CIFRA QUE DECIDE. Por proyecto x tipo de componente: cuantos observados HOY
+--   (Estado_General, 9 metales + TBN) contra cuantos con la REGLA NUEVA (cualquier Estado_*).
+--   Si Nuevo/Total pasa de ~60%, el triage deja de discriminar y hay que replantear el formato.
+SELECT Proyecto, CompTipo,
+       COUNT(*)                                                      AS Total,
+       SUM(CASE WHEN Estado_General <> 'OK' THEN 1 ELSE 0 END)       AS Hoy,
+       SUM(CASE WHEN nMarcas > 0 THEN 1 ELSE 0 END)                  AS Nuevo,
+       SUM(CASE WHEN nCrit   > 0 THEN 1 ELSE 0 END)                  AS Nuevo_solo_criticos,
+       CAST(100.0 * SUM(CASE WHEN nMarcas > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*),0) AS decimal(5,1)) AS PctNuevo
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+CROSS APPLY (
+    SELECT SUM(CASE WHEN e.est IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS nMarcas,
+           SUM(CASE WHEN e.est = 'CRITICO' THEN 1 ELSE 0 END)                 AS nCrit
+    FROM (VALUES (Estado_Fe),(Estado_PQ),(Estado_Cr),(Estado_Ni),(Estado_Cu),(Estado_Pb),
+                 (Estado_Sn),(Estado_Al),(Estado_Si),(Estado_Ca),(Estado_Zn),(Estado_Mg),
+                 (Estado_K),(Estado_Na),(Estado_B),(Estado_P),(Estado_Mo),
+                 (Estado_V100),(Estado_V40),(Estado_TAN),(Estado_TBN),
+                 (Estado_Oxi),(Estado_Sulf),(Estado_Nit),
+                 (Estado_Agua),(Estado_Hollin),(Estado_Diesel),
+                 (Estado_ISO4),(Estado_ISO6),(Estado_ISO14)) e(est)
+) k
+WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
+GROUP BY Proyecto, CompTipo
+ORDER BY Proyecto, CompTipo;
+GO
+
+-- 156.2 ⭐ QUIEN APORTA LAS MARCAS. El ranking de culpables. Si uno o dos parametros explican
+--   casi todo el salto, la conversacion con Carlos no es "ampliamos el triage" sino "revisemos
+--   ESE limite". Sospechosos por la captura: Zn e ISO6 en TRACCION.
+SELECT b.CompTipo, v.Parametro,
+       SUM(CASE WHEN v.est = 'CRITICO'    THEN 1 ELSE 0 END) AS Criticos,
+       SUM(CASE WHEN v.est = 'PRECAUCION' THEN 1 ELSE 0 END) AS Precauciones,
+       COUNT(*)                                              AS Componentes
+FROM [dbo].[vw_MuestrasEstado] b WITH (NOLOCK)
+CROSS APPLY (VALUES
+    (N'Fe',b.Estado_Fe),(N'PQ',b.Estado_PQ),(N'Cr',b.Estado_Cr),(N'Ni',b.Estado_Ni),
+    (N'Cu',b.Estado_Cu),(N'Pb',b.Estado_Pb),(N'Sn',b.Estado_Sn),(N'Al',b.Estado_Al),
+    (N'Si',b.Estado_Si),(N'Ca',b.Estado_Ca),(N'Zn',b.Estado_Zn),(N'Mg',b.Estado_Mg),
+    (N'K',b.Estado_K),(N'Na',b.Estado_Na),(N'B',b.Estado_B),(N'P',b.Estado_P),(N'Mo',b.Estado_Mo),
+    (N'V100',b.Estado_V100),(N'V40',b.Estado_V40),(N'TAN',b.Estado_TAN),(N'TBN',b.Estado_TBN),
+    (N'Oxidacion',b.Estado_Oxi),(N'Sulfatacion',b.Estado_Sulf),(N'Nitracion',b.Estado_Nit),
+    (N'Agua',b.Estado_Agua),(N'Hollin',b.Estado_Hollin),(N'Diesel',b.Estado_Diesel),
+    (N'ISO4',b.Estado_ISO4),(N'ISO6',b.Estado_ISO6),(N'ISO14',b.Estado_ISO14)
+) v(Parametro, est)
+WHERE b.rn_recencia = 1 AND b.CompTipo <> 'OTRO' AND b.Proyecto LIKE '%Antapaccay%'
+  AND v.est IN ('CRITICO','PRECAUCION')
+GROUP BY b.CompTipo, v.Parametro
+ORDER BY b.CompTipo, COUNT(*) DESC;
+GO
+
+-- 156.3 ⚠ EL SOSPECHOSO Nº1: el Zn en Motor de Traccion. Ahi el Zn NO es aditivo sino
+--   CONTAMINANTE (alerta por arriba). La pregunta es si el LP esta bien puesto: si el 80% de la
+--   flota lo pasa, o la flota entera esta contaminada o el limite esta mal. Esto NO lo decide el
+--   SQL -- lo decide Carlos -- pero con la distribucion al lado la conversacion dura 2 minutos.
+SELECT TOP 40 Equipo, Compartimiento, Modelo,
+       CAST(Zn_ppm AS decimal(18,1)) AS Zn, Zn_LP, Zn_LC, Estado_Zn
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'TRACCION' AND Proyecto LIKE '%Antapaccay%'
+ORDER BY Zn_ppm DESC;
+GO
+
+-- 156.4 EL OTRO SOSPECHOSO: los codigos ISO. Mismo criterio.
+SELECT TOP 40 Equipo, Compartimiento, ISO4, ISO6, ISO14,
+       ISO4_LP, ISO6_LP, ISO14_LP, Estado_ISO4, Estado_ISO6, Estado_ISO14
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'TRACCION' AND Proyecto LIKE '%Antapaccay%'
+ORDER BY ISO6 DESC;
+GO
+
+/* COMO SE LEE EL 156.1, Y QUE SE HACE CON CADA RESULTADO:
+
+   Nuevo/Total  hasta ~40%  -> La propuesta de Andres se implementa TAL CUAL: Estado_General pasa
+                               a mirar todo, el triage imprime SOLO los observados (como /barrido)
+                               y <modelo> filtra la flota. La tabla se acorta y las 11 columnas
+                               caben: el problema de ancho del 155.7 se resuelve de paso.
+
+   Nuevo/Total  40% a 60%   -> Igual, pero el orden de la tabla manda: criticos primero, luego
+                               precauciones, y tope de filas con aviso de recorte.
+
+   Nuevo/Total  mas de 60%  -> NO volver atras: SEPARAR LAS DOS PREGUNTAS. El triage nacio para
+                               contestar "que se esta danando" (los 9 metales). Si "que esta
+                               fuera de limite" marca a casi todos, son dos preguntas distintas y
+                               necesitan dos indicadores, no uno. Opciones, en orden:
+                                 a) Que solo los CRITICOS de las familias nuevas disparen el
+                                    estado (la columna Nuevo_solo_criticos del 156.1 ya lo mide).
+                                 b) Dos contadores en el encabezado: "6 danados · 48 con desvio".
+                                 c) Revisar el limite del parametro que el 156.2 senale, si uno
+                                    solo explica el salto.
+*/
