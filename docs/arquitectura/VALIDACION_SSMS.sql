@@ -5816,53 +5816,64 @@ GO
 --         Va al mismo saco que vw_DiagnosticoMD, despues de la presentacion del 02/10.
 
 
--- ==== BLOQUE 155 - PASO 5 (J): el triage agrupa los metales por familia ====
--- QUE CAMBIO: la celda 'Metales Obs.' pasa de una lista plana  Fe(232.6) · Ca(76.0)
---   a una agrupada por familia:  Desgaste: Fe(232.6), PQ(233.2) · Contaminacion: Si(8.1)
---   El grupo sale de vw_FormatoParametro (el formato oficial del area), NO de una lista fija:
---   importa porque el grupo DEPENDE DEL COMPONENTE (el Ca es contaminante en MT y aditivo en
---   el resto). Con fallback a '(CRUZADO)' para MANDO y TRANSMISION, que no estan en el formato.
--- ⛔ SIGUEN SIENDO LOS MISMOS 9 PARAMETROS, a proposito: ver la nota del bloque 155.4.
+-- ==== BLOQUE 155 - PASO 5 (J): el triage pasa a 5 COLUMNAS por familia ====
+-- ⚑ REHECHO el 29/09. Primero lo implemente prefijando la familia DENTRO de la celda
+--    ("Desgaste: Fe(232.6) · Contaminacion: Si(8.1)"). Andres aclaro que el diseno que tenia en
+--    mente eran COLUMNAS: las dos de hoy ('Metales Obs.' y 'Salud') se reemplazan por CINCO.
+-- LA TABLA PASA DE 8 A 11 COLUMNAS:
+--    Equipo | Comp | Grado | Estado | Desgaste | Aditivos | Contaminacion | Salud | Cod. Limpieza | Hrs Comp | Ult.
+-- La familia de cada parametro sale de vw_FormatoParametro (DEPENDE DEL COMPONENTE: el Ca es
+--    contaminante en MT y aditivo en el resto), con fallback a '(CRUZADO)' para MANDO y
+--    TRANSMISION, que no estan en el formato por-componente.
+-- El triage pasa de mirar 9 parametros a mirar 30, y cada uno sale CON SU VALOR: la columna
+--    Salud mostraba 'V100' a secas, sin numero (lo noto Andres en la captura).
 
--- 155.1 ⭐ COMO SE VE AHORA. Triage MT de Antapaccay: los observados deben salir agrupados.
-SELECT LEFT(MD, 1400) AS Inicio
+-- 155.1 ⭐ COMO SE VE. Triage MT de Antapaccay: 11 columnas y los observados repartidos.
+SELECT LEFT(MD, 1800) AS Inicio
 FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
 GO
--- 155.2 ⭐ EL CASO CON DOS FAMILIAS. En MODI de Antapaccay el CA3196 tenia Al(2.1) y Si(6.8):
---   Al es Desgaste y Si es Contaminacion, asi que la celda debe partirse en dos grupos.
-SELECT LEFT(MD, 1200) AS Inicio
+-- 155.2 ⭐ V100 CON VALOR. El CA3163 y el CA3177 tenian V100 critico sin numero. Ahora la
+--   columna Salud debe decir algo como 'V100(22.1) 🟥'.
+SELECT LEFT(MD, 2500) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+-- 155.3 ⭐ EL REPARTO EN VARIAS FAMILIAS. En MODI el CA3196 tenia Al(2.1) y Si(6.8): Al va a
+--   Desgaste y Si a Contaminacion, en columnas distintas.
+SELECT LEFT(MD, 1500) AS Inicio
 FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'MOTOR';
 GO
--- 155.3 ⚠ EL FALLBACK. Un componente que NO esta en el formato por-componente (MANDO,
---   TRANSMISION) debe seguir mostrando sus metales, tomando el grupo de '(CRUZADO)'.
---   Si la celda sale vacia donde antes habia metales, el fallback no funciono.
-SELECT CompTipo, LEFT(MD, 700) AS Inicio
+-- 155.4 ⚠ EL FALLBACK. MANDO y TRANSMISION no estan en el formato por-componente. Deben seguir
+--   mostrando sus parametros, tomando la familia de '(CRUZADO)'. Si las 5 columnas salen
+--   vacias donde antes habia metales, el fallback no funciono.
+SELECT CompTipo, LEFT(MD, 900) AS Inicio
 FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo IN ('MANDO','TRANSMISION');
 GO
--- 155.4 NO REGRESION DEL CONTEO. El chip (Estado_General) y la celda miran los MISMOS 9
---   parametros, asi que el "X de N observados" no puede haberse movido.
---   Referencia del 28/09: Antapaccay TRACCION -> 6 de 54 observados (3 criticos).
+-- 155.5 NO REGRESION DEL CONTADOR. Estado_General NO se toco, asi que el "X de N observados"
+--   tiene que dar lo MISMO. Referencia del 28/09: Antapaccay TRACCION -> 6 de 54 (3 criticos).
+--   ⚑ OJO: ahora pueden aparecer filas 🟢 CON algo marcado en Aditivos, Salud o Cod. Limpieza.
+--   NO es un bug: esas familias se muestran pero todavia no disparan el estado, y el pie de la
+--   tabla lo dice explicitamente. Si se quiere que disparen, es decision del area (misma
+--   decision que quedo abierta en el bloque D).
 SELECT LEFT(MD, 120) AS Cabecera
 FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
 GO
--- 155.5 COSTE. El CROSS APPLY con TOP 1 se evalua por (fila x metal observado), y
---   vw_FormatoParametro es una lista de VALUES, no una tabla. Referencia: 1 scan · 1 365
---   lecturas · ~1 200 ms.
+-- 155.6 COSTE. base pasa de ~30 a ~75 columnas y el VALUES de 9 a 30 parametros, con un TOP 1
+--   contra vw_FormatoParametro por parametro observado. Referencia: 1 scan · 1 365 lecturas ·
+--   1 723 ms. Lo que NO puede pasar es que suba el Scan count.
 SET STATISTICS TIME ON; SET STATISTICS IO ON;
 SELECT LEFT(MD, 80) FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
 GO
-/* ⛔ LO QUE NO SE HIZO Y POR QUE. Carlos nombro tambien aditivos y codigo de limpieza. Ampliar
-   el triage a esos parametros es facil -- el bloque D ya les dio limite y Estado_* -- pero
-   Estado_General NO los mira. Si entran a la celda sin entrar al contador, una fila puede salir
-   VERDE y a la vez listar "Aditivos: Ca(54.0)". Eso es exactamente el bug E0 de la ronda
-   anterior: el contador dice una cosa y la tabla otra.
-   => Ampliar el triage queda ATADO a decidir si los parametros nuevos disparan Estado_General,
-   que es la misma decision que quedo abierta en el bloque D. Se decide con el area, no se
-   improvisa. */
+-- 155.7 ⚠ ANCHO. La tabla pasa de 8 a 11 columnas. En Teams el markdown no scrollea en
+--   horizontal: hay que MIRAR si entra. Si no entra, la palanca NO es comprimir sino decidir
+--   que columna sobra (candidata: 'Grado', que se repite en todas las filas de una misma flota).
+SELECT LEN(MD) AS LargoMD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO

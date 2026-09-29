@@ -3112,9 +3112,18 @@ CREATE OR ALTER VIEW [dbo].[vw_TriageMD] AS
    ⛔ La salida no cambia ni un caracter: es rendimiento, no formato.
    ========================================================================================= */
 WITH base AS (   -- BASE LIGERA: rankeadas rn=1 (1 pasada de la fundacion); TODOS los comptipos (no solo TRACCION)
-    SELECT Equipo, Proyecto, Modelo, CompTipo, Compartimiento, Estado_General, HorasComponente, FechaMuestreo, Grado, Estado_V100, Estado_TBN,
+    SELECT Equipo, Proyecto, Modelo, CompTipo, Compartimiento, Estado_General, HorasComponente, FechaMuestreo, Grado,
         Fe_ppm, Estado_Fe, Indice_PQ, Estado_PQ, Cr_ppm, Estado_Cr, Ni_ppm, Estado_Ni, Cu_ppm, Estado_Cu,
         Pb_ppm, Estado_Pb, Sn_ppm, Estado_Sn, Al_ppm, Estado_Al, Si_ppm, Estado_Si,
+        /* J (29/09): el triage pasa a 5 columnas por familia, asi que necesita TODOS los
+           parametros que el formato agrupa -- no solo los 9 de desgaste/contaminacion.
+           Todos tienen limite y Estado_* desde el bloque D. */
+        Ca_ppm, Estado_Ca, Zn_ppm, Estado_Zn, Mg_ppm, Estado_Mg, K_ppm, Estado_K, Na_ppm, Estado_Na,
+        B_ppm, Estado_B, P_ppm, Estado_P, Mo_ppm, Estado_Mo,
+        V100, Estado_V100, V40, Estado_V40, TAN, Estado_TAN, TBN, Estado_TBN,
+        Oxidacion, Estado_Oxi, Sulfatacion, Estado_Sulf, Nitracion, Estado_Nit,
+        Agua, Estado_Agua, Hollin, Estado_Hollin, Diesel, Estado_Diesel,
+        ISO4, Estado_ISO4, ISO6, Estado_ISO6, ISO14, Estado_ISO14,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
         CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' ELSE N'🟢' END AS estadoChip,
         CASE WHEN Estado_General LIKE '%CRITIC%' THEN 1 WHEN Estado_General LIKE '%PRECAUC%' THEN 2 ELSE 3 END AS estadoOrd
@@ -3133,51 +3142,77 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
              -- (OUTER APPLY), no en un CTE aparte al que luego haya que volver con un JOIN.
     SELECT m.Proyecto, m.ModeloG, m.CompTipo, m.Modelo AS RealModelo, m.estadoOrd, m.Equipo,
         CAST(N'| ' + m.Equipo + N' | ' + m.compAbbr + N' | ' + ISNULL(m.Grado,N'—') + N' | ' + m.estadoChip
-           + N' | ' + ISNULL(mm.metals, N'—')
-           + N' | ' + ISNULL(NULLIF(STUFF(CASE WHEN m.Estado_V100='CRITICO' THEN N' · V100 🟥' WHEN m.Estado_V100='PRECAUCION' THEN N' · V100 🟨' ELSE N'' END + CASE WHEN m.Estado_TBN='PRECAUCION' THEN N' · TBN 🟨' ELSE N'' END,1,3,''),N''),N'—')
+           + N' | ' + ISNULL(mm.Desgaste,      N'—')
+           + N' | ' + ISNULL(mm.Aditivos,      N'—')
+           + N' | ' + ISNULL(mm.Contaminacion, N'—')
+           + N' | ' + ISNULL(mm.Salud,         N'—')
+           + N' | ' + ISNULL(mm.Limpieza,      N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(m.HorasComponente AS decimal(18,0))),N'—')
            + N' | ' + ISNULL(FORMAT(m.FechaMuestreo,'dd-MMM-yy'),N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM mg m
-    /* J (29/09): los metales observados salen AGRUPADOS POR FAMILIA, como pidio Carlos:
-           Desgaste: Fe(232.6), PQ(233.2) · Contaminacion: Si(8.1)
-       El grupo NO se escribe a mano: sale de vw_FormatoParametro, que es donde vive el formato
-       oficial del area. Importa porque el grupo DEPENDE DEL COMPONENTE (el Ca es contaminante
-       en Motor de Traccion y aditivo en el resto), y una lista fija se equivocaria.
-       El CROSS APPLY con TOP 1 busca primero la fila del CompTipo propio y cae a '(CRUZADO)'
-       si ese componente no esta en el formato -- MANDO y TRANSMISION no lo estan, y sin ese
-       fallback sus metales desaparecerian de la celda sin ruido.
-       ⛔ SIGUEN SIENDO LOS MISMOS 9 PARAMETROS, a proposito: son exactamente los que decide
-       Estado_General, asi que el chip y la celda no pueden contradecirse. Ampliar el triage a
-       aditivos e ISO (que ya tienen limite y estado tras el bloque D) exige ANTES decidir si
-       esos disparan Estado_General; si no, una fila saldria verde y a la vez listaria un
-       aditivo fuera de limite -- que es el bug E0 de la ronda anterior. */
+    /* J (29/09): el triage pasa de dos columnas ('Metales Obs.' y 'Salud') a CINCO, una por
+       familia del formato: Desgaste · Aditivos · Contaminacion · Salud · Codigo Limpieza.
+       La familia de cada parametro NO se escribe a mano: sale de vw_FormatoParametro, y eso
+       importa porque DEPENDE DEL COMPONENTE -- el Ca es contaminante en Motor de Traccion y
+       aditivo en el resto. Una lista fija se equivocaria en la mitad de los casos.
+       El TOP 1 busca la fila del CompTipo propio y cae a '(CRUZADO)' si ese componente no esta
+       en el formato: MANDO y TRANSMISION no estan, y sin el fallback sus parametros
+       desapareceran de la tabla sin ruido.
+       GrupoOrden del formato: 1 Salud · 2 Aditivos · 3 Contaminacion · 4 Desgaste · 5 Cod.Limpieza.
+       Cada parametro sale con su VALOR (antes la columna Salud mostraba 'V100' a secas, sin
+       numero) y con 🟥 si es critico. */
     OUTER APPLY (
-        SELECT STRING_AGG(CONVERT(nvarchar(max), g.txt), N' · ')
-                   WITHIN GROUP (ORDER BY g.GrupoOrden) AS metals
+        SELECT MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
+               MAX(CASE WHEN g.GrupoOrden = 2 THEN g.txt END) AS Aditivos,
+               MAX(CASE WHEN g.GrupoOrden = 3 THEN g.txt END) AS Contaminacion,
+               MAX(CASE WHEN g.GrupoOrden = 1 THEN g.txt END) AS Salud,
+               MAX(CASE WHEN g.GrupoOrden = 5 THEN g.txt END) AS Limpieza
         FROM (
-            SELECT ff.Grupo, ff.GrupoOrden,
-                   ff.Grupo + N': '
-                 + STRING_AGG(CONVERT(nvarchar(max), v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'), N', ')
+            SELECT ff.GrupoOrden,
+                   STRING_AGG(CONVERT(nvarchar(max),
+                       v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
+                     + CASE WHEN v.est = 'CRITICO' THEN N' 🟥' ELSE N'' END), N', ')
                        WITHIN GROUP (ORDER BY ff.Orden) AS txt
             FROM (VALUES
-                (N'Fe',m.Fe_ppm,m.Estado_Fe),
-                (N'PQ',m.Indice_PQ,m.Estado_PQ),
-                (N'Cr',m.Cr_ppm,m.Estado_Cr),
-                (N'Ni',m.Ni_ppm,m.Estado_Ni),
-                (N'Cu',m.Cu_ppm,m.Estado_Cu),
-                (N'Pb',m.Pb_ppm,m.Estado_Pb),
-                (N'Sn',m.Sn_ppm,m.Estado_Sn),
-                (N'Al',m.Al_ppm,m.Estado_Al),
-                (N'Si',m.Si_ppm,m.Estado_Si)
+                (N'Fe',   m.Fe_ppm,      m.Estado_Fe),
+                (N'PQ',   m.Indice_PQ,   m.Estado_PQ),
+                (N'Cr',   m.Cr_ppm,      m.Estado_Cr),
+                (N'Ni',   m.Ni_ppm,      m.Estado_Ni),
+                (N'Cu',   m.Cu_ppm,      m.Estado_Cu),
+                (N'Pb',   m.Pb_ppm,      m.Estado_Pb),
+                (N'Sn',   m.Sn_ppm,      m.Estado_Sn),
+                (N'Al',   m.Al_ppm,      m.Estado_Al),
+                (N'Si',   m.Si_ppm,      m.Estado_Si),
+                (N'Ca',   m.Ca_ppm,      m.Estado_Ca),
+                (N'Zn',   m.Zn_ppm,      m.Estado_Zn),
+                (N'Mg',   m.Mg_ppm,      m.Estado_Mg),
+                (N'K',    m.K_ppm,       m.Estado_K),
+                (N'Na',   m.Na_ppm,      m.Estado_Na),
+                (N'B',    m.B_ppm,       m.Estado_B),
+                (N'P',    m.P_ppm,       m.Estado_P),
+                (N'Mo',   m.Mo_ppm,      m.Estado_Mo),
+                (N'V100', m.V100,        m.Estado_V100),
+                (N'V40',  m.V40,         m.Estado_V40),
+                (N'TAN',  m.TAN,         m.Estado_TAN),
+                (N'TBN',  m.TBN,         m.Estado_TBN),
+                (N'Oxidacion',   m.Oxidacion,   m.Estado_Oxi),
+                (N'Sulfatacion', m.Sulfatacion, m.Estado_Sulf),
+                (N'Nitracion',   m.Nitracion,   m.Estado_Nit),
+                (N'Agua',   m.Agua,   m.Estado_Agua),
+                (N'Hollin', m.Hollin, m.Estado_Hollin),
+                (N'Diesel', m.Diesel, m.Estado_Diesel),
+                (N'ISO>4',  m.ISO4,   m.Estado_ISO4),
+                (N'ISO>6',  m.ISO6,   m.Estado_ISO6),
+                (N'ISO>14', m.ISO14,  m.Estado_ISO14)
             ) v(metal, val, est)
             CROSS APPLY (
-                SELECT TOP 1 f.Grupo, f.GrupoOrden, f.Orden
+                SELECT TOP 1 f.GrupoOrden, f.Orden
                 FROM [dbo].[vw_FormatoParametro] f
                 WHERE f.Parametro = v.metal AND f.CompTipo IN (m.CompTipo, N'(CRUZADO)')
                 ORDER BY CASE WHEN f.CompTipo = m.CompTipo THEN 0 ELSE 1 END
             ) ff
             WHERE v.est IN ('CRITICO','PRECAUCION')
-            GROUP BY ff.Grupo, ff.GrupoOrden
+            GROUP BY ff.GrupoOrden
         ) g
     ) mm
 ),
@@ -3187,8 +3222,8 @@ sec AS (   -- una seccion por (Proyecto, ModeloG, CompTipo, modelo real): sub-ti
         SUM(CASE WHEN estadoOrd<3 THEN 1 ELSE 0 END) AS nObs, SUM(CASE WHEN estadoOrd=1 THEN 1 ELSE 0 END) AS nCrit,
         CAST(
             CASE WHEN MAX(ModeloG)=N'(todos)' THEN N'### ' + RealModelo + N' · ' + CAST(COUNT(*) AS nvarchar(10)) + N' equipos (' + CAST(SUM(CASE WHEN estadoOrd<3 THEN 1 ELSE 0 END) AS nvarchar(10)) + N' obs)' + NCHAR(10) + NCHAR(10) ELSE N'' END
-          + N'| Equipo | Comp | Grado | Estado | Metales Obs. | Salud | Hrs Comp | Últ. |' + NCHAR(10)
-          + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
+          + N'| Equipo | Comp | Grado | Estado | Desgaste | Aditivos | Contaminación | Salud | Cód. Limpieza | Hrs Comp | Últ. |' + NCHAR(10)
+          + N'|---|---|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
           + STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY estadoOrd, Equipo)
         AS nvarchar(max)) AS secMD
     FROM rows_ GROUP BY Proyecto, ModeloG, CompTipo, RealModelo
@@ -3244,6 +3279,13 @@ SELECT
              THEN N'⚠ **' + b.ModeloG + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
              ELSE N'' END
       + b.bodyMD
+      /* J (29/09): con las 5 columnas, Aditivos / Salud / Codigo de limpieza YA SE VEN, pero
+         Estado_General sigue mirando solo desgaste y contaminacion. Sin esta linea, un equipo
+         🟢 con un aditivo marcado se lee como una contradiccion -- que es el bug E0 de la ronda
+         anterior. Aqui NO se arregla cambiando el contador (eso es decision del area): se
+         arregla DICIENDO que miden cosas distintas. */
+      + NCHAR(10) + NCHAR(10)
+      + N'_El **Estado** (🟥 / 🟨 / 🟢) se decide con **Desgaste** y **Contaminación**. Un equipo puede salir 🟢 y aun así tener algo marcado en **Aditivos**, **Salud** o **Código de limpieza**: esas familias se muestran para que se vean, pero todavía no disparan el estado._'
     AS nvarchar(max)) AS MD
 FROM body b
 LEFT JOIN recoblock rb ON rb.Proyecto=b.Proyecto AND rb.ModeloG=b.ModeloG AND rb.CompTipo=b.CompTipo;

@@ -242,22 +242,30 @@ el `Acum` **no lo empeoró**. La deuda está identificada por el radar:
 
 ---
 
-**5 · J** — ✅ **escrito el 29/09 (BLOQUE 155).** La celda `Metales Obs.` pasa de lista plana a
-agrupada: `Desgaste: Fe(232.6), PQ(233.2) · Contaminacion: Si(8.1)`. No ensancha la tabla.
+**5 · J** — ✅ **escrito el 29/09 (BLOQUE 155).** ⚑ **Rehecho**: primero lo implementé prefijando la
+familia dentro de la celda; el diseño que Andrés tenía en mente eran **columnas**.
 
-📌 **El grupo no se escribe a mano: sale de `vw_FormatoParametro`.** Importa, porque el grupo **depende
-del componente** — el `Ca` es contaminante en Motor de Tracción y aditivo en el resto — y una lista fija
-se equivocaría. Con fallback a `(CRUZADO)` para `MANDO` y `TRANSMISION`, que no están en el formato
-por-componente: sin ese fallback sus metales desaparecerían de la celda **sin ruido**.
+**La tabla pasa de 8 a 11 columnas.** `Metales Obs.` y `Salud` se reemplazan por **cinco**:
 
-⛔ **Lo que NO se hizo, y por qué.** Carlos nombró también **aditivos** y **código de limpieza**. Ampliar
-el triage a esos es fácil —el bloque D ya les dio límite y `Estado_*`— pero **`Estado_General` no los
-mira**. Si entran a la celda sin entrar al contador, una fila puede salir **verde** y a la vez listar
-`Aditivos: Ca(54.0)`. **Eso es exactamente el bug E0** de la ronda anterior: el contador dice una cosa y
-la tabla otra.
+```
+Equipo | Comp | Grado | Estado | Desgaste | Aditivos | Contaminación | Salud | Cód. Limpieza | Hrs Comp | Últ.
+```
 
-⇒ Ampliar el triage queda **atado** a decidir si los parámetros nuevos disparan `Estado_General` — la
-misma decisión que quedó abierta en **D**. Se decide con el área, no se improvisa.
+El triage pasa de mirar **9 parámetros a 30**, y cada uno sale **con su valor** — la columna `Salud`
+mostraba `V100` a secas, sin número.
+
+📌 **La familia no se escribe a mano: sale de `vw_FormatoParametro`.** Importa, porque **depende del
+componente** — el `Ca` es contaminante en Motor de Tracción y aditivo en el resto. Con fallback a
+`(CRUZADO)` para `MANDO` y `TRANSMISION`, que no están en el formato por-componente: sin él sus
+parámetros desaparecerían **sin ruido**.
+
+🔴 **El hueco que abre este diseño, y cómo se tapó.** `Estado_General` sigue mirando solo desgaste y
+contaminación, así que **puede haber una fila 🟢 con algo marcado en Aditivos, Salud o Código de
+limpieza**. Sin avisar, eso se lee como contradicción — **el bug E0**. No se arregla cambiando el
+contador (eso es decisión del área): se arregla **diciéndolo**. El pie de la tabla ahora explica que el
+`Estado` y esas tres familias **miden cosas distintas**.
+
+⇒ Que los parámetros nuevos **disparen** `Estado_General` sigue siendo decisión abierta, la misma de **D**.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo
