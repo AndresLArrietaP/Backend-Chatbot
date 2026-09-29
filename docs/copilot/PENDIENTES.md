@@ -72,9 +72,15 @@ mismos 18 equipos — ahí el parámetro se acepta y **se ignora**. → **Bloque
 Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qué bloque se prueba.
 ⚑ Antes de cada despliegue: `python tools/check_ddl.py`. Después: **BLOQUE 89** (smoke).
 
+> **El verificador ahora trae un radar de CTE**: cuenta cuántas veces se referencia cada CTE dentro de
+> su vista, ignorando comentarios. Es informativo, no falla — pero es **siempre el primer sitio donde
+> mirar** cuando una vista va lenta. Hoy ya apunta a las otras deudas:
+> `vw_DiagnosticoMD.unpv ×5` · `vw_ObservadosBarridoMD.fila ×3` · `vw_CondicionMT_MD.unpv ×3` ·
+> `vw_TendenciaMD.rowcte/limcte/obslast ×2` ← **explica los ~35 s de `/tendencia`**.
+
 | # | Qué | DDL | Prueba | Tipo |
 |---|---|---|---|---|
-| **1** | **Consolidar `base` en `vw_DiagnosticoMD`** (7 lecturas → 1) | ✍ escribir | **147** nuevo | rendimiento |
+| **1** | **Consolidar `base` en `vw_DiagnosticoMD`** | ✅ **escrito** — falta medir | **148** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | 📋 patrón listo | **148** nuevo | determinista + rendimiento |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **149** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
@@ -89,10 +95,26 @@ medición posterior sobre esa cadena miente. El **4** antes que **G** (acumulado
 
 ## Notas por paso
 
-**1 · Consolidar `base`** — La métrica de éxito **no es el tiempo, es el `Scan count`**: de **7 a 1 o 2**.
-`base` se lee en las líneas 21, 31, 72, 77, 108, 132 y 142. Las de `hdr_all`/`hdr_obs` (72, 77) son
-`SELECT DISTINCT` que se pueden resolver con window functions sobre la expansión que ya hace `unpv`.
-⚠ Medir **antes** (hoy: 12 152 ms · 7 scans · 76 928 lecturas) y **después**, con `LIKE`.
+**1 · Consolidar `base`** — ✅ **escrito el 29/09, falta la medición (BLOQUE 148).**
+`base` pasa de **6 referencias a 1**: solo `unpv` la lee. CTE nuevo `comp` (1 fila por
+equipo+componente) del que salen `hdr_all`, `hdr_obs` y `g`; `obsmetals` y `obsmet` también
+derivan de `unpv`.
+
+📌 **Arregla de paso un bug latente:** `obsmetals` decidía la marca por su cuenta con un `CONCAT` de
+18 `CASE … LIKE '%:C%'` — un **tercer mecanismo de marcado**, y solo miraba 18 de los 31 parámetros.
+Un observado nuevo (`Mo`, `ISO>4/6/14`, `TAN`, `Hollin`…) **nunca** habría aparecido en la columna
+`Observados`. Ahora la marca se lee de la **celda que se imprime**: una sola fuente de verdad, la
+lección del bloque E3.
+
+🔴 **Y una advertencia que hay que tener presente al medir:** los CTE de SQL Server **no se
+materializan**. `unpv` queda referenciado **5 veces**, así que si el optimizador no hace *spool*, cada
+referencia re-deriva `unpv` → vuelve a leer `base` → podríamos seguir en ~5 scans. **Mover las lecturas
+de `base` a `unpv` no garantiza nada por sí solo.** Si el 148 no baja el `Scan count`, el siguiente
+paso es **fusionar pasadas**: `row_all`+`row_obs` en una, `hdr_all`+`hdr_obs`+`g` en otra,
+`obsmetals`+`obsmet` en otra → `unpv` bajaría de 5 referencias a 3.
+
+⚑ **Métrica de éxito: el `Scan count`, no el tiempo.** Referencia: **7 scans · 12 152 ms · 76 928
+lecturas**. Objetivo de la ronda: los **2 418 ms** que costaba antes del bloque D.
 
 **2 · L3** — El patrón está escrito en el bloque L. Dos comprobaciones **antes** de aplicarlo:
 (a) que las 9 fuentes expongan `Proyecto` —las de las líneas 3039 y 3448 leen un CTE `base` propio, y si
