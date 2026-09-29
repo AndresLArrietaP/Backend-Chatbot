@@ -5200,3 +5200,34 @@ GO
    - 147.1/147.2 dan el MISMO largo -> el SQL no filtra, y ahi si hay que tocar las vistas.
    - 147.4 dice que modelos se quedan fuera del '(todos)' nuevo. Si un modelo con muchos
      equipos sale con TieneLimites=0, conviene avisarlo en la respuesta en vez de esconderlo. */
+
+-- RESULTADOS BLOQUE 147 (28/09) -- VEREDICTO: ES EL CASO (b). EL SQL FILTRA BIEN.
+--   147.1 vw_ObservadosResumenMD, mismo predicado del flujo, tres modelos:
+--       d475    -> LargoMD   728 · "1 equipos con >=1 componente observado"
+--       980     -> LargoMD 2 397 · "16 equipos"
+--       (todos) -> LargoMD 2 601 · "18 equipos"
+--   147.2 vw_ObservadosBarridoMD: d475 -> 399 · 980 -> 3 708.
+--   => Tres largos y tres conteos DISTINTOS. La vista filtra por modelo sin problema.
+--      El bug NO esta en el SQL: el modelo no le esta llegando. Se arregla en COPILOT.
+--      ⛔ Tocar las 9 vistas con rollup no habria arreglado nada.
+--
+--   147.3 Modelos que expone la vista para Antapaccay: (todos) · 980E · D475A · PC1250.
+--     '(todos)' es UNA FILA MAS, y por eso LIKE '%980%' nunca puede traerla: no contiene '980'.
+--     Confirma que el filtrado es automatico EN CUANTO llegue el parametro.
+--
+--   147.4 LA FLOTA REAL DE ANTAPACCAY -- 6 modelos, 48 equipos:
+--       980E     limites=SI  27 equipos
+--       D475A    limites=SI   5
+--       PC1250   limites=SI   4
+--       930E     limites=NO   9   <- sale en el triage como "### 930E · 18 equipos (0 obs)"
+--       HD1500   limites=NO   2
+--       WA900    limites=NO   1
+--     ⚠ CORRIJO lo que escribi el 28/09: dije que los modelos sin limites eran D11T y 797F.
+--       NO. Son 930E, HD1500 y WA900, y suman 12 equipos. D11T y 797F no existen en Antapaccay
+--       (lo que devolvio /conteo con esos textos hay que revisarlo aparte -- ver H3).
+--     Son EXACTAMENTE los que Carlos no quiere ver por defecto: salen todos en verde porque no
+--     hay con que evaluarlos, y ensucian la tabla.
+--
+--   147.5 vw_ModeloConLimites: 10 pares. ANTAMINA 1 · ANTAPACCAY 3 · CERRO VERDE 2 ·
+--     QUELLAVECO 3 · TOROMOCHO 1. ⚠ Quellaveco esta FUERA del alcance de KomfIA (ver
+--     LIMITES_FALLBACK.md): inofensivo mientras nadie lo consulte, pero anotado.

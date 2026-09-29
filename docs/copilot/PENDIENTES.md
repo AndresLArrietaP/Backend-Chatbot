@@ -264,84 +264,114 @@ parámetros esté unificado**, o se paga cuatro veces.
 
 ---
 
-## 🅻 Bloque L — el parámetro `‹modelo›`  ⭐ TRANSVERSAL Y HOY ROTO
+## 🅻 Bloque L — el parámetro `‹modelo›`  ⭐ TRANSVERSAL
 
-### Paso 0 (28/09) — **probar dónde se pierde el filtro, antes de tocar nada**
+### ✅ Veredicto (28/09, BLOQUE 147): **el SQL filtra bien. El bug está en Copilot.**
 
-El síntoma tiene **dos causas posibles con la misma cara**, y la cura no se parece en nada:
+El mismo predicado que usa el flujo, con tres modelos:
 
-| | Qué pasaría | Dónde se arregla |
+| Consulta | Largo del `MD` | Dice |
 |---|---|---|
-| **(a)** | el SQL no filtra por modelo | en las vistas / el predicado |
-| **(b)** | el SQL filtra, pero el modelo **no le llega** | en Copilot: dispatcher → tema → flujo |
+| `Modelo LIKE '%d475%'` | **728** | «1 equipos con ≥1 componente observado» |
+| `Modelo LIKE '%980%'` | **2 397** | «16 equipos» |
+| `Modelo LIKE '%todos%'` | **2 601** | «18 equipos» |
 
-El **BLOQUE 147** lo decide en una corrida: pide el mismo `MD` con `d475`, con `980` y con `(todos)` y
-compara **el largo**. Largos distintos ⇒ el SQL filtra ⇒ es **(b)**.
+Tres largos, tres conteos. **La vista filtra sin problema.** Lo mismo en el detalle (399 vs 3 708).
 
-⚠ **Mi apuesta es (b)**, y por una razón concreta: el rollup `(todos)` es una **fila más** de la vista, y
-`LIKE '%980%'` **no puede** traerla — `(todos)` no contiene `980`. Así que si el SQL recibiera el modelo,
-filtrar sería automático. Que `d475` y `980` devuelvan lo mismo huele a que **llega `(todos)` siempre**:
-en el tema 16/17 `modelo` tendría que ser **Entrada mapeada** y podría estar fijo en la Acción.
-⛔ Si es (b), **tocar las 7 vistas no arregla nada** — por eso el bloque 147 va primero.
+Y hay una razón estructural por la que tenía que ser así: `(todos)` es **una fila más** de la vista, así
+que `LIKE '%980%'` **no puede** traerla — `(todos)` no contiene `980`. El filtrado es automático **en
+cuanto llegue el parámetro**.
 
-**Ya desplegado como cimiento (sin riesgo, aditivo):** `vw_ModeloConLimites` — qué modelos de cada
-proyecto tienen límites en `lc`. Es el insumo del `(todos)` nuevo y es **data-driven**: ninguna lista de
-modelos escrita a mano, así que el día que el área cargue otro proyecto se entera solo.
+⛔ **Tocar las 9 vistas con rollup no habría arreglado nada.** Por eso el bloque 147 fue primero.
 
 ---
 
-**L1 · Hoy no filtra en el SQL — filtra el LLM.** Ver el hallazgo de arriba. Mientras siga así no hay
-determinismo posible: es la ley 1. La cura es que el predicado de modelo viva en el `WHERE` de la vista/flujo
-y que el nodo de análisis **no vuelva a dibujar la tabla** (eso ya está prohibido en el prompt universal:
-hay que revisar por qué se lo saltó).
+### L1 · Lo que hay que arreglar, y es en Copilot Studio
 
-**L2 · El modelo pasa a OBLIGATORIO** en los módulos de flota. Hoy es opcional con default `(todos)`, y en
-flota mixta eso suma peras con manzanas: los límites del 980E no son los del D475A.
+**El síntoma:** `/barrido antapaccay d475` y `/barrido antapaccay 980` devolvieron la misma tabla ⇒ al
+flujo le llega **siempre `(todos)`**. El dispatcher sí lo manda (`modelo = If(p2="","(todos)",p2)` está en
+[CONFIG_COMANDOS](CONFIG_COMANDOS.md)), así que se pierde entre el tema y la acción.
 
-**L3 · «Salieron tablas duplicadas».** Ya conocido: las vistas de flota exponen **las filas por-modelo Y un
-rollup `(todos)`** vía `CROSS APPLY (VALUES …)`. Si el predicado deja pasar los dos, cada equipo sale dos
-veces. ⛔ **Colapsar a solo `(todos)` rompe** el caso en que sí nombran un modelo — la cura no es quitar el
-rollup, es que el predicado sea exacto y excluyente.
+**Dónde mirar, en este orden** — temas **16** (Barrido resumen) y **17** (Barrido detalle):
 
-**L4 · Alcance real de la flota.** Él dice «además del 980E, se ven los tractores y auxiliares, D475 y
-PC1250, principalmente esos 3».
-⚠ **Corrijo con lo que devolvió su propia marcha:** Antapaccay tiene al menos **cinco** modelos con datos —
-`980E`, `D475A`, `PC1250`, **`D11T`** y **`797F`** (los dos últimos salieron en sus propios `/conteo`). Y el
-archivo de límites solo cubre **980E, D475A y PC1250**: `D11T` y `797F` **no tienen límites**. Cuando se los
-pidan hay que decirlo, no devolver una tabla muda.
+1. ¿`modelo` está como **Entrada** del tema, o quedó **fijo en la Acción**? Si está fijo, la IA nunca lo
+   llena y el valor del comando se descarta. Es el mismo patrón que `vista`/`columna`, que **sí** van
+   fijas a propósito — y por eso es fácil que se le haya puesto lo mismo a `modelo` sin querer.
+2. En el nodo **«Ir a otro tema»** del Tema 00, ¿está mapeado `modelo ← p2`?
+3. En la **Acción** del tema, ¿`modelo` se pasa al flujo, o el flujo recibe su valor por defecto?
 
-### ✅ L5 · LA REGLA, decidida (28/09) — y sale de las vistas, como él intuía
+⚑ **Gotcha conocido** ([CONFIG_TEMAS](CONFIG_TEMAS.md)): al añadir una entrada a un tema ya referenciado
+hay que **guardar el tema destino primero** y luego **re-seleccionar** el tema en el nodo «Ir a otro tema»
+—cambiarlo a otro y volver a elegirlo— para que relea sus entradas. Si no, el mapeo no aparece.
 
-> «Digamos que en `/barridodet` pongo Antapaccay y PC1250. **Solo esa flota** ha de salirme, no tablas
-> duplicadas. Ya si no pongo nada, `/barridodet Antapaccay`, pues salen 980, D475 y PC1250.»
+**Cómo comprobar que quedó**, sin SSMS: `/barrido antapaccay d475` tiene que decir **«1 equipo»** y
+`/barrido antapaccay 980`, **«16 equipos»**. Si los dos dicen 18, sigue llegando `(todos)`.
 
-Eso se traduce en **una sola regla**, y es **data-driven** — no hay que listar modelos a mano en ningún
-sitio, así que escala solo cuando entre otro proyecto:
+### L2 · Y el otro, que es el grave: **el análisis redibuja la tabla**
 
-| Caso | Qué sale |
-|---|---|
-| **Nombra un modelo** (`Antapaccay PC1250`) | **solo ese modelo**. Nada más, sin rollup |
-| **No nombra modelo** (`Antapaccay`) | **todos los modelos del proyecto que tienen límites cargados** en `lc` → hoy 980E, D475A, PC1250 |
-| Un modelo **sin límites** (`D11T`, `797F`) | no entra en el default; si lo nombran, sale **con el aviso** de que no tiene límites |
+En `/barridodet antapaccay 980` la tabla verbatim salió con **todos** los equipos y **debajo el nodo de
+análisis la volvió a dibujar** bajo el título «*Filtrado para modelo 980E — se excluyen 6116 y 8108*».
+Eso es romper la **ley 1** (ningún LLM toca la tabla) y hace que el resultado no sea reproducible.
 
-**Cómo se implementa sin romper lo conocido.** Hoy las vistas de flota exponen las filas **por-modelo** *y*
-un rollup `(todos)` por `CROSS APPLY (VALUES …)`; el rollup es justo el que duplica.
-⛔ [[komfia_barrido_modelo_duplicacion]] avisa de que **colapsar a `(todos)` rompe** cuando sí nombran un
-modelo — pero eso es la dirección contraria. Lo correcto es **quitar el rollup y quedarse con las filas
-por-modelo**: cada equipo aparece **una sola vez**, en la fila de su modelo, y no hay nada que duplicar.
+Va en el **prompt universal** ([prompts/analisis_prompts.md](prompts/analisis_prompts.md)): ya dice que no
+invente datos, pero **no dice que no puede volver a dibujar la tabla**. Hay que añadirlo explícito: el
+análisis comenta, **nunca re-emite** la tabla ni una versión «filtrada» de ella.
 
-Para que el caso «sin modelo» siga funcionando, la vista expone una columna nueva **`TieneLimites`** (0/1),
-que sale de si `lc` tiene fila para ese proyecto+componente+modelo. El predicado del flujo queda:
+---
 
+### L3 · `(todos)` pasa a significar «los modelos con límites cargados»  · SQL, listo para aplicar
+
+**Por qué, con el dato del 147.4.** La flota de Antapaccay son **6 modelos, 48 equipos**:
+
+| Modelo | ¿Límites? | Equipos |
+|---|---|---|
+| `980E` | ✅ | 27 |
+| `D475A` | ✅ | 5 |
+| `PC1250` | ✅ | 4 |
+| **`930E`** | ❌ | **9** |
+| **`HD1500`** | ❌ | **2** |
+| **`WA900`** | ❌ | **1** |
+
+⚠ **Corrijo lo que dije el 28/09:** afirmé que los modelos sin límites eran `D11T` y `797F`. **No.** Son
+`930E`, `HD1500` y `WA900`, y suman **12 equipos**. `D11T` y `797F` no existen en Antapaccay — lo que
+devolvió `/conteo` con esos textos es otro bug, va a **H3**.
+
+Esos 12 equipos salen **todos en verde** porque no hay con qué evaluarlos. Se ven hoy en el triage:
+`### 930E · 18 equipos (0 obs)`, con `Grado —` y `Hrs Comp —`. Ruido puro.
+
+**El cimiento ya está desplegado:** `vw_ModeloConLimites` (validada en 147.5: 10 pares).
+
+**El patrón a aplicar** en los **9 sitios** que hoy hacen `CROSS APPLY (VALUES (X.Modelo),(N'(todos)'))`
+—líneas 1472, 1615, 1672, 1691, 3039, 3248, 3297, 3376, 3448 de `DDL_vistas.sql`:
+
+```sql
+CROSS APPLY (SELECT X.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(X.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(X.Modelo))))) mg
 ```
-AND ( Modelo LIKE '%‹modelo›%'  OR ( ‹modelo› = '' AND TieneLimites = 1 ) )
-```
 
-Una sola expresión, sin `CASE` en el `WHERE` (**ley 3**: un `CASE` ahí bloqueó el push-down y costó
-4 s → +15 min). **Medir igual antes de cablear.**
+Es autocontenido: **no** obliga a tocar ningún `WHERE` de las vistas.
 
-⚠ **Y el prerrequisito de L1:** mientras el nodo de análisis pueda redibujar la tabla, esto no se nota.
-Primero el filtro baja al SQL; después se mide.
+⚠ **Antes de aplicarlo, dos comprobaciones** — y no son burocracia, son las dos formas en que esto se
+rompe en silencio:
+1. **Que las 9 fuentes expongan `Proyecto`.** Dos de los sitios (3039 y 3448) leen un CTE `base` propio:
+   si no lo lleva, es `Msg 207` **al consultar**, no al desplegar.
+2. **Medir.** Es un `EXISTS` por fila en vistas de flota. La tabla tiene 10 filas y debería ser gratis,
+   pero hoy ya se pagó una regresión de 6 minutos por dar algo por gratis.
+
+**Criterio de terminado:** `/triage mt antapaccay` deja de mostrar la sección `### 930E · 18 equipos
+(0 obs)`, y `/barrido antapaccay` sigue diciendo **18 equipos** (los 12 sin límites no tenían observados,
+así que el resumen no debería moverse — si se mueve, hay que entender por qué).
+
+### L4 · `/ranking` no tiene `‹modelo›` en su firma
+
+Hoy es `/ranking ‹proj› ‹comp› ‹metal› [top]`. Por eso `/ranking antapaccay mtlh PQ 20` mezcló equipos de
+930E —sin límites, con `—/—`— junto a los `CA####` de 980E. Pasa a
+`/ranking ‹proj› ‹comp› ‹metal› [modelo] [top]`, y se toca el módulo completo: descripción + tema 22 +
+flujo `MD_ranking` + `vw_RankingMD` + la tarjeta + `gen_comandos_card.py`. Cierra **H3** de paso.
 
 ---
 
