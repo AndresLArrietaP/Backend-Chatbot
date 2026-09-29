@@ -81,8 +81,9 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | # | Qué | DDL | Prueba | Tipo |
 |---|---|---|---|---|
 | **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
-| **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **escrito** — falta medir | **150** | determinista + rendimiento |
-| **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **149** nuevo | determinista |
+| **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
+| **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✍ escribir | **151** nuevo | determinista |
+| **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **152** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |

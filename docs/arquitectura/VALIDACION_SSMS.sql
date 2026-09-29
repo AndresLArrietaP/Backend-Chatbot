@@ -5388,3 +5388,28 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
 GO
+
+-- RESULTADOS BLOQUE 150 (29/09) -- L3 correcto y SIN coste. Todo verde.
+--   150.1 ✅ vw_ModeloConLimites: 10 pares. ANTAMINA 980E · ANTAPACCAY 980E/D475A/PC1250 ·
+--         CERRO VERDE 730E-/980E · QUELLAVECO D65ROC/PV351/WE2350 · TOROMOCHO 980E.
+--   150.2 ✅ El triage por defecto ya no trae 930E, HD1500 ni WA900. MD de 4 397 chars.
+--   150.3 ✅ Y NOMBRAR un modelo sin limites SIGUE FUNCIONANDO, que era lo que no se podia
+--         romper: "Triage Motores de Traccion - Antapaccay · 930E · 0 de 18 observados
+--         (0 criticos)", MD de 1 095 chars. No divaga ni cae al fallback.
+--   150.4 ✅ Sin regresion en el barrido: (todos) 2 601 chars / 18 equipos · 980 2 397 / 16.
+--         Identico a lo medido el 28/09 (bloque 147.1).
+--   150.5 ✅ El conteo cambia de universo, como debe: 36 equipos (27+5+4, los 3 modelos con
+--         limites) en vez de 48. 18 observados · 7 criticos · 11 precaucion · 18 sin novedad.
+--   150.6 ✅ EL EXISTS NO COSTO NADA:
+--         triage  -> LaboratoryData 1 scan · 1 365 lecturas · 1 373 ms   (28/09: 1/1 365/1 091)
+--         barrido -> LaboratoryData 5 scans · 91 055 lecturas · 7 370 ms
+--         [Eqpcare].[lc]: 2 scans/337 en el triage, 10/424 en el barrido. Barato.
+--
+-- ⚠ PERO EL 150.3 DEJA UNA FRASE ENGAÑOSA, y es un fallo silencioso de los nuestros:
+--   "930E · 0 de 18 observados (0 criticos)" NO significa que esos 18 esten sanos. Significa
+--   que NO HAY LIMITES con que evaluarlos. Decir "0 observados" cuando no hay con que medir es
+--   exactamente la familia de fallos que venimos cerrando toda la ronda.
+--   -> L5: cuando el modelo consultado no tiene limites, DECIRLO en el encabezado. No se
+--      restringe nada (sigue saliendo), pero deja de dar un verde tranquilizador.
+--   ⚑ 'vw_ObservadosBarridoMD' aparece con 5 scans de LaboratoryData: su CTE 'fila' se lee 3
+--      veces (radar de check_ddl). Es la misma deuda del diagnostico, anotada, no urgente.
