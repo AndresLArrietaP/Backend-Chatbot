@@ -279,50 +279,95 @@ FROM (VALUES
 GO
 
 /* ----------------------------------------------------------------------------
-   1) vw_LimitesPorComponente — + límites de CALCIO y ZINC
+   1) vw_LimitesPorComponente — los 31 parametros del formato (D2, 28/09)
+   ----------------------------------------------------------------------------
+   Antes leia 16 de los 38 pares LP/LC que trae [Eqpcare].[lc]. Los 22 que
+   faltaban son justo los que Carlos senalaba como "aca no sale el limite":
+   FOSFORO, BORO, MOLIBDENO, TAN, OXI, SULF, NIT, HOLLIN, H20, Diesel,
+   ISO 4/6/14, VISC40 y el LC del TBN. El dato estaba; faltaba leerlo.
+
+   REGLA DE AGREGACION (el GROUP BY colapsa LH/RH en un solo CompTipo):
+     - limite NORMAL  (alerta por ARRIBA)  -> MIN = el mas estricto
+     - limite INVERTIDO (alerta por DEBAJO: aditivos, TBN y los pisos de
+       viscosidad LPI/LCI) -> MAX = el mas estricto
+   ⚠ Ca, Zn y Mg cambian de sentido segun el componente (contaminantes en MT,
+     aditivos en el resto), asi que su agregado depende de EsMT. Medido el 28/09
+     (bloque 138.1): LH y RH traen valores IDENTICOS, o sea que hoy MIN y MAX dan
+     lo mismo; se escribe correcto igual, que es gratis.
+   La normalizacion de claves se hace en la subconsulta 'src' para no repetir el
+   CASE de CompTipo tres veces (era el patron anterior y se prestaba a que el
+   SELECT y el GROUP BY se desincronizaran).
    ---------------------------------------------------------------------------- */
 CREATE OR ALTER VIEW [dbo].[vw_LimitesPorComponente] AS
 SELECT
-    UPPER(LTRIM(RTRIM([Proyecto]))) AS ProyKey,
-    UPPER(LTRIM(RTRIM([MODELO])))   AS ModeloKey,
-    CASE
-        WHEN [COMPONENTE] LIKE '%TRACCION%'    THEN 'TRACCION'
-        WHEN [COMPONENTE] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
-        WHEN [COMPONENTE] LIKE '%RUEDA%'       THEN 'RUEDA'
-        WHEN [COMPONENTE] LIKE '%MANDO%'       THEN 'MANDO'
-        WHEN [COMPONENTE] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
-        WHEN [COMPONENTE] LIKE '%MOTOR%'       THEN 'MOTOR'
-        ELSE 'OTRO'
-    END AS CompTipo,
-    MIN([FIERRO - LP])  AS Fe_LP, MIN([FIERRO - LC])  AS Fe_LC,
-    MIN([CROMO - LP])   AS Cr_LP, MIN([CROMO - LC])   AS Cr_LC,
-    MIN([NIQUEL - LP])  AS Ni_LP, MIN([NIQUEL - LC])  AS Ni_LC,
-    MIN([COBRE - LP])   AS Cu_LP, MIN([COBRE - LC])   AS Cu_LC,
-    MIN([SILICIO - LP]) AS Si_LP, MIN([SILICIO - LC]) AS Si_LC,
-    MIN([ALUMINIO - LP])AS Al_LP, MIN([ALUMINIO - LC])AS Al_LC,
-    MIN([CALCIO - LP])  AS Ca_LP, MIN([CALCIO - LC])  AS Ca_LC,
-    MIN([ZINC - LP])    AS Zn_LP, MIN([ZINC - LC])    AS Zn_LC,
-    MIN([POTASIO - LP]) AS K_LP,  MIN([POTASIO - LC]) AS K_LC,
-    MIN([SODIO - LP])   AS Na_LP, MIN([SODIO - LC])   AS Na_LC,
-    MIN([MAGNESIO - LP])AS Mg_LP, MIN([MAGNESIO - LC])AS Mg_LC,
-    MIN([PLOMO - LP])   AS Pb_LP, MIN([PLOMO - LC])   AS Pb_LC, MIN([ESTAÑO - LP])  AS Sn_LP, MIN([ESTAÑO - LC])  AS Sn_LC,
-    MIN([PQ - LP])      AS PQ_LP, MIN([PQ - LC])      AS PQ_LC,
-    MAX([TBN - LP])     AS TBN_LP,
-    MIN([VISC - LCI])   AS V100_LCI, MIN([VISC - LCS])  AS V100_LCS,
-    MIN([VISC - LPI])   AS V100_LPI, MIN([VISC - LPS])  AS V100_LPS
-FROM [Eqpcare].[lc]
-GROUP BY
-    UPPER(LTRIM(RTRIM([Proyecto]))),
-    UPPER(LTRIM(RTRIM([MODELO]))),
-    CASE
-        WHEN [COMPONENTE] LIKE '%TRACCION%'    THEN 'TRACCION'
-        WHEN [COMPONENTE] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
-        WHEN [COMPONENTE] LIKE '%RUEDA%'       THEN 'RUEDA'
-        WHEN [COMPONENTE] LIKE '%MANDO%'       THEN 'MANDO'
-        WHEN [COMPONENTE] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
-        WHEN [COMPONENTE] LIKE '%MOTOR%'       THEN 'MOTOR'
-        ELSE 'OTRO'
-    END;
+    src.ProyKey, src.ModeloKey, src.CompTipo,
+
+    /* ---- Desgaste y contaminacion: limite normal -> MIN ---- */
+    MIN(src.[FIERRO - LP])  AS Fe_LP, MIN(src.[FIERRO - LC])  AS Fe_LC,
+    MIN(src.[CROMO - LP])   AS Cr_LP, MIN(src.[CROMO - LC])   AS Cr_LC,
+    MIN(src.[NIQUEL - LP])  AS Ni_LP, MIN(src.[NIQUEL - LC])  AS Ni_LC,
+    MIN(src.[COBRE - LP])   AS Cu_LP, MIN(src.[COBRE - LC])   AS Cu_LC,
+    MIN(src.[SILICIO - LP]) AS Si_LP, MIN(src.[SILICIO - LC]) AS Si_LC,
+    MIN(src.[ALUMINIO - LP])AS Al_LP, MIN(src.[ALUMINIO - LC])AS Al_LC,
+    MIN(src.[POTASIO - LP]) AS K_LP,  MIN(src.[POTASIO - LC]) AS K_LC,
+    MIN(src.[SODIO - LP])   AS Na_LP, MIN(src.[SODIO - LC])   AS Na_LC,
+    MIN(src.[PLOMO - LP])   AS Pb_LP, MIN(src.[PLOMO - LC])   AS Pb_LC,
+    MIN(src.[ESTAÑO - LP])  AS Sn_LP, MIN(src.[ESTAÑO - LC])  AS Sn_LC,
+    MIN(src.[PQ - LP])      AS PQ_LP, MIN(src.[PQ - LC])      AS PQ_LC,
+
+    /* ---- NUEVOS (D2) · normales -> MIN ---- */
+    MIN(src.[TAN - LP])     AS TAN_LP,    MIN(src.[TAN - LC])     AS TAN_LC,
+    MIN(src.[OXI - LP])     AS Oxi_LP,    MIN(src.[OXI - LC])     AS Oxi_LC,
+    MIN(src.[SULF - LP])    AS Sulf_LP,   MIN(src.[SULF - LC])    AS Sulf_LC,
+    MIN(src.[NIT - LP])     AS Nit_LP,    MIN(src.[NIT - LC])     AS Nit_LC,
+    MIN(src.[HOLLIN - LP])  AS Hollin_LP, MIN(src.[HOLLIN - LC])  AS Hollin_LC,
+    MIN(src.[H20 - LP])     AS Agua_LP,   MIN(src.[H20 - LC])     AS Agua_LC,
+    MIN(src.[Diesel - LP])  AS Diesel_LP, MIN(src.[Diesel - LC])  AS Diesel_LC,
+    MIN(src.[ISO 4um - LP]) AS ISO4_LP,   MIN(src.[ISO 4um - LC]) AS ISO4_LC,
+    MIN(src.[ISO 6um - LP]) AS ISO6_LP,   MIN(src.[ISO 6um - LC]) AS ISO6_LC,
+    MIN(src.[ISO 14um - LP])AS ISO14_LP,  MIN(src.[ISO 14um - LC])AS ISO14_LC,
+
+    /* ---- Aditivos: limite INVERTIDO (la alerta es por DEBAJO) -> MAX ---- */
+    MAX(src.[FOSFORO - LP])  AS P_LP,   MAX(src.[FOSFORO - LC])  AS P_LC,
+    MAX(src.[BORO - LP])     AS B_LP,   MAX(src.[BORO - LC])     AS B_LC,
+    MAX(src.[MOLIBDENO - LP])AS Mo_LP,  MAX(src.[MOLIBDENO - LC])AS Mo_LC,
+    MAX(src.[TBN - LP])      AS TBN_LP, MAX(src.[TBN - LC])      AS TBN_LC,
+
+    /* ---- Ca, Zn, Mg: contaminantes en MT (MIN), aditivos en el resto (MAX) ---- */
+    CASE WHEN src.EsMT = 1 THEN MIN(src.[CALCIO - LP])   ELSE MAX(src.[CALCIO - LP])   END AS Ca_LP,
+    CASE WHEN src.EsMT = 1 THEN MIN(src.[CALCIO - LC])   ELSE MAX(src.[CALCIO - LC])   END AS Ca_LC,
+    CASE WHEN src.EsMT = 1 THEN MIN(src.[ZINC - LP])     ELSE MAX(src.[ZINC - LP])     END AS Zn_LP,
+    CASE WHEN src.EsMT = 1 THEN MIN(src.[ZINC - LC])     ELSE MAX(src.[ZINC - LC])     END AS Zn_LC,
+    CASE WHEN src.EsMT = 1 THEN MIN(src.[MAGNESIO - LP]) ELSE MAX(src.[MAGNESIO - LP]) END AS Mg_LP,
+    CASE WHEN src.EsMT = 1 THEN MIN(src.[MAGNESIO - LC]) ELSE MAX(src.[MAGNESIO - LC]) END AS Mg_LC,
+
+    /* ---- Viscosidad: es una BANDA de 4 niveles, no un limite.
+       Pisos  (LPI/LCI) = alerta por DEBAJO -> MAX es el mas estricto.
+       Techos (LPS/LCS) = alerta por ENCIMA -> MIN es el mas estricto.
+       Medido: MT trae solo LCI/LCS (Carlos: "para el MT solo el critico, no
+       trabaja con el precautorio"); el MOTOR 980E trae los cuatro. Si un nivel
+       viene NULL ese nivel no se evalua: la excepcion NO se hardcodea. ---- */
+    MAX(src.[VISC - LPI])   AS V100_LPI, MAX(src.[VISC - LCI])   AS V100_LCI,
+    MIN(src.[VISC - LPS])   AS V100_LPS, MIN(src.[VISC - LCS])   AS V100_LCS,
+    MAX(src.[VISC40 - LPI]) AS V40_LPI,  MAX(src.[VISC40 - LCI]) AS V40_LCI,
+    MIN(src.[VISC40 - LPS]) AS V40_LPS,  MIN(src.[VISC40 - LCS]) AS V40_LCS
+FROM (
+    SELECT *,
+        UPPER(LTRIM(RTRIM([Proyecto]))) AS ProyKey,
+        UPPER(LTRIM(RTRIM([MODELO])))   AS ModeloKey,
+        CASE
+            WHEN [COMPONENTE] LIKE '%TRACCION%'    THEN 'TRACCION'
+            WHEN [COMPONENTE] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+            WHEN [COMPONENTE] LIKE '%RUEDA%'       THEN 'RUEDA'
+            WHEN [COMPONENTE] LIKE '%MANDO%'       THEN 'MANDO'
+            WHEN [COMPONENTE] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
+            WHEN [COMPONENTE] LIKE '%MOTOR%'       THEN 'MOTOR'
+            ELSE 'OTRO'
+        END AS CompTipo,
+        CASE WHEN [COMPONENTE] LIKE '%TRACCION%' THEN 1 ELSE 0 END AS EsMT
+    FROM [Eqpcare].[lc]
+) src
+GROUP BY src.ProyKey, src.ModeloKey, src.CompTipo, src.EsMT;
 GO
 
 

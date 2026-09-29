@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   143 bloques · índice regenerado el 25/09/2026; bloques 136-142 añadidos el 28/09.
+   144 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -163,6 +163,7 @@
      BLOQUE 140  H3/H4: el scope del ranking y el parametro Hollin
      BLOQUE 141  las columnas *_Acum de la tabla: atajo para el bloque C?
      BLOQUE 142  D7.3: de los 13 valores "nuevos", cuales traen dato de verdad
+     BLOQUE 143  D2 desplegada: vw_LimitesPorComponente con los 31 parametros
    ============================================================================ */
 
 /* ============================================================================
@@ -4848,4 +4849,121 @@ GO
 SELECT TOP (20) LD.[Refrigerante], LD.[GLYCOL], LD.[PorcentajeGlicol_cinta], LD.[Compartimiento]
 FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
 WHERE LD.[Refrigerante] IS NOT NULL OR LD.[GLYCOL] IS NOT NULL;
+GO
+
+-- RESULTADOS BLOQUES 136-142 (28/09) -- la ronda de reconocimiento del bloque D.
+-- =============================================================================
+-- 141 -- EL ATAJO *_Acum NO EXISTE. DESCARTADO.
+--   Fe_Acum, Cr_Acum, Pb_Acum, Cu_Acum, Sn_Acum, Al_Acum, Si_Acum vienen NULL en
+--   TODAS las filas: 141.2 dio ConFeAcum = 0 sobre 36 832 filas de Antapaccay.
+--   Las columnas existen en la tabla pero nadie las llena. => el acumulado hay que
+--   calcularlo, como estaba previsto.
+--
+-- 141.3 -- ✅ EL METODO DE CARLOS ES EXACTO: SumaManual = 3718.6, su cifra al decimal.
+--   Criterio: ComponentStatus = 'En uso'  +  CM IN ('ADI','C')  +  TODA la historia
+--   (sin la ventana de 12 meses). El bloque C tiene su formula validada.
+--   ⚠ Ojo al literal: es 'En uso' (u minuscula), no 'En Uso'.
+--
+-- 141.2 -- ⚠ ComponentStatus solo esta poblado en 15 879 de 36 832 filas = 43%.
+--   ComponentSerialNumber tiene la MISMA cobertura (15 879) y en el CA3195 MT LH
+--   vale 'WX2104W058T' -- identifica la instalacion concreta, es mas preciso aun
+--   que el status. HorasComponenteAcumulado: 15 854 (y HorasComponenteParcial = 0
+--   siempre, no sirve).
+--   => para el 57% sin status NO se puede calcular el acumulado con este criterio.
+--   Decision: mostrar '—', nunca un numero calculado con otro criterio.
+--
+-- 142.1 -- QUE SE MIDE DE VERDAD EN ANTAPACCAY (12 meses). Confirma a Carlos en todo:
+--   CompTipo    Muestras  V40  TAN   Oxi  Sulf  Nit   Mo   Agua  Hollin Diesel Refrig ISO4  ISO6 ISO14
+--   HIDRAULICO      855     0  848   848   248  248   850   848    248     0      0    806   805   761
+--   MOTOR          3287     0  519  3273  3273 3277  3273  3273   3273     0      0    439   439   439
+--   RUEDA          1165     0 1144  1144   367  367  1144  1144    367     0      0   1080  1080  1041
+--   TRACCION       2815     0  902   904   899  899  2812   904    899     0      0   2639  2644  2599
+--   OTRO            859     0  831   833   194  194   841   833    194     0      0    751   753   737
+--   * V40 = 0 en TODO Antapaccay  -> "aca en Antapaccay solo miden con la 100". CONFIRMADO.
+--   * ISO en MOTOR = 439/3287 (13%) -> "en Antapaccay el motor no bota codigo de limpieza". CONFIRMADO.
+--     En los otros componentes 92-95%.
+--   * TAN alto en RUEDA (98%) e HIDRAULICO (99%), bajo en MOTOR (16%) y TRACCION (32%).
+--     "el TAN sale para las ruedas y para el hidraulico; el MT no lo mide". CONFIRMADO.
+--   * Hollin/Sulf/Nit ~100% en MOTOR (que es donde el formato los pide) y ~30% en el resto.
+--   * Diesel y Refrigerante = 0 en TODO. No se miden. (142.3: Refrigerante NULL, GLYCOL 0.000,
+--     PorcentajeGlicol_cinta NULL -> el mapeo Refrigerante->Glycol no aporta nada.)
+--
+-- 142.2 -- ANTAMINA mide distinto, tal cual dijo Carlos:
+--   Muestras 16 106 | V100 15 857 | V40 15 834 | TAN 0 | ISO4 15 787
+--   => Antamina SI mide las dos viscosidades y NO mide TAN. Antapaccay al reves.
+--   ⛔ Por lo tanto 'Disponible' NO puede ser una constante por CompTipo: depende de la MINA.
+--      La fila se decide POR FILA con la regla D5 (sin valor y sin limite -> no sale).
+--
+-- 138.1 -- ANTAPACCAY / MOTOR DE TRACCION LH y RH / 980E, columnas que hoy no leemos:
+--   FOSFORO   LP 280.00  LC 240.00   <- invertido, tal cual dijo Carlos
+--   ISO 6um   LP  19.00  LC  20.00
+--   ISO 14um  LP  16.00  LC  19.00
+--   VISC      LPI NULL   LCI 70.10   LPS NULL   LCS 85.70
+--     ✅ "para el MT lo unico que tenemos es limite critico, no trabaja con el precautorio".
+--        CONFIRMADO: los dos LC estan, los dos LP vienen NULL.
+--   BORO, MOLIBDENO, TAN, ISO 4um, VISC40, H20, HOLLIN, TBN: todos NULL en MT.
+--   LH y RH traen valores IDENTICOS -> el MIN/MAX del GROUP BY no cambia nada en la practica.
+--
+-- 138.2 -- ANTAPACCAY / MOTOR, los 3 modelos:
+--   980E    VISC LPI 13.50 LCI 13.00 LPS 16.00 LCS 16.50  <- ✅ LOS CUATRO NIVELES
+--   PC1250  VISC todo NULL     D475A  VISC todo NULL
+--   HOLLIN  980E 0.40/0.50 | PC1250 1.00/1.50 | D475A 1.00/1.50
+--   OXI     980E 7.00 | PC1250 0.20 | D475A 0.20
+--   SULF    980E 3.00 | PC1250 20.00 | D475A NULL
+--   NIT     980E 9.00 | PC1250 NULL | D475A 20.00
+--   TBN     980E LP 6.00 LC 5.00 (invertido) | PC1250 7.00/NULL | D475A 7.00/NULL
+--   ISO 4/6/14: NULL en los 3 -> coherente con 142.1 (el motor no mide ISO).
+--   => "para el MT solo dos niveles, para el motor diesel los cuatro" CONFIRMADO CON EL DATO.
+--
+-- 139 -- COBERTURA de los 14 nuevos por proyecto/componente/modelo (64 filas):
+--   Antapaccay MOTOR 980E 6 · D475A 3 · PC1250 3   |  MT LH/RH 3  |  RD LH/RH 5  |  SH 4
+--   Antamina   MOTOR 5 · MT LH 5 · MT RH 6 · RD 4 · SH 4
+--   Cerro Verde MOTOR 730E- = 0 (ademas del desajuste de texto 730E- vs 730E, bloque C4)
+--   Componentes chicos (CAJA GIRO, DAMPER, MANDO FINAL, PTO, TRANSMISION) = 2
+--   TBN con LC: SOLO en MOTOR (5 filas de 64). Coherente: "el TBN mayormente es el motor nada mas".
+--   ⚠ Aparece QUELLAVECO (20 filas), que esta FUERA del alcance de KomfIA.
+-- =============================================================================
+
+
+-- ==== BLOQUE 143 - D2 desplegada: vw_LimitesPorComponente con los 31 parametros ====
+-- CORRER JUSTO DESPUES de desplegar la vista. Un CREATE VIEW se guarda aunque su cuerpo sea
+-- invalido y revienta recien al consultarla (ley 5) -- esto es su smoke test.
+-- 143.1 Smoke: la vista responde y trae las columnas nuevas.
+SELECT TOP (5) ProyKey, ModeloKey, CompTipo, P_LP, P_LC, ISO6_LP, ISO6_LC, TBN_LP, TBN_LC
+FROM [dbo].[vw_LimitesPorComponente];
+GO
+-- 143.2 El caso que Carlos miro en pantalla: MT de Antapaccay 980E.
+--   ESPERADO (bloque 138.1): P 280/240 · ISO6 19/20 · ISO14 16/19 · V100_LCI 70.10 · V100_LCS 85.70
+--   y V100_LPI / V100_LPS en NULL (en MT solo hay criticos).
+SELECT ProyKey, ModeloKey, CompTipo,
+       P_LP, P_LC, B_LP, Mo_LP, TAN_LP,
+       ISO4_LP, ISO4_LC, ISO6_LP, ISO6_LC, ISO14_LP, ISO14_LC,
+       V100_LPI, V100_LCI, V100_LPS, V100_LCS,
+       V40_LPI, V40_LCI, V40_LPS, V40_LCS,
+       Agua_LP, Hollin_LP, TBN_LP, TBN_LC
+FROM [dbo].[vw_LimitesPorComponente]
+WHERE ProyKey = 'ANTAPACCAY' AND CompTipo = 'TRACCION' AND ModeloKey = '980E';
+GO
+-- 143.3 El MOTOR de Antapaccay, que SI debe traer los 4 niveles de viscosidad.
+--   ESPERADO (bloque 138.2): 980E -> LPI 13.50 · LCI 13.00 · LPS 16.00 · LCS 16.50
+--   ⚠ Ojo: LPI 13.50 > LCI 13.00. Es correcto: en un piso, el precautorio va POR ENCIMA del
+--     critico (se alerta antes de llegar al critico, bajando). No es un typo.
+SELECT ProyKey, ModeloKey, CompTipo, V100_LPI, V100_LCI, V100_LPS, V100_LCS,
+       Hollin_LP, Hollin_LC, Oxi_LP, Sulf_LP, Nit_LP, TBN_LP, TBN_LC
+FROM [dbo].[vw_LimitesPorComponente]
+WHERE ProyKey = 'ANTAPACCAY' AND CompTipo = 'MOTOR'
+ORDER BY ModeloKey;
+GO
+-- 143.4 NO REGRESION: los 16 limites que ya se leian antes deben dar EXACTAMENTE lo mismo.
+--   Si alguno cambio, el MIN/MAX nuevo movio algo que no debia.
+SELECT ProyKey, ModeloKey, CompTipo, Fe_LP, Fe_LC, PQ_LP, PQ_LC, Cr_LP, Cr_LC,
+       Ca_LP, Ca_LC, Zn_LP, Zn_LC, Mg_LP, Mg_LC, TBN_LP
+FROM [dbo].[vw_LimitesPorComponente]
+WHERE ProyKey IN ('ANTAPACCAY','ANTAMINA')
+ORDER BY ProyKey, CompTipo, ModeloKey;
+GO
+-- ⚠ 143.5 Las vistas que dependen de esta siguen vivas? (la fundacion la consume con LEFT JOIN)
+SELECT TOP (3) Equipo, Compartimiento, Fe_ppm, Fe_LP, Fe_LC, Estado_General
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE Equipo = 'CA3195' AND Compartimiento LIKE '%TRACCION%LH';
 GO
