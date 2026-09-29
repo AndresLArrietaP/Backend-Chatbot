@@ -48,6 +48,29 @@ def revisar(nombre, cuerpo):
     return fallos
 
 
+def catalogo_vs_celdas(texto):
+    """El unpivot de vw_DiagnosticoMD une el catalogo por Parametro con INNER JOIN.
+
+    Si un parametro del catalogo '(CRUZADO)' no esta en la lista de celdas, su fila
+    DESAPARECE de /diagcompleto sin ruido: ni error, ni hueco, simplemente no sale.
+    Es la contrapartida de la cura de rendimiento del 28/09 (antes el catalogo mandaba
+    y la celda faltante salia como guion). Compara las dos listas en los dos sentidos.
+    """
+    cat = set(re.findall(r"\(N'\(CRUZADO\)', N'([^']+)'", texto))
+    md = texto[texto.index("CREATE OR ALTER VIEW [dbo].[vw_DiagnosticoMD]"):]
+    md = md[: md.index("\nGO")]
+    unpv = md[md.index("CROSS APPLY (VALUES"):]
+    unpv = unpv[: unpv.index(") v(Parametro, cell)")]
+    celdas = set(re.findall(r"\(N'([^']+)',", unpv))
+
+    fallos = []
+    for q in sorted(cat - celdas):
+        fallos.append(f"'{q}' esta en el catalogo y NO en las celdas -> su fila no saldra")
+    for q in sorted(celdas - cat):
+        fallos.append(f"'{q}' esta en las celdas y NO en el catalogo -> se calcula y se tira")
+    return len(cat), len(celdas), fallos
+
+
 def main():
     if not DDL.exists():
         print(f"no encuentro {DDL}")
@@ -62,6 +85,15 @@ def main():
             print(f"\n{nombre}")
             for f in fallos:
                 print(f"   {f}")
+    n_cat, n_cel, huerfanos = catalogo_vs_celdas(texto)
+    if huerfanos:
+        con_fallo += 1
+        print("\nvw_DiagnosticoMD - catalogo vs celdas")
+        for h in huerfanos:
+            print(f"   {h}")
+    else:
+        print(f"\ncatalogo (CRUZADO) {n_cat} parametros = celdas de vw_DiagnosticoMD {n_cel}  OK")
+
     print(f"\n{total} vistas revisadas, {con_fallo} con problemas")
     return 1 if con_fallo else 0
 

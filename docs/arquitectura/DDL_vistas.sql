@@ -1768,11 +1768,20 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
     SELECT b.Equipo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
-           ISNULL(p.cell, N'—') AS cell
+           v.cell
+    /* ⚡ PERF (28/09) — antes esto era:
+           FROM base b
+           INNER JOIN vw_FormatoParametro f ON f.CompTipo='(CRUZADO)'   <- cartesiano base x 31
+           OUTER APPLY (SELECT v.cell FROM (VALUES ...31...) v WHERE v.Parametro=f.Parametro)
+       o sea: por cada (fila de base x fila del catalogo) se armaba la tabla de 31 tuplas
+       ENTERA y se filtraba DENTRO del apply. 6 componentes x 31 parametros = 186 applies,
+       cada uno re-derivando 'base', que cuelga de una cadena de 4 vistas.
+       MEDIDO (bloque 145.5): 431 scans de [Oil].[LaboratoryData] y 11 910 696 lecturas
+       logicas -> 348 s. El triage, que lee la fundacion UNA vez, hacia 1 scan y 1 365.
+       AHORA: se expande base UNA vez a sus 31 filas y DESPUES se une el catalogo. Es el
+       unpivot de siempre, y es la misma cura que curo el triage (ley 2). */
     FROM base b
-    INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = '(CRUZADO)'
-    OUTER APPLY (
-        SELECT v.cell FROM (VALUES
+    CROSS APPLY (VALUES
             (N'Fe', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Fe AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'PQ', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(PQ AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'Cr', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cr AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
@@ -1804,8 +1813,9 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
             (N'ISO>6', ISNULL(REPLACE(REPLACE(CAST(ISO6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'ISO>14', ISNULL(REPLACE(REPLACE(CAST(ISO14 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'V40', ISNULL(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'))
-        ) v(Parametro, cell) WHERE v.Parametro = f.Parametro
-    ) p
+    ) v(Parametro, cell)
+    INNER JOIN [dbo].[vw_FormatoParametro] f
+        ON f.CompTipo = '(CRUZADO)' AND f.Parametro = v.Parametro
 ),
 /* CABECERAS de columnas (dinámicas) por variante */
 hdr_all AS (

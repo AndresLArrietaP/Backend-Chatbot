@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   146 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   147 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -166,6 +166,7 @@
      BLOQUE 143  D2 desplegada: vw_LimitesPorComponente con los 31 parametros
      BLOQUE 144  D3 desplegada: la fundacion con los 13 valores nuevos (+ MEDIR)
      BLOQUE 145  REGRESION 6 MIN en /diagcompleto tras D3 -- aislar capa por capa
+     BLOQUE 146  CURA de la regresion: unpv de vw_DiagnosticoMD reestructurado
    ============================================================================ */
 
 /* ============================================================================
@@ -5065,3 +5066,47 @@ GO
      que hoy arrastra TODAS las columnas: se calcula sobre las claves y se re-une despues.
    - Si TODAS son rapidas y solo el bloque 144.5 era lento -> era el SET STATISTICS IO sobre
      una consulta que devuelve un MD gigante. Volver a medir sin IO. */
+
+
+-- RESULTADOS BLOQUE 145 (28/09) -- DIAGNOSTICO CERRADO, la fundacion estaba SANA.
+--   145.1 vw_MuestrasEstado      252 filas ·     2 ms · LaboratoryData  1 scan ·         19 lecturas
+--   145.2 vw_MuestrasRankeadas   219 filas · rapido
+--   145.3 vw_UltimoAnalisisFlota   6 filas · rapido
+--   145.4 vw_DiagnosticoEquipo     6 filas · rapido
+--   145.5 vw_DiagnosticoMD                · 348 185 ms · LaboratoryData 431 scans · 11 910 696 lecturas
+--   145.6 vw_TriageMD (control)          ·   1 091 ms · LaboratoryData  1 scan  ·      1 365 lecturas
+-- => El problema NO era el ancho de la fundacion (D3): era el unpivot de vw_DiagnosticoMD.
+--    431 scans de la tabla base para pintar 6 componentes. El triage hace 1.
+
+-- ==== BLOQUE 146 - CURA: el unpivot de vw_DiagnosticoMD lee 'base' UNA vez ====
+-- QUE ESTABA MAL:
+--     FROM base b
+--     INNER JOIN vw_FormatoParametro f ON f.CompTipo='(CRUZADO)'    <- cartesiano base x 31
+--     OUTER APPLY (SELECT v.cell FROM (VALUES ...31...) v WHERE v.Parametro = f.Parametro)
+--   Por cada par (fila de base x fila del catalogo) se construia la tabla de 31 tuplas ENTERA
+--   y se filtraba DENTRO del apply: 6 x 31 = 186 applies, y cada uno re-derivaba 'base', que
+--   cuelga de una cadena de 4 vistas hasta [Oil].[LaboratoryData].
+--   Con 18 parametros dolia (4 scans, medido el 25/09); con 31 exploto (431).
+-- QUE QUEDO: se expande base UNA vez a sus 31 filas y DESPUES se une el catalogo.
+--     FROM base b
+--     CROSS APPLY (VALUES ...31...) v(Parametro, cell)
+--     INNER JOIN vw_FormatoParametro f ON f.CompTipo='(CRUZADO)' AND f.Parametro = v.Parametro
+-- Es el unpivot de siempre, y es la misma cura que curo el triage (ley 2).
+-- 146.1 LA MEDICION QUE IMPORTA. Objetivo: volver a ~2.4 s y, sobre todo, a POCOS SCANS.
+--   Mirar 'Scan count' de [Oil].[LaboratoryData]: tiene que bajar de 431 a un digito.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+-- 146.2 QUE NO SE PERDIO NINGUNA FILA. El INNER JOIN nuevo une catalogo y celdas por nombre:
+--   si un parametro del catalogo no estuviera en la lista de celdas, su fila desapareceria
+--   SIN RUIDO (antes salia con guion). Deben verse los 31 parametros del formato.
+--   ⚑ Esto tambien lo vigila 'python tools/check_ddl.py' antes de desplegar.
+SELECT MD FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- Contar a mano sobre el MD: Salud 7 (V100,V40,TAN,TBN,Oxidacion,Sulfatacion,Nitracion) +
+-- Aditivos 6 (Ca,Zn,P,Mg,Mo,B) + Contaminacion 7 (Si,Na,K,Hollin,Diesel,Agua,Refrigerante) +
+-- Desgaste 8 (Fe,PQ,Cr,Ni,Al,Cu,Pb,Sn) + Codigo Limpieza 3 = 31 filas.
+-- 146.3 Y QUE LOS VALORES NUEVOS YA SALGAN (antes todos con guion aunque el dato existia):
+--   en el CA3195 MT LH, Mo debe mostrar ~2.2 y los ISO deben traer numero.
