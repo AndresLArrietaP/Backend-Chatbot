@@ -59,6 +59,143 @@ tabla) y explica por qué el modelo «filtra raro»: a veces filtra, a veces no,
 `/barrido antapaccay d475` y `/barrido antapaccay 980` devolvieron **exactamente la misma tabla**, los
 mismos 18 equipos — ahí el parámetro se acepta y **se ignora**. → **Bloque L**.
 
+# ▶▶ PLAN DE MAÑANA (29/09) — **todo el SQL primero, Copilot al final**
+
+> Orden pedido por Andrés: **(1)** SQL completo con sus pruebas —deterministas o de rendimiento según el
+> caso— y **(2)** recién entonces Copilot Studio y todo lo que arrastre.
+> ⚠ Franco espera la presentación interna el **viernes 02/10, 19:30**.
+
+---
+
+# FASE 1 · SQL
+
+Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qué bloque se prueba.
+⚑ Antes de cada despliegue: `python tools/check_ddl.py`. Después: **BLOQUE 89** (smoke).
+
+| # | Qué | DDL | Prueba | Tipo |
+|---|---|---|---|---|
+| **1** | **Consolidar `base` en `vw_DiagnosticoMD`** (7 lecturas → 1) | ✍ escribir | **147** nuevo | rendimiento |
+| **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | 📋 patrón listo | **148** nuevo | determinista + rendimiento |
+| **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **149** nuevo | determinista |
+| **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
+| **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
+| **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
+| **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
+| **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
+
+**El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
+medición posterior sobre esa cadena miente. El **4** antes que **G** (acumulados por componente depende de
+él). El **8** cambia la firma de un comando, así que arrastra Copilot y va al final del SQL.
+
+## Notas por paso
+
+**1 · Consolidar `base`** — La métrica de éxito **no es el tiempo, es el `Scan count`**: de **7 a 1 o 2**.
+`base` se lee en las líneas 21, 31, 72, 77, 108, 132 y 142. Las de `hdr_all`/`hdr_obs` (72, 77) son
+`SELECT DISTINCT` que se pueden resolver con window functions sobre la expansión que ya hace `unpv`.
+⚠ Medir **antes** (hoy: 12 152 ms · 7 scans · 76 928 lecturas) y **después**, con `LIKE`.
+
+**2 · L3** — El patrón está escrito en el bloque L. Dos comprobaciones **antes** de aplicarlo:
+(a) que las 9 fuentes expongan `Proyecto` —las de las líneas 3039 y 3448 leen un CTE `base` propio, y si
+no lo lleva es `Msg 207` **al consultar**, no al desplegar—; (b) **medir**, porque es un `EXISTS` por fila
+en vistas de flota.
+**Criterio:** `/triage mt antapaccay` deja de mostrar `### 930E · 18 equipos (0 obs)`, y `/barrido
+antapaccay` sigue diciendo **18 equipos**.
+
+**3 · L4** — `vw_RankingMD` tiene que exponer `Modelo` y el flujo filtrarlo. Cierra **H3**.
+
+**4 · C** — La fórmula ya está validada al decimal (**3 718,6**). Diseño: vista dedicada
+`vw_AcumuladoVida` que lea `[Oil].[LaboratoryData]` **directo**, sin la fundación y sin window functions.
+⚠ Dos cosas medidas que condicionan: `ComponentStatus` solo está poblado en el **43 %** de las filas —el
+resto va `—`, nunca un número calculado con otro criterio—, y el literal es **`'En uso'`** con u
+minúscula. Y el renombre **`Σvida` → `Acum`** toca 4 vistas.
+
+**5 · J** — Prefijar la familia dentro de la celda: `Desgaste: Fe(231.8) · Aditivos: Ca(54.0)`, en el
+orden del formato. No ensancha la tabla.
+
+**6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
+⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo
+necesitan, BLOQUE 102). Hoy vive pegado a esa tabla; al quitarla hay que **conservarlo como línea de
+texto**, o volvemos a un fallo silencioso.
+
+**7 · E** — Filas de encabezado **dentro** de la matriz (una por campo, una columna por componente): en
+`/condicionmt` y `/diagcompleto` cada componente tiene **su** fecha, grado y horas, así que un encabezado
+único mentiría.
+
+**8 · A** — `Acum` como fila de 6 columnas; `Prom`, `σ` y `Nº fuera de límite` **fuera de la tabla**, como
+lista de texto con su lógica. Sin `Spark`. Límites como una línea, no como tabla.
+
+## ✅ Ya resuelto sin escribir SQL
+
+- **K2** — `vw_TendenciaIncipienteMD` lee `vw_MuestrasRankeadas` (que ya filtra `EsDDI=0`) **y además**
+  tiene su propio `WHERE EsDDI = 0`. **Doble filtro: no usa DDI.** Lo que pidió Carlos ya está; **K** se
+  reduce a reescribir la descripción, que es Copilot.
+- **L1** — el SQL filtra bien (BLOQUE 147). Es Copilot.
+
+## Queda para después del viernes
+
+**F** (historial vertical con todos los parámetros) · **I** (Panel de flota) · **G** (acumulados por
+componente, depende del paso 4). Los tres son módulos nuevos, no retoques.
+
+---
+
+# FASE 2 · COPILOT STUDIO — detallado
+
+> ⛔ Nada de esto se toca hasta que la Fase 1 esté desplegada y probada en SSMS.
+> ⚑ Gotcha permanente: al añadir una entrada a un tema ya referenciado, **guardar el tema destino
+> primero** y luego **re-seleccionarlo** en el nodo «Ir a otro tema» —cambiarlo a otro y volver a
+> elegirlo— para que relea sus entradas. Si no, el mapeo no aparece.
+
+### C1 · `‹modelo›` no llega al flujo  ⭐ el bloqueante de L
+
+**Temas 16 (Barrido resumen) y 17 (Barrido detalle).** Mirar en este orden:
+
+1. ¿`modelo` está como **Entrada** del tema, o quedó **fijo en la Acción**? Es el mismo patrón que
+   `vista`/`columna`, que **sí** van fijas a propósito — por eso es fácil habérselo puesto igual sin querer.
+2. En el Tema 00, nodo «Ir a otro tema»: ¿está mapeado `modelo ← p2`?
+3. En la Acción del tema: ¿`modelo` se pasa al flujo?
+
+**Prueba de que quedó, sin SSMS:** `/barrido antapaccay d475` → **«1 equipo»**.
+`/barrido antapaccay 980` → **«16 equipos»**. Si los dos dicen **18**, sigue llegando `(todos)`.
+*(Medido en el BLOQUE 147: 728 / 2 397 / 2 601 caracteres de `MD`.)*
+
+### C2 · El fallback y el análisis **no pueden dibujar tablas**  ⭐ el más grave
+
+Dos sitios, un solo vicio:
+
+- **`prompts/analisis_prompts.md`** — hoy prohíbe inventar datos, pero **no prohíbe re-emitir la tabla**.
+  Añadir explícito: *el análisis comenta, **nunca** re-dibuja la tabla ni una versión «filtrada» de ella*.
+  (Caso: `/barridodet antapaccay 980` imprimió la tabla y debajo el análisis la volvió a dibujar.)
+- **`KomfIA_SQL_MD.docx`** (el fallback) — que **no arme tablas con formato de módulo**. Cuando un comando
+  no encuentre su tema, **decirlo**; no improvisar.
+  (Casos medidos: `/conteo Antapaccay 797` y `/conteo Antapaccay d11` devolvieron tablas **fabricadas**
+  con modelos que no existen en ese proyecto.)
+
+### C3 · Descripciones y firmas
+
+| Tema | Qué |
+|---|---|
+| **20 Incipiente** | Reescribir la descripción: «Equipos que **todavía no pasan el límite** pero vienen subiendo fuerte. Si un parámetro **ya superó el límite**, no aparece aquí: sale en `/triage` y en `/barrido`.» |
+| **22 Ranking** | Firma nueva `/ranking ‹proj› ‹comp› ‹metal› [modelo] [top]` + descripción |
+| **06 Gráfica** | Absorbe `/tendenciametal`: `/grafica ‹equipo› ‹componente› ‹metal›`, los tres **obligatorios** |
+| **08 Tendencia de un metal** | **Desactivar** — ⛔ desactivar, **no** borrar el nodo |
+| **27/28 Acumulados** | Decir en la **descripción** que solo existe para Antapaccay (hoy sale como aviso al final) |
+
+### C4 · Los tres archivos de la tarjeta, siempre juntos
+
+`CONFIG_COMANDOS.md` + `tools/gen_comandos_card.py` + `docs/copilot/tarjetas/comandos_card.json`.
+Cambian: `/ranking` (+`modelo`), `/grafica` (3 obligatorios) y se va `/tendenciametal`.
+De 20 comandos a **19**.
+
+### C5 · Los que quedan vivos
+
+- **H1** · `/ranking` a secas responde «Tas a una» → sin parámetros debe pedirlos o mandar a `/comandos`.
+- **H2** · `/ayuda` responde dos cosas distintas → la aleatoriedad del 17/09 sigue abierta.
+- **H5** · `/conteo` lista un componente `nan` (`Compartimiento` nulo) — **este es SQL**, se puede colar
+  en la Fase 1 si sobra tiempo.
+- **H6** · `/triage mtrh` con columnas descuadradas — solo esa variante.
+
+---
+
 ## 🔴 PENDIENTE PUNTUAL — `vw_DiagnosticoMD` lee `base` 7 veces
 
 > **Recordarlo en cada ronda hasta que se haga.** No bloquea, pero es deuda medida y con nombre.
@@ -451,10 +588,15 @@ entra**:
 > «Equipos que **todavía no pasan el límite** pero vienen subiendo fuerte. Si un parámetro **ya superó el
 > límite**, no aparece aquí: sale en `/triage` y en `/barrido`.»
 
-**K2 · Lo que sí hay que verificar:** «considera NO DDI». La media de las 6 previas debe salir **solo de
-muestras de monitoreo**. Una `DDI` (aceite ya dializado) baja la media artificialmente e **infla el % de
-subida** → falsos incipientes. Comprobar de qué vista cuelga `vw_TendenciaIncipienteMD`: si lee
-`vw_MuestrasHistorial` (que **sí** incluye DDI) en vez de `vw_MuestrasRankeadas`, ahí está.
+### ✅ K2 — verificado (28/09): **ya no usa DDI, y por partida doble**
+
+Carlos pidió «considera NO DDI» porque una muestra dializada baja la media de las 6 previas y **infla el
+% de subida** → falsos incipientes. Lo comprobé y **ya estaba cubierto**:
+
+`vw_TendenciaIncipienteMD` lee **`vw_MuestrasRankeadas`**, que termina en `WHERE me.EsDDI = 0`, **y
+además** tiene su propio `WHERE EsDDI = 0 AND rn_recencia <= 7`. Doble filtro.
+
+⇒ **No hay SQL que escribir en K.** El bloque se reduce a reescribir la descripción, que es Copilot (C3).
 
 ---
 
