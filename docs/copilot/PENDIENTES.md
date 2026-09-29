@@ -184,13 +184,27 @@ viejo eran 12 meses, no la vida del componente.
 `CM IN ('ADI','C')` en Motor de Tracción, **todos** los CM en Motor.
 → `CA3195 MT LH Fe = 3 718,6` y `CA3160 MT Fe = 6 785,4`, **la cifra del bloque B**.
 
-🔴 **Lo que el 153.2 cambió del diseño:** `ComponentStatus = 'En uso'` **solo existe para Motor y Motor
-de Tracción**. No hay ni una fila en rueda, hidráulico, mando ni transmisión. ⇒ **no hubo que inventar
-ninguna regla** para los componentes que Carlos no mencionó: no hay componente instalado que seguir.
+**Las cuatro reglas, tal como las dictó Carlos:**
 
-⚠ **Consecuencia visible, y hay que contarla:** de **306** componentes con muestra, **80** tendrán `Acum`
-y **226 pasarán a `—`**. Hoy muestran un número — pero ese número eran 12 meses, no la vida. No es una
-regresión: es dejar de decir algo que no era cierto. El pie de la tabla ahora dice que **`—` no es cero**.
+| Componente | `CM` que suma | ¿Acotado al componente instalado? |
+|---|---|---|
+| **Motor de Tracción** | `ADI` y `C` | ✅ sí (`ComponentStatus = 'En uso'`) |
+| **Motor** | **todos** | ✅ sí |
+| **Rueda delantera** | solo `C` | ❌ no — ver abajo |
+| **Sistema hidráulico** | solo `C` | ❌ no |
+
+🔴 **Corrección del 29/09 — casi pierdo dos de las cuatro reglas.** El 153.2 midió que
+`ComponentStatus` **no existe** en rueda ni hidráulico, y con ese dato concluí que ahí no se podía
+calcular el `Acum`. **Era una conclusión mía, no lo que dijo Carlos** — él sí dio la regla para esos dos.
+Andrés lo señaló. Ahora entran, aplicando `CM = 'C'` **sin** el filtro de «en uso»: exigirlo los dejaría
+en cero y perderíamos un acumulado que el área **sí** pidió.
+
+⛔ **Y eso hay que decírselo a Carlos:** en rueda e hidráulico el acumulado **no está acotado al
+componente instalado**, porque la base no registra cuál es. Es el acumulado de todas las muestras `C` del
+equipo en ese compartimiento. En MT y Motor **sí** está acotado.
+
+⛔ **Mando final, transmisión, caja de giro, damper y PTO se quedan sin `Acum`**: para esos no hay regla
+del área *y* además no tienen `ComponentStatus`. Salen `—`, y el pie ahora dice que **`—` no es cero**.
 
 📌 Solo se calculan los **8 metales de desgaste** (los únicos que el display muestra); calcular los 18
 sería pagar de más.

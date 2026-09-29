@@ -5715,17 +5715,38 @@ WHERE (Equipo = 'CA3195' AND Compartimiento LIKE '%TRACCION%LH' AND Parametro = 
    OR (Equipo = 'CA3160' AND Compartimiento LIKE '%TRACCION%'   AND Parametro = 'Fe')
 ORDER BY Equipo, Compartimiento;
 GO
--- 154.2 COBERTURA: tiene que dar 80 filas de componente (27 motores + 53 MT) para Antapaccay,
---   y NINGUNA de rueda, hidraulico, mando ni transmision (bloque 153.2).
+-- 154.2 COBERTURA. CORREGIDO el 29/09: Carlos SI dio regla para rueda e hidraulico (solo C) y
+--   yo la habia descartado al ver que esos componentes no tienen [ComponentStatus]. Ahora entran,
+--   sin ese filtro. Deben salir MT, MOTOR, RUEDA e HIDRAULICO. MANDO y TRANSMISION no (para esos
+--   no hay regla del area).
 SELECT CASE WHEN Compartimiento LIKE '%TRACCION%' THEN 'TRACCION'
+            WHEN Compartimiento LIKE '%RUEDA%'    THEN 'RUEDA'
+            WHEN Compartimiento LIKE '%HIDRAUL%'  THEN 'HIDRAULICO'
             WHEN Compartimiento LIKE 'MOTOR%'     THEN 'MOTOR'
             ELSE 'OTRO -- NO DEBERIA SALIR' END AS CompTipo,
        COUNT(DISTINCT Equipo + '|' + Compartimiento) AS Componentes,
        COUNT(*) AS Filas
 FROM [dbo].[vw_AcumuladoVida]
 GROUP BY CASE WHEN Compartimiento LIKE '%TRACCION%' THEN 'TRACCION'
+              WHEN Compartimiento LIKE '%RUEDA%'    THEN 'RUEDA'
+              WHEN Compartimiento LIKE '%HIDRAUL%'  THEN 'HIDRAULICO'
               WHEN Compartimiento LIKE 'MOTOR%'     THEN 'MOTOR'
               ELSE 'OTRO -- NO DEBERIA SALIR' END;
+GO
+-- 154.2b CUANTAS MUESTRAS SOSTIENEN el acumulado de rueda e hidraulico. Si el promedio es de
+--   2-3 muestras, el numero existe pero dice poco, y eso hay que consultarlo con Carlos.
+SELECT CompTipo, COUNT(*) AS Componentes,
+       MIN(nMuestras) AS Min_, MAX(nMuestras) AS Max_, AVG(nMuestras) AS Prom_
+FROM (
+    SELECT CASE WHEN LD.[Compartimiento] LIKE '%RUEDA%' THEN 'RUEDA' ELSE 'HIDRAULICO' END AS CompTipo,
+           ME.[Code] AS Equipo, LD.[Compartimiento], COUNT(*) AS nMuestras
+    FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+    JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+    JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+    WHERE MP.[Name] LIKE '%Antapaccay%' AND LD.[CM] = 'C'
+      AND (LD.[Compartimiento] LIKE '%RUEDA%' OR LD.[Compartimiento] LIKE '%HIDRAUL%')
+    GROUP BY ME.[Code], LD.[Compartimiento]
+) z GROUP BY CompTipo;
 GO
 -- 154.3 ⭐ QUE LLEGUE A vw_TendenciaElemento. El Fe del CA3195 MT LH debe traer 3 718,6, y el
 --   resto de parametros (Si, Ca, Zn...) debe venir NULL: solo se calculan los 8 de desgaste.
@@ -5739,9 +5760,9 @@ GO
 SELECT MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%3195%' AND compAbbr LIKE '%MT LH%';
 GO
--- 154.5 ⭐ EL CASO QUE CAMBIA A LA VISTA DEL USUARIO: un componente SIN acumulado. La rueda del
---   CA3175 mostraba un numero (calculado sobre 12 meses) y ahora debe mostrar '—'.
---   No es una regresion: es que antes decia un numero que no significaba lo que decia.
+-- 154.5 ⭐ LA RUEDA DEL CA3175. Ahora SI debe traer un numero (regla: solo C), pero DISTINTO del
+--   de antes: el viejo sumaba todas las muestras de 12 meses, el nuevo solo las 'C' de toda la
+--   historia. Si sale un guion, es que ese equipo no tiene ninguna muestra 'C' en la rueda.
 SELECT MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%3175%' AND compAbbr LIKE '%RD LH%';
 GO

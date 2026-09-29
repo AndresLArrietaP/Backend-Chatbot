@@ -1056,16 +1056,21 @@ GO
 
    LA FORMULA, que dio Carlos y esta VALIDADA AL DECIMAL dos veces:
      - filtrar [ComponentStatus] = 'En uso'  -> las muestras del componente ACTUALMENTE instalado
-     - y el tipo de muestra segun el componente:
+     - y el tipo de muestra segun el componente, tal como lo dicto Carlos:
            MOTOR DE TRACCION -> CM IN ('ADI','C')   (la de ANTES del dializado, no la de despues)
            MOTOR             -> todas               (el motor no se dializa)
+           RUEDA DELANTERA   -> solo C
+           SISTEMA HIDRAULICO-> solo C
      Verificado: CA3195 MT LH Fe = 3 718,6 (bloque 137.3 y 153.3) y CA3160 MT Fe = 6 785,4,
      que es exactamente el numero que Carlos habia dado el 23/09 (bloque 153.5).
 
-   ⚠ SOLO ESOS DOS COMPONENTES. El bloque 153.2 midio que 'En uso' NO EXISTE para rueda,
-   hidraulico, mando ni transmision: no hay ni una fila. No es que falte la regla -- es que no
-   hay componente instalado que seguir. De 306 componentes con muestra, 80 tienen acumulado.
-   Los otros 226 salen '—', y '—' NO ES CERO: es "no se puede calcular".
+   ⚠ EL FILTRO 'En uso' SOLO SE APLICA EN MT Y MOTOR. El bloque 153.2 midio que
+   [ComponentStatus] no existe en rueda ni en hidraulico (ni una fila), asi que exigirlo ahi
+   los dejaria en cero y perderiamos un acumulado que el area SI pidio. En esos dos el acumulado
+   NO esta acotado al componente instalado -- hay que decirselo a Carlos.
+   ⛔ MANDO FINAL, TRANSMISION, CAJA GIRO, DAMPER y PTO se quedan sin Acum: para esos Carlos no
+   dio regla y ademas tampoco tienen 'En uso'. Salen '—', y '—' NO ES CERO: es "no se puede
+   calcular".
 
    ⚠ Lee [Oil].[LaboratoryData] DIRECTO, sin la fundacion y SIN la ventana de 12 meses: el
    acumulado es de toda la vida del componente, que es justo lo que la ventana impedia.
@@ -1079,10 +1084,22 @@ CROSS APPLY (VALUES
     (N'Fe', LD.[Fe_ppm]), (N'PQ', LD.[Indice_PQ]), (N'Cr', LD.[Cr_ppm]), (N'Ni', LD.[Ni_ppm]),
     (N'Cu', LD.[Cu_ppm]), (N'Pb', LD.[Pb_ppm]), (N'Sn', LD.[Sn_ppm]), (N'Al', LD.[Al_ppm])
 ) pa(Parametro, Valor)
-WHERE LD.[ComponentStatus] = N'En uso'
-  AND pa.Valor IS NOT NULL
-  AND (   (LD.[Compartimiento] LIKE '%TRACCION%' AND LD.[CM] IN ('ADI','C'))
-       OR (LD.[Compartimiento] LIKE 'MOTOR%' AND LD.[Compartimiento] NOT LIKE '%TRACCION%') )
+WHERE pa.Valor IS NOT NULL
+  AND (   /* Motor de Traccion: la muestra de ANTES del dializado, mas los cambios. */
+          (LD.[Compartimiento] LIKE '%TRACCION%'
+           AND LD.[ComponentStatus] = N'En uso' AND LD.[CM] IN ('ADI','C'))
+          /* Motor: todo, no se dializa. */
+       OR (LD.[Compartimiento] LIKE 'MOTOR%' AND LD.[Compartimiento] NOT LIKE '%TRACCION%'
+           AND LD.[ComponentStatus] = N'En uso')
+          /* Rueda delantera y Sistema Hidraulico: solo C.
+             ⚠ SIN el filtro de 'En uso', y no por descuido: el bloque 153.2 midio que
+             [ComponentStatus] NO EXISTE en estos dos componentes -- ni una sola fila. Aplicar
+             el filtro los dejaria en cero y perderiamos un acumulado que el area SI pidio.
+             ⛔ CONSECUENCIA QUE HAY QUE DECIRLE A CARLOS: aqui el acumulado NO esta acotado al
+             componente instalado, porque la base no registra cual es. Es el acumulado de todas
+             las muestras 'C' del equipo en ese compartimiento. En MT y Motor si esta acotado. */
+       OR (LD.[Compartimiento] LIKE '%RUEDA%'   AND LD.[CM] = 'C')
+       OR (LD.[Compartimiento] LIKE '%HIDRAUL%' AND LD.[CM] = 'C') )
 GROUP BY ME.[Code], LD.[Compartimiento], pa.Parametro;
 GO
 
@@ -2462,7 +2479,7 @@ SELECT
                 + N'muestran, pero no hay contra qué compararlos. ⚠ Esto **no** significa que estén dentro de límite._'
              ELSE N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + lb.bodyMD END + NCHAR(10) + NCHAR(10)
       /* Dos 'acumulados' distintos con el mismo nombre coloquial confunden: se dice cual es cual. */
-      + N'_**Acum** = suma del metal en toda la vida del componente **que está instalado hoy** (`ComponentStatus = En uso`), contando la muestra previa al dializado. Solo en metales de desgaste, y solo en **Motor** y **Motor de Tracción**: son los únicos componentes de los que la base registra cuál está instalado. Un `—` significa **no se puede calcular**, no cero._' + NCHAR(10) + NCHAR(10)
+      + N'_**Acum** = suma del metal, solo en metales de desgaste y con el criterio del área: en **Motor de Tracción** las muestras previas al dializado y los cambios, en **Motor** todas, y en **Rueda** e **Hidráulico** solo los cambios. En MT y Motor está acotado al componente instalado hoy; en rueda e hidráulico no, porque la base no registra cuál lo está. Un `—` significa **no se puede calcular**, no cero._' + NCHAR(10) + NCHAR(10)
       + N'_¿Quieres el **resumen estadístico** (promedio, σ, nº fuera de límite) o la **gráfica** de un metal?_'
     AS nvarchar(max)) AS MD,
     /* CONTINUACION (columna=MD_Estadistica): lo que salio del bloque principal por tamano.
@@ -2472,7 +2489,7 @@ SELECT
       + N'| Par. | Prom. | σ | Acum | Nº fuera de límite |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10)
       + ISNULL(st.bodyMD, N'_Sin muestras suficientes para el resumen._') + NCHAR(10) + NCHAR(10)
-      + N'_**Acum** = suma del metal en toda la vida del componente **que está instalado hoy** (`ComponentStatus = En uso`), contando la muestra previa al dializado. Solo en metales de desgaste, y solo en **Motor** y **Motor de Tracción**: son los únicos componentes de los que la base registra cuál está instalado. Un `—` significa **no se puede calcular**, no cero._'
+      + N'_**Acum** = suma del metal, solo en metales de desgaste y con el criterio del área: en **Motor de Tracción** las muestras previas al dializado y los cambios, en **Motor** todas, y en **Rueda** e **Hidráulico** solo los cambios. En MT y Motor está acotado al componente instalado hoy; en rueda e hidráulico no, porque la base no registra cuál lo está. Un `—` significa **no se puede calcular**, no cero._'
     AS nvarchar(max)) AS MD_Estadistica,
     CAST(   -- opt-in (columna=MD_Relevantes): TABLA solo si hay relevantes; si no, solo el mensaje
         N'**Tendencia — parámetros relevantes · ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
