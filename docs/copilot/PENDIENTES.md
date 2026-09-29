@@ -86,7 +86,9 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL CERRADO** (152) — el resto es Copilot | **152** | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **CERRADO** (154) | **154** | determinista + rendimiento |
 | **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
-| **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | ⏳ **medir antes de escribir** | **156** | decisión |
+| **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | 🔑 **medido (156): la decisión ya estaba en el código** | **156** · **157** | decisión |
+| **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
+| **5d** | **O** · dos bloques de límites para **Carlos** (RUEDA · ISO) | ⏸ **no es SQL** — es carga de `lc` | **157.2** · **157.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -314,6 +316,69 @@ saldrían observados con la regla nueva, qué parámetro aporta las marcas, y la
 | más de 60 % | **No volver atrás: separar las dos preguntas.** (a) que solo los **críticos** de las familias nuevas disparen; (b) dos contadores: «6 dañados · 48 con desvío»; (c) revisar el límite que el 156.2 señale. |
 
 Esto **también cierra D**, que quedó abierta con exactamente la misma pregunta.
+
+### 🔑 Resultado del BLOQUE 156 (29/09): la decisión **ya estaba tomada en el código**
+
+La predicción se cumplió casi exacta: **Antapaccay TRACCION pasa de 6 a 50** (de 72) = **69,4 %**.
+Tramo «más de 60 %» de la tabla de arriba, en cuatro proyectos: Antamina RUEDA **94,6 %**, Toromocho
+RUEDA y TRACCION **100 %**, Cerro Verde RUEDA **75 %**.
+
+Pero al revisar `vw_FormatoParametro` para contestar una pregunta de Andrés sobre las familias, apareció
+lo que importa — su propia cabecera:
+
+> *`Inf = 1` → parámetro **INFORMATIVO: se muestra pero no dispara estado**. Se conserva el criterio
+> vigente (`K`, `Na`, `B`, y `Ca`/`Zn`/`Mg` cuando son **contaminantes**, o sea en TRACCION).*
+
+**El triage del 155 ignora esa bandera.** Por eso el `Zn` sale marcado en media flota de MT: ahí el área
+**ya decidió** que se muestre pero no cuente. ⇒ La política de Carlos **no necesita un matiz inventado**:
+el matiz existe, se llama `Inf`, y solo hay que enchufarlo. Aplicado a los números: en TRACCION se caen
+`Zn` (17) y `Ca` (4); en RUEDA se cae `Na` (54).
+
+### 🔴 Lo que `Inf` NO explica: dos bloques que huelen a límite mal cargado
+
+**RUEDA — `Ca`, `Zn` y `Mg` críticos en 54 de 54.** Son aditivos con límite **invertido**: crítico = *por
+debajo del piso*. Que 54 ruedas agoten **tres** aditivos a la vez no pasa. Y se repite en cuatro
+proyectos. **Cuatro parámetros con exactamente 54 componentes críticos cada uno no son 216 hallazgos: son
+un defecto sistemático.**
+
+**TRACCION — `ISO6` en 48 de 72** con `ISO6_LP = 19` y valores 21-26. Y el 156.4 enseña que **`ISO4_LP` es
+NULL en todas las filas** con `ISO4` entre 23 y 28: el canal de **4 µm** —el que siempre sale más sucio,
+por definición de la escala— **no tiene límite y calla**; el de 6 µm grita. Eso no describe la limpieza
+del aceite, describe una **carga incompleta de `[Eqpcare].[lc]`**.
+
+⚠ Y un tercero, de paso: los **930E no tienen** `Zn_LP`/`Zn_LC` ni `ISO6_LP`/`ISO14_LP`. Salen `OK` pase
+lo que pase — `3115` con `Zn = 125,8` sale verde. Es **L5 otra vez**, ahora a nivel de parámetro suelto.
+
+### El orden, y por qué importa
+
+1. **`Inf` en el triage** — gratis, y cierra **E0 de raíz**: sin pie de tabla que lo explique y sin
+   pedirle nada a nadie. El parámetro `Inf=1` **se sigue viendo** en su columna (Andrés quiere el valor)
+   pero no entra al contador.
+2. **Los dos bloques van a Carlos**, no a SQL. El SQL está leyendo **bien** un dato **mal cargado**; se
+   corrige en `LIMITES CONDENATORIOS 1.xlsm`.
+3. **Recién ahí** se elige el formato del triage (solo observados + `‹modelo›`). Elegirlo ahora sería
+   dimensionarlo con 54 falsos positivos dentro.
+
+⛔ **No tocar `Estado_General` todavía.** Mientras el límite de RUEDA esté mal, ampliarlo convierte un
+error de carga en **122 equipos «observados» en Antamina** — y eso llega a gerencia como una crisis de
+flota que no existe.
+
+### 🧹 Deuda destapada: `Disponible` quedó desfasado
+
+`vw_FormatoParametro` declara `Disponible = 0` para `V40`, `TAN`, `Oxidacion`, `Sulfatacion`, `Nitracion`,
+`Mo`, `Agua`, `Hollin`, `Diesel` e `ISO 4/6/14` — *«no tienen fuente en `Oil.LaboratoryData`»*. **El
+bloque D encontró 13 de esas columnas y las enchufó.** Por eso el 155.3 mostró `Hollin(0.4)` y
+`Sulfatacion(3.2)`, y el 156.2 contó **9 `Oxidacion` críticos** en MOTOR — de un parámetro que el formato
+sigue declarando inexistente. **BLOQUE 157.4** lo mide; todo lo que tenga dato pasa a `Disponible = 1`.
+
+### ✅ Y la respuesta a la pregunta de Andrés sobre las familias
+
+Sí, el formato respeta la variación por componente, y su memoria resultó **más completa que `CLAUDE.md`**:
+
+> *«Solo **4 parámetros** cambian de grupo entre hojas — **Ca, Mg, Mo y Zn**: Contaminación en MT y
+> Aditivos en las otras tres.»*
+
+Los cuatro que nombró, **`Mo` incluido**. `CLAUDE.md` solo listaba `Ca`/`Zn`/`Mg` — corregido el 29/09.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   157 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   158 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -177,6 +177,7 @@
      BLOQUE 154  PASO 4 (C): el Acum desplegado
      BLOQUE 155  PASO 5 (J): el triage pasa a 5 COLUMNAS por familia
      BLOQUE 156  DECISION: 'fuera de limite = observado' para TODO parametro
+     BLOQUE 157  La bandera 'Inf' YA existe + dos bloques que huelen a limite
    ============================================================================ */
 
 /* ============================================================================
@@ -6023,4 +6024,182 @@ GO
                                  b) Dos contadores en el encabezado: "6 danados · 48 con desvio".
                                  c) Revisar el limite del parametro que el 156.2 senale, si uno
                                     solo explica el salto.
+*/
+
+-- RESULTADOS BLOQUE 156 (29/09) -- la medicion valio la pena: la cifra cae en el tercer tramo
+-- de la tabla de lectura, y ADEMAS descubre que la decision ya estaba tomada en el codigo.
+--
+-- 156.1 LA CIFRA. Hoy -> Nuevo (crudo), por proyecto x componente:
+--   Antamina    HIDRAULICO  158 |  50 ->  62 (39,2%)     Antapaccay HIDRAULICO  48 |  5 ->  6 (12,5%)
+--   Antamina    MOTOR       158 |   4 ->  19 (12,0%)     Antapaccay MANDO       26 |  1 ->  2 ( 7,7%)
+--   Antamina    RUEDA       129 | 103 -> 122 (94,6%) ⚠   Antapaccay MOTOR       48 |  6 -> 17 (35,4%)
+--   Antamina    TRACCION    388 |  77 -> 131 (33,8%)     Antapaccay RUEDA       72 |  6 -> 54 (75,0%) ⚠
+--   Cerro Verde RUEDA        20 |  14 ->  15 (75,0%) ⚠   Antapaccay TRACCION    72 |  6 -> 50 (69,4%) ⚠
+--   Cerro Verde TRACCION    128 |  16 ->  16 (12,5%)     Toromocho  RUEDA       18 | 18 -> 18 ( 100%) ⚠
+--   Cuajone y Toquepala: 0 observados en todo (ninguna muestra reciente con marca).
+--   Toromocho  TRACCION      20 |  20 ->  20 ( 100%) ⚠
+--   ⇒ La prediccion se cumplio: Antapaccay TRACCION pasa de 6 a 50. Tramo ">60%" de la tabla de
+--     lectura del 156 -> NO implementar la regla cruda.
+--
+-- 156.2 QUIEN APORTA LAS MARCAS (Antapaccay). Aqui esta todo:
+--   RUEDA:    Na 54c · Mg 54c · Zn 54c · Ca 54c · P 34c/5p · ISO6 2c/8p · ISO4 1c/4p · Fe 1c/3p
+--   TRACCION: ISO6 38c/10p · Zn 15c/2p · Ca 4c · P 3p · ISO14 3p · Fe 2c/1p · V100 2c · PQ/Cr/Pb 1
+--   MOTOR:    Oxidacion 9c · Si 2c/1p · Al 2p · K 1c/1p · Cu 1c · PQ/Nitracion/Hollin/Sulfat. 1p
+--   ⇒ CUATRO parametros con EXACTAMENTE 54 componentes criticos cada uno no son 216 hallazgos:
+--     son UN defecto sistematico. Ver 157.2.
+--
+-- 156.3 EL Zn EN MT. Antapaccay 980E: Zn_LP=18 / Zn_LC=25, valores de 4,6 a 194,8 -> 17 marcados.
+--   ⚠ Y el 930E tiene Zn_LP y Zn_LC en NULL: ese modelo NO tiene limites cargados, asi que sale
+--     'OK' pase lo que pase (3115 con Zn=125,8 sale OK). Es el caso L5 otra vez, ahora en un
+--     parametro suelto.
+--
+-- 156.4 EL HUECO DE LOS ISO. ⚠ ISO4_LP es NULL en TODAS las filas, con ISO4 entre 23 y 28.
+--   ISO6_LP=19 e ISO14_LP=16 si estan. O sea: el canal de 4 um -- el que SIEMPRE sale mas sucio,
+--   por definicion de la escala -- no tiene limite y calla; el de 6 um grita en 48 de 72.
+--   Eso no describe la limpieza del aceite, describe una carga incompleta de [Eqpcare].[lc].
+--   (Los 930E tampoco tienen ISO6_LP/ISO14_LP: mismo agujero que el Zn.)
+--
+-- 🔑 EL HALLAZGO QUE CAMBIA EL PLAN. Al revisar vw_FormatoParametro para contestar una pregunta
+--   de Andres sobre las familias, aparecio que la decision ya estaba tomada:
+--       "Inf = 1 -> parametro INFORMATIVO: se muestra pero no dispara estado. Se conserva el
+--        criterio vigente (K, Na, B, y Ca/Zn/Mg cuando son CONTAMINANTES, o sea en TRACCION)."
+--   El triage del BLOQUE 155 IGNORA esa bandera. Por eso el Zn sale marcado en media flota de MT.
+--   Aplicando Inf a los numeros de arriba: en TRACCION se caen Zn (17) y Ca (4); en RUEDA se cae
+--   Na (54). NO se caen Ca/Zn/Mg/P de RUEDA (ahi Inf=0, son aditivos de verdad) ni el ISO6.
+--   ⇒ La politica de Carlos no necesita un matiz inventado: el matiz existe. Continua en BLOQUE 157.
+--
+-- ✅ DE PASO, RESPUESTA A LA PREGUNTA DE ANDRES: si, el formato respeta la variacion por
+--   componente, y su memoria es mas completa que la de CLAUDE.md. Cabecera de vw_FormatoParametro:
+--   "Solo 4 parametros cambian de grupo entre hojas -- Ca, Mg, Mo y Zn: Contaminacion en MT y
+--   Aditivos en las otras tres". Los cuatro que nombro, Mo incluido. CLAUDE.md solo listaba
+--   Ca/Zn/Mg: corregido el 29/09.
+
+
+-- ==== BLOQUE 157 - La bandera 'Inf' YA existe, y dos bloques que huelen a limite ====
+-- EL HALLAZGO DEL 156: la decision que ibamos a tomar desde cero YA ESTA TOMADA en el codigo.
+--   vw_FormatoParametro tiene Inf: "Inf = 1 -> parametro INFORMATIVO: se muestra pero no dispara
+--   estado. Se conserva el criterio vigente (K, Na, B, y Ca/Zn/Mg cuando son CONTAMINANTES, o sea
+--   en TRACCION)". El triage que escribi en el BLOQUE 155 la IGNORA: por eso el Zn sale marcado
+--   en media flota de MT, donde el area ya decidio que se muestre pero no cuente.
+--   => La politica de Carlos ("fuera de limite = observado") no necesita un matiz inventado:
+--      el matiz existe, se llama Inf, y solo hay que enchufarlo.
+--
+-- LO QUE EL 156 DEJO EN PIE, y que Inf NO explica:
+--   (1) RUEDA: Ca, Zn y Mg criticos en 54 de 54 componentes de Antapaccay. Son aditivos con
+--       limite INVERTIDO -> critico = POR DEBAJO del piso. Que 54 ruedas agoten TRES aditivos a
+--       la vez no pasa. Y no es solo Antapaccay: Antamina 94,6% · Toromocho 100% · Cerro Verde
+--       75%. Cuatro proyectos con el mismo patron = un limite escrito para otro aceite.
+--   (2) TRACCION ISO6: 48 de 72 (38 criticos) con ISO6_LP = 19 y valores 21-26. Y en el 156.4 se
+--       ve que ISO4_LP es NULL en TODAS las filas mientras el ISO4 vale 23-28: el canal de 4 um
+--       -- el mas sucio siempre -- no tiene limite y calla, y el de 6 um grita. Eso no es una
+--       lectura del aceite, es una carga incompleta en [Eqpcare].[lc].
+
+-- 157.1 ⭐ LA CIFRA REAL: el 156.1 otra vez, pero RESPETANDO Inf.
+--   Compara tres numeros por componente: hoy (9 metales), la regla nueva CRUDA (lo que medimos en
+--   el 156) y la regla nueva CON Inf. La diferencia entre las dos ultimas es cuanto ruido mete
+--   ignorar una bandera que ya existia.
+SELECT b.Proyecto, b.CompTipo,
+       COUNT(DISTINCT b.LaboratoryDataId)                                              AS Total,
+       COUNT(DISTINCT CASE WHEN b.Estado_General <> 'OK' THEN b.LaboratoryDataId END)  AS Hoy,
+       COUNT(DISTINCT CASE WHEN v.est IN ('CRITICO','PRECAUCION') THEN b.LaboratoryDataId END)
+                                                                                       AS Nuevo_crudo,
+       COUNT(DISTINCT CASE WHEN v.est IN ('CRITICO','PRECAUCION') AND f.Inf = 0 THEN b.LaboratoryDataId END)
+                                                                                       AS Nuevo_con_Inf,
+       CAST(100.0 * COUNT(DISTINCT CASE WHEN v.est IN ('CRITICO','PRECAUCION') AND f.Inf = 0 THEN b.LaboratoryDataId END)
+            / NULLIF(COUNT(DISTINCT b.LaboratoryDataId),0) AS decimal(5,1))            AS PctConInf
+FROM [dbo].[vw_MuestrasEstado] b WITH (NOLOCK)
+CROSS APPLY (VALUES
+    (N'Fe',b.Estado_Fe),(N'PQ',b.Estado_PQ),(N'Cr',b.Estado_Cr),(N'Ni',b.Estado_Ni),
+    (N'Cu',b.Estado_Cu),(N'Pb',b.Estado_Pb),(N'Sn',b.Estado_Sn),(N'Al',b.Estado_Al),
+    (N'Si',b.Estado_Si),(N'Ca',b.Estado_Ca),(N'Zn',b.Estado_Zn),(N'Mg',b.Estado_Mg),
+    (N'K',b.Estado_K),(N'Na',b.Estado_Na),(N'B',b.Estado_B),(N'P',b.Estado_P),(N'Mo',b.Estado_Mo),
+    (N'V100',b.Estado_V100),(N'V40',b.Estado_V40),(N'TAN',b.Estado_TAN),(N'TBN',b.Estado_TBN),
+    (N'Oxidacion',b.Estado_Oxi),(N'Sulfatacion',b.Estado_Sulf),(N'Nitracion',b.Estado_Nit),
+    (N'Agua',b.Estado_Agua),(N'Hollin',b.Estado_Hollin),(N'Diesel',b.Estado_Diesel),
+    (N'ISO>4',b.Estado_ISO4),(N'ISO>6',b.Estado_ISO6),(N'ISO>14',b.Estado_ISO14)
+) v(Parametro, est)
+LEFT JOIN [dbo].[vw_FormatoParametro] f
+       ON f.Parametro = v.Parametro AND f.CompTipo = b.CompTipo
+WHERE b.rn_recencia = 1 AND b.CompTipo <> 'OTRO'
+GROUP BY b.Proyecto, b.CompTipo
+ORDER BY b.Proyecto, b.CompTipo;
+GO
+
+-- 157.2 ⭐ EL BLOQUE DE RUEDA, DESARMADO. Por proyecto y MODELO: cuantas ruedas, cuantas criticas
+--   por aditivo, y el rango de valores contra el limite. Si el minimo y el maximo de la flota
+--   caen los DOS por debajo del LC, el limite no separa nada: no distingue una rueda sana de una
+--   gastada, porque las reprueba a todas.
+SELECT Proyecto, Modelo,
+       COUNT(*) AS Ruedas,
+       MIN(Ca_LC) AS Ca_LC, CAST(MIN(Ca_ppm) AS decimal(18,1)) AS Ca_min, CAST(MAX(Ca_ppm) AS decimal(18,1)) AS Ca_max,
+       MIN(Zn_LC) AS Zn_LC, CAST(MIN(Zn_ppm) AS decimal(18,1)) AS Zn_min, CAST(MAX(Zn_ppm) AS decimal(18,1)) AS Zn_max,
+       MIN(Mg_LC) AS Mg_LC, CAST(MIN(Mg_ppm) AS decimal(18,1)) AS Mg_min, CAST(MAX(Mg_ppm) AS decimal(18,1)) AS Mg_max,
+       SUM(CASE WHEN Estado_Ca='CRITICO' THEN 1 ELSE 0 END) AS Ca_crit,
+       SUM(CASE WHEN Estado_Zn='CRITICO' THEN 1 ELSE 0 END) AS Zn_crit,
+       SUM(CASE WHEN Estado_Mg='CRITICO' THEN 1 ELSE 0 END) AS Mg_crit
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'RUEDA'
+GROUP BY Proyecto, Modelo
+ORDER BY Proyecto, Modelo;
+GO
+
+-- 157.3 ⭐ EL HUECO DE LOS ISO. Cuantos componentes TIENEN limite en cada canal, por proyecto x
+--   componente. Si ISO4 sale con 0 limites cargados y ISO6 con todos, esta confirmado que el
+--   problema es la carga de [Eqpcare].[lc] y no la limpieza del aceite.
+SELECT Proyecto, CompTipo, COUNT(*) AS Componentes,
+       SUM(CASE WHEN ISO4_LP  IS NOT NULL THEN 1 ELSE 0 END) AS ISO4_con_LP,
+       SUM(CASE WHEN ISO6_LP  IS NOT NULL THEN 1 ELSE 0 END) AS ISO6_con_LP,
+       SUM(CASE WHEN ISO14_LP IS NOT NULL THEN 1 ELSE 0 END) AS ISO14_con_LP,
+       SUM(CASE WHEN Estado_ISO4  IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS ISO4_obs,
+       SUM(CASE WHEN Estado_ISO6  IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS ISO6_obs,
+       SUM(CASE WHEN Estado_ISO14 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS ISO14_obs
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
+GROUP BY Proyecto, CompTipo
+ORDER BY Proyecto, CompTipo;
+GO
+
+-- 157.4 ⚠ AUDITORIA DE 'Disponible'. La cabecera de vw_FormatoParametro dice que V40, TAN,
+--   Oxidacion, Sulfatacion, Nitracion, Mo, Agua, Hollin, Diesel, Refrigerante e ISO 4/6/14 "no
+--   tienen fuente en [Oil].[LaboratoryData]" y por eso van con Disponible = 0. El BLOQUE D
+--   (28/09) ENCONTRO 13 de esas columnas y las enchufo. La bandera quedo DESFASADA: por eso el
+--   155.3 mostro Hollin(0.4) y Sulfatacion(3.2), y por eso el 156.2 conto 9 Oxidacion criticos en
+--   MOTOR -- de un parametro que el formato sigue declarando inexistente.
+--   Esto lista cuantos datos reales hay de cada uno. Todo lo que devuelva > 0 filas con dato
+--   tiene que pasar a Disponible = 1.
+SELECT 'V40' AS Parametro, COUNT(V40) AS ConDato, COUNT(*) AS Filas FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'TAN',        COUNT(TAN),         COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Oxidacion',  COUNT(Oxidacion),   COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Sulfatacion',COUNT(Sulfatacion), COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Nitracion',  COUNT(Nitracion),   COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Mo',         COUNT(Mo_ppm),      COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Agua',       COUNT(Agua),        COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Hollin',     COUNT(Hollin),      COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'Diesel',     COUNT(Diesel),      COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'ISO4',       COUNT(ISO4),        COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'ISO6',       COUNT(ISO6),        COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1
+UNION ALL SELECT 'ISO14',      COUNT(ISO14),       COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1;
+GO
+
+/* QUE SE DECIDE CON ESTO, Y EN QUE ORDEN:
+
+   PRIMERO, y es gratis: enchufar Inf en el triage. No es un criterio nuevo -- es el que el area
+   ya fijo. Un parametro con Inf = 1 se SIGUE MOSTRANDO en su columna (Andres quiere ver el
+   valor) pero NO entra al contador. Eso cierra el bug E0 de raiz, sin pie de tabla que lo
+   explique y sin pedirle nada a nadie.
+
+   SEGUNDO, y es de Carlos, no nuestro: los dos bloques del 157.2 y 157.3.
+     - Si el 157.2 muestra que el maximo de Ca/Zn/Mg de una flota entera esta por debajo del LC,
+       ese limite no separa nada y hay que corregirlo en LIMITES CONDENATORIOS 1.xlsm. NO se
+       parchea en SQL: el SQL esta leyendo bien un dato mal cargado.
+     - Si el 157.3 confirma ISO4 sin limite y ISO6 con limite, es la misma historia en el otro
+       extremo: falta carga, no sobra suciedad.
+
+   TERCERO: con esos dos bloques resueltos, recien ahi la cifra de "cuantos quedan observados"
+   es real y se puede elegir el formato del triage (solo observados + <modelo>). Elegirlo AHORA
+   seria dimensionarlo con 54 falsos positivos dentro.
+
+   ⛔ NO tocar Estado_General todavia. Mientras el limite de RUEDA este mal, ampliarlo convertiria
+   un error de carga en 122 equipos "observados" en Antamina, y eso llega a gerencia como si
+   fuera una crisis de flota.
 */
