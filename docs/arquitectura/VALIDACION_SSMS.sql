@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   153 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   154 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -173,6 +173,7 @@
      BLOQUE 150  PASO 2 (L3): '(todos)' = los modelos con limites cargados
      BLOQUE 151  PASO 2b (L5): avisar cuando el modelo NO tiene limites
      BLOQUE 152  PASO 3 (L4): el ranking y el <modelo> -- H3 y el tope silencioso
+     BLOQUE 153  PASO 4 (C): reconocimiento ANTES de escribir el Acum
    ============================================================================ */
 
 /* ============================================================================
@@ -5539,3 +5540,111 @@ GO
 --   152.2 ✅ Pedir un modelo concreto funciona, incluso uno SIN limites: 980E -> 27 filas,
 --         930E -> 9 filas. Confirma que no restringimos nada.
 --   152.3 ✅ El tope silencioso ya no corta: PosMax 27 / 27 filas (antes la vista cortaba en 20).
+
+
+-- ==== BLOQUE 153 - PASO 4 (C): reconocimiento ANTES de escribir el Acum ====
+-- Carlos dio la regla de CM para CUATRO componentes:
+--     MT -> ADI y C   |   Rueda -> solo C   |   MODI -> todos   |   Sist. Hidraulico -> solo C
+-- Y la formula esta VALIDADA AL DECIMAL para MT (bloque 137.3: 3 718,6).
+-- ⛔ PERO NO HAY REGLA para MANDO FINAL, TRANSMISION, CAJA GIRO, DAMPER ni PTO. Y no hay
+--    verificacion para rueda ni hidraulico: la unica cifra que dio Carlos es de MT.
+--    Escribir la vista suponiendo una regla para los demas seria inventar. Esto lo mide.
+
+-- 153.1 ⭐ QUE COMPONENTES TIENE CADA MODELO. Andres apunta que mando final y transmision son
+--   de tractores (D475A) y excavadoras (PC1250), no de los camiones 980E/930E. Con dato.
+SELECT EF.[Model] AS Modelo,
+       CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
+            WHEN LD.[Compartimiento] LIKE '%RUEDA%'       THEN 'RUEDA'
+            WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+            WHEN LD.[Compartimiento] LIKE '%MANDO%'       THEN 'MANDO'
+            WHEN LD.[Compartimiento] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
+            WHEN LD.[Compartimiento] LIKE 'MOTOR%'        THEN 'MOTOR'
+            ELSE 'OTRO' END AS CompTipo,
+       COUNT(DISTINCT ME.[Code]) AS Equipos, COUNT(*) AS Muestras
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+JOIN [Mine].[EquipmentFleet]  EF WITH (NOLOCK) ON EF.[Id] = ME.[EquipmentFleetId]
+WHERE MP.[Name] LIKE '%Antapaccay%'
+GROUP BY EF.[Model],
+       CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
+            WHEN LD.[Compartimiento] LIKE '%RUEDA%'       THEN 'RUEDA'
+            WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+            WHEN LD.[Compartimiento] LIKE '%MANDO%'       THEN 'MANDO'
+            WHEN LD.[Compartimiento] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
+            WHEN LD.[Compartimiento] LIKE 'MOTOR%'        THEN 'MOTOR'
+            ELSE 'OTRO' END
+ORDER BY Modelo, CompTipo;
+GO
+
+-- 153.2 ⭐ QUE PASA CON CADA REGLA, componente por componente. Cuantas muestras 'En uso'
+--   sobreviven a cada criterio. Si para un componente la regla deja 0 o 2 muestras, esa regla
+--   NO sirve ahi y hay que preguntar en vez de suponer.
+SELECT CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
+            WHEN LD.[Compartimiento] LIKE '%RUEDA%'       THEN 'RUEDA'
+            WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+            WHEN LD.[Compartimiento] LIKE '%MANDO%'       THEN 'MANDO'
+            WHEN LD.[Compartimiento] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
+            WHEN LD.[Compartimiento] LIKE 'MOTOR%'        THEN 'MOTOR'
+            ELSE 'OTRO' END AS CompTipo,
+       COUNT(*)                                                 AS EnUso_Todas,
+       SUM(CASE WHEN LD.[CM] IN ('ADI','C') THEN 1 ELSE 0 END)  AS Regla_MT_AdiC,
+       SUM(CASE WHEN LD.[CM] = 'C'          THEN 1 ELSE 0 END)  AS Regla_SoloC,
+       COUNT(DISTINCT LD.[ComponentSerialNumber])               AS Series
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+WHERE MP.[Name] LIKE '%Antapaccay%' AND LD.[ComponentStatus] = N'En uso'
+GROUP BY CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
+              WHEN LD.[Compartimiento] LIKE '%RUEDA%'       THEN 'RUEDA'
+              WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+              WHEN LD.[Compartimiento] LIKE '%MANDO%'       THEN 'MANDO'
+              WHEN LD.[Compartimiento] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
+              WHEN LD.[Compartimiento] LIKE 'MOTOR%'        THEN 'MOTOR'
+              ELSE 'OTRO' END
+ORDER BY CompTipo;
+GO
+
+-- 153.3 ⭐ EL ACUMULADO QUE SALDRIA, con cada regla, en un caso de RUEDA y uno de HIDRAULICO.
+--   La unica cifra verificada es la de MT (3 718,6). Esto ensena si las otras reglas dan un
+--   numero razonable o un disparate. Comparar la columna de la regla de Carlos con 'Todas'.
+SELECT ME.[Code] AS Equipo, LD.[Compartimiento],
+       COUNT(*) AS MuestrasEnUso,
+       CAST(SUM(LD.[Fe_ppm]) AS decimal(18,1)) AS Fe_Todas,
+       CAST(SUM(CASE WHEN LD.[CM] IN ('ADI','C') THEN LD.[Fe_ppm] END) AS decimal(18,1)) AS Fe_AdiC,
+       CAST(SUM(CASE WHEN LD.[CM] = 'C'          THEN LD.[Fe_ppm] END) AS decimal(18,1)) AS Fe_SoloC
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] IN ('CA3195','CA3175') AND LD.[ComponentStatus] = N'En uso'
+  AND (LD.[Compartimiento] LIKE '%RUEDA%' OR LD.[Compartimiento] LIKE '%HIDRAUL%'
+       OR LD.[Compartimiento] LIKE '%TRACCION%LH')
+GROUP BY ME.[Code], LD.[Compartimiento]
+ORDER BY ME.[Code], LD.[Compartimiento];
+GO
+
+-- 153.4 CUANTO SE PIERDE por no tener ComponentStatus. El 43% de las filas lo trae (bloque
+--   141.2); lo que importa es cuantos COMPONENTES se quedarian sin acumulado.
+SELECT COUNT(*) AS ComponentesConMuestra,
+       SUM(CASE WHEN ConStatus > 0 THEN 1 ELSE 0 END) AS ConAcumulado,
+       SUM(CASE WHEN ConStatus = 0 THEN 1 ELSE 0 END) AS SinAcumulado
+FROM (
+    SELECT ME.[Code] AS Equipo, LD.[Compartimiento],
+           SUM(CASE WHEN LD.[ComponentStatus] = N'En uso' THEN 1 ELSE 0 END) AS ConStatus
+    FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+    JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+    JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+    WHERE MP.[Name] LIKE '%Antapaccay%'
+    GROUP BY ME.[Code], LD.[Compartimiento]
+) z;
+GO
+
+-- 153.5 ⚠ EL COSTE de leer TODA la historia (sin la ventana de 12 meses), que es lo que exige
+--   el Acum. Es el riesgo de diseno del bloque C. Mirar 'elapsed' y 'logical reads'.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT ME.[Code] AS Equipo, LD.[Compartimiento],
+       CAST(SUM(LD.[Fe_ppm]) AS decimal(18,1)) AS Fe_Acum
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE LD.[ComponentStatus] = N'En uso' AND LD.[CM] IN ('ADI','C')
+GROUP BY ME.[Code], LD.[Compartimiento];
+GO
