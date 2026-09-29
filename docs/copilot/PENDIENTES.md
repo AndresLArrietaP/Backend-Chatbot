@@ -80,7 +80,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 
 | # | Qué | DDL | Prueba | Tipo |
 |---|---|---|---|---|
-| **1** | **Consolidar `base` en `vw_DiagnosticoMD`** | ✅ **escrito** — falta medir | **148** | rendimiento |
+| **1** | **Consolidar `base` en `vw_DiagnosticoMD`** | ⚠ **no bajó los scans** — ver abajo | **148** · **149** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | 📋 patrón listo | **148** nuevo | determinista + rendimiento |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **149** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
@@ -113,8 +113,28 @@ de `base` a `unpv` no garantiza nada por sí solo.** Si el 148 no baja el `Scan 
 paso es **fusionar pasadas**: `row_all`+`row_obs` en una, `hdr_all`+`hdr_obs`+`g` en otra,
 `obsmetals`+`obsmet` en otra → `unpv` bajaría de 5 referencias a 3.
 
-⚑ **Métrica de éxito: el `Scan count`, no el tiempo.** Referencia: **7 scans · 12 152 ms · 76 928
-lecturas**. Objetivo de la ronda: los **2 418 ms** que costaba antes del bloque D.
+### 🔴 Resultado del BLOQUE 148 (29/09): **no bajó, y hay que decidir**
+
+`LaboratoryData` sigue en **7 scans · 76 928 lecturas** — idéntico. La advertencia se cumplió: los CTE no
+se materializan y `unpv` quedaba referenciado 5 veces.
+✅ **Lo que sí bajó muchísimo:** `[Eqpcare].[lc]` de **2 185 scans / 52 440 lecturas** a **17 / 408**,
+por la simplificación de `vw_LimitesPorComponente` del 28/09.
+
+**Y destapó un bug que introduje yo.** `Observados` devolvía los **31** parámetros en vez de los marcados:
+filtré con `cell LIKE N'%🟥%'`, y los cuadros de color son **caracteres suplementarios** (U+1F7E5/U+1F7E8)
+— en UTF-16 son un par *surrogate*, y el `LIKE` con una collation no-`_SC` no los trata como un carácter,
+así que el patrón matchea de más. **Corregido**: cada tupla lleva el valor **crudo** y se filtra por
+`':C'`/`':P'`, que es ASCII. Mismo patrón que el bloque E4.
+> ⚑ **Regla nueva: nunca un emoji dentro de un `LIKE`.** Para decidir se usa la marca ASCII; el emoji es
+> solo presentación.
+
+**La decisión que queda.** Si el BLOQUE 149 sigue dando 7 scans, el conteo de referencias **no es la
+palanca**: la única cura real sería **reescribir la vista anidando derived tables** en vez de encadenar
+CTE referenciados (una derived table anidada se evalúa una vez). Eso es una reescritura completa.
+
+**Mi recomendación: aparcarla.** Con el viernes encima, **12-20 s no bloquea** —el conector muere a los
+120 s— y los pasos **2-8** son los que Carlos y Franco van a **ver**. La deuda queda medida y con la cura
+escrita; se ataca después de la presentación.
 
 **2 · L3** — El patrón está escrito en el bloque L. Dos comprobaciones **antes** de aplicarlo:
 (a) que las 9 fuentes expongan `Proyecto` —las de las líneas 3039 y 3448 leen un CTE `base` propio, y si

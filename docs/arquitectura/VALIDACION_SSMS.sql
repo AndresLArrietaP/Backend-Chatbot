@@ -5268,3 +5268,50 @@ GO
 SELECT Equipo, NumCompObs, NumCompTotal FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK)
 WHERE Equipo LIKE '%3195%';
 GO
+
+-- RESULTADOS BLOQUE 148 (29/09) -- la consolidacion NO bajo los scans, y destapo un bug mio.
+--   148.1  LaboratoryData: 7 scans · 76 928 lecturas  = EXACTAMENTE IGUAL que antes del paso 1.
+--          (elapsed 20 856 ms en esa corrida, pero las lecturas son identicas: el tiempo de una
+--          sola corrida en este tier varia mucho, la metrica fiable son las lecturas.)
+--          ✅ Lo que SI bajo, y mucho: [Eqpcare].[lc] de 2 185 scans / 52 440 lecturas a
+--          17 / 408. Eso viene de simplificar vw_LimitesPorComponente (quitar el CASE-sobre-
+--          agregado) el 28/09.
+--   => CONFIRMA LA ADVERTENCIA: mover las lecturas de 'base' a 'unpv' no sirve por si solo.
+--      Los CTE no se materializan, y 'unpv' quedaba referenciado 5 veces.
+--
+--   148.2  ✅ La tabla no cambio: 31 filas, mismos valores, mismas marcas.
+--   148.4  ✅ NumCompObs 4 / NumCompTotal 6. Sin regresion.
+--
+--   148.3  🔴 BUG INTRODUCIDO POR MI. 'Observados' devolvia los 31 parametros en vez de los
+--          marcados. CAUSA: filtre con  cell LIKE N'%<cuadro de color>%'. Los cuadros son
+--          caracteres SUPLEMENTARIOS (U+1F7E5 / U+1F7E8): en UTF-16 son un par surrogate, y el
+--          LIKE con una collation no-_SC no los trata como UN caracter -> el patron matchea de
+--          mas y pasan todas las filas.
+--          CURA: no buscar el emoji. Cada tupla del CROSS APPLY lleva ahora el valor CRUDO y se
+--          filtra por ':C' / ':P', que es ASCII puro. Es el mismo patron del bloque E4 sobre
+--          vw_CondicionMT_MD. De paso obsmetals y obsmet se fusionaron en un solo CTE 'obs'
+--          (unpv baja de 5 a 4 referencias).
+--   ⚑ REGLA: NUNCA usar un emoji dentro de un LIKE. Para decidir se usa la marca ASCII; el
+--     emoji es solo presentacion.
+
+-- ==== BLOQUE 149 - re-medicion tras el fix del raw ====
+-- 149.1 'Observados' tiene que traer SOLO los marcados. Para el CA3195: MT LH -> PQ (233.2 es
+--   lo unico rojo ahi) y MT RH -> Zn. Si vuelven a salir los 31, el filtro sigue mal.
+SELECT Equipo, Observados FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 149.2 Que la tabla y el encabezado sigan intactos.
+SELECT Equipo, NumCompObs, NumCompTotal, LEN(MD) AS LargoMD
+FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 149.3 Scan count otra vez. Referencia: 7 scans · 76 928 lecturas.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+/* SI SIGUE EN 7 SCANS: el conteo de referencias no es la palanca -- la cadena de CTE se
+   re-deriva igual. La unica cura real seria REESCRIBIR la vista anidando derived tables en
+   vez de encadenar CTE referenciados (una derived table anidada se evalua una vez). Eso es una
+   reescritura completa, y con la fecha del viernes encima conviene decidirlo a conciencia:
+   12-20 s no es bonito pero NO bloquea (el conector muere a los 120 s), mientras que los pasos
+   2-8 del plan son los que Carlos y Franco van a VER. */

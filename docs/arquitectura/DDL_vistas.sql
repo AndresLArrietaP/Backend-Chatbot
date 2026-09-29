@@ -1786,7 +1786,14 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
     SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
-           v.cell
+           v.cell,
+           /* El valor CRUDO, antes de sustituir ':C'/':P' por los cuadros de color.
+              ⛔ NO filtrar por el emoji: son caracteres SUPLEMENTARIOS (U+1F7E5/U+1F7E8) y el
+              LIKE de SQL Server con una collation no-_SC no los trata como un solo caracter,
+              asi que el patron matchea de mas. Se intento el 29/09 y 'Observados' devolvio los
+              31 parametros en vez de los marcados. La marca se busca en ASCII: ':C' / ':P'.
+              Mismo patron que el bloque E4 sobre vw_CondicionMT_MD. */
+           v.raw
     /* ⚡ PERF (28/09) — antes esto era:
            FROM base b
            INNER JOIN vw_FormatoParametro f ON f.CompTipo='(CRUZADO)'   <- cartesiano base x 31
@@ -1800,38 +1807,38 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
        unpivot de siempre, y es la misma cura que curo el triage (ley 2). */
     FROM base b
     CROSS APPLY (VALUES
-            (N'Fe', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Fe AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'PQ', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(PQ AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Cr', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cr AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Ni', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ni AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Cu', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cu AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Pb', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Pb AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Sn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Sn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Al', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Al AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Si', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Si AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Ca', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ca AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Zn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Zn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'K', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(K AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Na', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Na AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'B', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(B AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'P', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(P AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Mo', ISNULL(REPLACE(REPLACE(CAST(Mo AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'TAN', ISNULL(REPLACE(REPLACE(CAST(TAN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Oxidacion', ISNULL(REPLACE(REPLACE(CAST(Oxidacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Sulfatacion', ISNULL(REPLACE(REPLACE(CAST(Sulfatacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Nitracion', ISNULL(REPLACE(REPLACE(CAST(Nitracion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Hollin', ISNULL(REPLACE(REPLACE(CAST(Hollin AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Diesel', ISNULL(REPLACE(REPLACE(CAST(Diesel AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Agua', ISNULL(REPLACE(REPLACE(CAST(Agua AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'Refrigerante', ISNULL(REPLACE(REPLACE(CAST(Refrigerante AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'ISO>4', ISNULL(REPLACE(REPLACE(CAST(ISO4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'ISO>6', ISNULL(REPLACE(REPLACE(CAST(ISO6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'ISO>14', ISNULL(REPLACE(REPLACE(CAST(ISO14 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'V40', ISNULL(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'))
-    ) v(Parametro, cell)
+            (N'Fe', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Fe AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Fe),
+            (N'PQ', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(PQ AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), PQ),
+            (N'Cr', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cr AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Cr),
+            (N'Ni', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ni AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Ni),
+            (N'Cu', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cu AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Cu),
+            (N'Pb', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Pb AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Pb),
+            (N'Sn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Sn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Sn),
+            (N'Al', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Al AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Al),
+            (N'Si', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Si AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Si),
+            (N'Ca', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ca AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Ca),
+            (N'Zn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Zn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Zn),
+            (N'K', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(K AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), K),
+            (N'Na', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Na AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Na),
+            (N'B', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(B AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), B),
+            (N'P', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(P AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), P),
+            (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), Mg),
+            (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), V100),
+            (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), TBN),
+            (N'Mo', ISNULL(REPLACE(REPLACE(CAST(Mo AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Mo),
+            (N'TAN', ISNULL(REPLACE(REPLACE(CAST(TAN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), TAN),
+            (N'Oxidacion', ISNULL(REPLACE(REPLACE(CAST(Oxidacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Oxidacion),
+            (N'Sulfatacion', ISNULL(REPLACE(REPLACE(CAST(Sulfatacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Sulfatacion),
+            (N'Nitracion', ISNULL(REPLACE(REPLACE(CAST(Nitracion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Nitracion),
+            (N'Hollin', ISNULL(REPLACE(REPLACE(CAST(Hollin AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Hollin),
+            (N'Diesel', ISNULL(REPLACE(REPLACE(CAST(Diesel AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Diesel),
+            (N'Agua', ISNULL(REPLACE(REPLACE(CAST(Agua AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Agua),
+            (N'Refrigerante', ISNULL(REPLACE(REPLACE(CAST(Refrigerante AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), Refrigerante),
+            (N'ISO>4', ISNULL(REPLACE(REPLACE(CAST(ISO4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), ISO4),
+            (N'ISO>6', ISNULL(REPLACE(REPLACE(CAST(ISO6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), ISO6),
+            (N'ISO>14', ISNULL(REPLACE(REPLACE(CAST(ISO14 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), ISO14),
+            (N'V40', ISNULL(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'), V40)
+    ) v(Parametro, cell, raw)
     INNER JOIN [dbo].[vw_FormatoParametro] f
         ON f.CompTipo = '(CRUZADO)' AND f.Parametro = v.Parametro
 ),
@@ -1889,32 +1896,26 @@ g AS (
         COUNT(*) AS NumCompTotal
     FROM comp GROUP BY Equipo
 ),
-obsmetals AS (   /* Metales marcados por componente, DERIVADO de unpv.
-                    ⚑ Antes leia 'base' y volvia a decidir la marca por su cuenta, con un CONCAT de 18
-                    CASE ... LIKE '%:C%'. Eran DOS problemas: una lectura mas de la cadena, y un TERCER
-                    mecanismo de marcado que solo miraba 18 de los 31 parametros -- un observado nuevo
-                    (Mo, ISO, TAN...) nunca habria aparecido en 'Observados'.
-                    Ahora la marca se lee de la CELDA que se imprime: una sola fuente de verdad, que es
-                    la leccion del bloque E3 de la ronda anterior. */
-    SELECT Equipo, Compartimiento,
-           MAX(compOrd)  AS compOrd,
-           MAX(compAbbr) AS compAbbr,
-           STRING_AGG(CONVERT(nvarchar(max), nombre), N', ') WITHIN GROUP (ORDER BY ord) AS metals
+obs AS (   /* UNA sola pasada para las dos cosas que se hacian por separado:
+              la lista de metales marcados por componente (obsmetals) y los metales de MT que
+              enganchan recomendaciones (obsmet). Baja una referencia mas a unpv. */
+    SELECT Equipo, Compartimiento, compOrd, compAbbr, nombre, ord
     FROM unpv
-    WHERE CompMarcado = 1 AND (cell LIKE N'%🟥%' OR cell LIKE N'%🟨%')
-    GROUP BY Equipo, Compartimiento
+    WHERE raw LIKE '%:C%' OR raw LIKE '%:P%'
 ),
 obsagg AS (
-    SELECT Equipo, STRING_AGG(compAbbr + N': ' + metals, N' · ') WITHIN GROUP (ORDER BY compOrd) AS Observados
-    FROM obsmetals WHERE NULLIF(metals, N'') IS NOT NULL
+    SELECT Equipo,
+           STRING_AGG(compAbbr + N': ' + metals, N' · ') WITHIN GROUP (ORDER BY compOrd) AS Observados
+    FROM (
+        SELECT Equipo, Compartimiento, MAX(compOrd) AS compOrd, MAX(compAbbr) AS compAbbr,
+               STRING_AGG(CONVERT(nvarchar(max), nombre), N', ') WITHIN GROUP (ORDER BY ord) AS metals
+        FROM obs GROUP BY Equipo, Compartimiento
+    ) z
     GROUP BY Equipo
 ),
-obsmet AS (   /* Metales marcados de MT, para enganchar las recomendaciones.
-                 Misma cura que obsmetals: sale de unpv y la marca se lee de la celda. */
+obsmet AS (   /* Metales marcados de MT: enganchan las recomendaciones. Sale de 'obs'. */
     SELECT DISTINCT Equipo, nombre AS metal
-    FROM unpv
-    WHERE (cell LIKE N'%🟥%' OR cell LIKE N'%🟨%')
-      AND Compartimiento LIKE '%TRACCION%'
+    FROM obs WHERE Compartimiento LIKE '%TRACCION%'
 ),
 recos AS (
     SELECT DISTINCT om.Equipo, r.ord, r.label, r.indicio

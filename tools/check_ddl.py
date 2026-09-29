@@ -83,7 +83,7 @@ def catalogo_vs_celdas(texto):
     md = texto[texto.index("CREATE OR ALTER VIEW [dbo].[vw_DiagnosticoMD]"):]
     md = md[: md.index("\nGO")]
     unpv = md[md.index("CROSS APPLY (VALUES"):]
-    unpv = unpv[: unpv.index(") v(Parametro, cell)")]
+    unpv = unpv[: unpv.index(") v(Parametro, cell")]
     celdas = set(re.findall(r"\(N'([^']+)',", unpv))
 
     fallos = []
