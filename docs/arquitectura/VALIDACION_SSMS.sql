@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   152 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   153 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -172,6 +172,7 @@
      BLOQUE 149  PASO 1: re-medicion tras el fix del raw
      BLOQUE 150  PASO 2 (L3): '(todos)' = los modelos con limites cargados
      BLOQUE 151  PASO 2b (L5): avisar cuando el modelo NO tiene limites
+     BLOQUE 152  PASO 3 (L4): el ranking y el <modelo> -- H3 y el tope silencioso
    ============================================================================ */
 
 /* ============================================================================
@@ -5488,3 +5489,43 @@ GO
 --   proyectos sin observados, y ahi "ninguno observado" es una BUENA noticia legitima. Se
 --   resuelve mejor en el tema (mensaje sin-data que distinga los dos casos). Anotado en
 --   PENDIENTES como L6.
+
+
+-- ==== BLOQUE 152 - PASO 3 (L4): el ranking, <modelo> y H3 ====
+-- HALLAZGO AL ABRIRLO: vw_RankingMD YA expone 'Modelo' (el ModeloG del rollup) y el flujo
+--   MD_ranking YA filtra por el:  AND Modelo LIKE ''%<modelo>%''  (CONFIG_FLUJOS).
+--   Lo unico que falta es que el COMANDO lo pase: su firma es /ranking <proj> <comp> <metal>
+--   [top], sin modelo. => L4 es enteramente COPILOT. En SQL no habia nada que construir.
+-- Y COMO L3 YA ESTA: el rollup '(todos)' ya no incluye 930E, asi que H3 (los equipos
+--   3114..3118 colandose en el ranking de PQ) deberia estar cerrado DE REBOTE. Se comprueba.
+
+-- 152.1 ⭐ H3: el ranking de PQ en MT de Antapaccay, por defecto. Los 3110..3118 son 930E.
+--   Si ya no aparecen, L3 cerro H3 sin tocar el ranking.
+SELECT CASE WHEN MD LIKE '%311%' THEN 'SIGUEN LOS 311x' ELSE 'ok: sin equipos 930E' END AS Chk,
+       LEN(MD) AS LargoMD, LEFT(MD, 300) AS Inicio
+FROM (
+    SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD
+    FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+    WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+      AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%TRACCION%'
+      AND Metal LIKE '%PQ%' AND pos <= 20
+) z;
+GO
+-- 152.2 Y que pedir un modelo concreto funcione, que es para lo que L4 agrega el parametro.
+SELECT '980E' AS Caso, COUNT(*) AS Filas FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%TRACCION%' AND Metal LIKE '%PQ%'
+UNION ALL
+SELECT '930E', COUNT(*) FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%930E%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%TRACCION%' AND Metal LIKE '%PQ%';
+GO
+-- 152.3 EL TOPE SILENCIOSO. La vista cortaba en pos <= 20 y el flujo filtra por el top que
+--   pide el usuario: pedir "top 30" devolvia 20 y NADIE lo decia. Ahora la vista corta en 50.
+--   Esto tiene que devolver mas de 20 posiciones donde la flota de lo suficiente.
+SELECT Proyecto, Modelo, CompTipo, Metal, MAX(pos) AS PosMax, COUNT(*) AS Filas
+FROM [dbo].[vw_RankingMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+  AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%TRACCION%' AND Metal LIKE '%Fe%'
+GROUP BY Proyecto, Modelo, CompTipo, Metal;
+GO

@@ -3416,7 +3416,11 @@ SELECT
        + CASE WHEN Modelo <> N'(todos)' THEN N' · ' + Modelo ELSE N'' END + N'**' + NCHAR(10) + NCHAR(10)
        + N'| # | Equipo | ' + metal + N' | LP/LC | Est. |' + NCHAR(10) + N'|---|---|---|---|---|' AS nvarchar(max)) AS HeaderMD
 FROM rk
-WHERE pos <= 20;
+/* L4 (29/09): el corte sube de 20 a 50. El flujo ya aplica el top que pide el usuario
+   (`AND pos <= if(empty(‹top›),'10',‹top›)`), asi que este numero es solo un techo de
+   seguridad -- pero con 20 era un TOPE SILENCIOSO: pedir "top 30" devolvia 20 y nadie
+   lo decia. 50 filas por (proyecto, modelo, comptipo, metal) es trivial. */
+WHERE pos <= 50;
 GO
 
 /* ==== vw_TendenciaMetalFlotaMD (Gap 1: tendencia de un metal en un CompTipo, a nivel flota) ==== */

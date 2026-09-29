@@ -83,7 +83,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
 | **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
-| **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **152** nuevo | determinista |
+| **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL listo** — el resto es Copilot | **152** | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
@@ -161,7 +161,20 @@ flota y no queremos re-derivar ese agregado cada vez.
 **Criterio:** `/triage mt antapaccay` deja de mostrar `### 930E · 18 equipos (0 obs)`; **nombrar** `930E`
 sigue devolviendo sus equipos; y `/barrido antapaccay` sigue diciendo **18 equipos**.
 
-**3 · L4** — `vw_RankingMD` tiene que exponer `Modelo` y el flujo filtrarlo. Cierra **H3**.
+**3 · L4** — ✅ **En SQL no había nada que construir.** Al abrirlo: `vw_RankingMD` **ya** expone `Modelo`
+(el `ModeloG` del rollup) y el flujo `MD_ranking` **ya** filtra por él
+(`AND Modelo LIKE ''%‹modelo›%''`, en [CONFIG_FLUJOS](CONFIG_FLUJOS.md)). Lo único que falta es que el
+**comando** lo pase: su firma es `/ranking ‹proj› ‹comp› ‹metal› [top]`, sin modelo.
+⇒ **L4 es enteramente Copilot** (firma + dispatcher + tarjeta). Va a la Fase 2, C3/C4.
+
+📌 **Y H3 debería estar cerrado de rebote por L3.** Los equipos `3110…3118` que se colaban en
+`/ranking antapaccay mtlh PQ 20` son **930E**, y el `(todos)` nuevo ya no los incluye. Lo comprueba el
+**152.1**.
+
+🔴 **Lo que sí se arregló en SQL: un tope silencioso.** `vw_RankingMD` cortaba en `WHERE pos <= 20`, y el
+flujo filtra además por el `top` que pide el usuario. Resultado: pedir **top 30 devolvía 20** y nadie lo
+decía. El corte sube a **50** — el techo real lo pone el flujo, y 50 filas por
+(proyecto, modelo, componente, metal) es trivial.
 
 **4 · C** — La fórmula ya está validada al decimal (**3 718,6**). Diseño: vista dedicada
 `vw_AcumuladoVida` que lea `[Oil].[LaboratoryData]` **directo**, sin la fundación y sin window functions.
