@@ -5781,3 +5781,35 @@ GO
 /* SI 154.6 SE DISPARA: la salida es materializar el acumulado por otra via (una tabla que el
    area refresque, o acotar vw_AcumuladoVida a los equipos del proyecto consultado). NO se
    vuelve a la formula vieja: esa daba un numero que no era el que pedia el area. */
+
+-- RESULTADOS BLOQUE 154 (29/09) -- el Acum funciona. C CERRADO.
+--   154.1 ✅ LAS DOS CIFRAS VERIFICADAS, al decimal:
+--         CA3160 MT LH Fe = 6 785,4   <- la cifra del bloque B de la ronda 23/09
+--         CA3160 MT RH Fe = 7 385,6
+--         CA3195 MT LH Fe = 3 718,6   <- la que dio Carlos el 28/09
+--   154.2 ✅ COBERTURA, con las CUATRO reglas: 228 componentes con Acum
+--         TRACCION 53 · RUEDA 97 · HIDRAULICO 51 · MOTOR 27     (1 813 filas en total)
+--         Ni una fila de 'OTRO': mando y transmision no entran, como debe ser.
+--         ⚑ Con las dos reglas que yo habia dejado fuera eran 80. La correccion de Andres
+--           recupero 148 componentes.
+--   154.2b ⚠ CUANTAS MUESTRAS SOSTIENEN EL ACUMULADO (Antapaccay, muestras 'C'):
+--         RUEDA       54 componentes · min 14 · max 36 · promedio 20   -> solido
+--         HIDRAULICO  32 componentes · min  1 · max 10 · promedio  6   -> FLOJO
+--         🔴 En hidraulico hay componentes con UNA sola muestra 'C': ahi el "acumulado" es
+--         literalmente el valor de esa muestra. El numero existe y la regla es la que pidio el
+--         area, pero dice poco. -> PREGUNTA PARA CARLOS, no cambio unilateral.
+--   154.3 ✅ Llega a vw_TendenciaElemento y solo en los 8 de desgaste. CA3195 MT LH:
+--         Fe 3 718,6 · PQ 2 489,0 · Cu 38,0 · Cr 19,5 · Ni 10,3 · Al 7,5 · Sn 4,1 · Pb 3,5
+--         Los otros 15 parametros (Si, Ca, Zn, K, Na, Mg, B, P, V100, V40, TAN, Mo, Agua,
+--         ISO>4/6/14) vienen NULL -> salen '—'. Exactamente lo disenado.
+--   154.4 ✅ La cabecera dice 'Acum' (no 'Σvida (nº m.)'), el numero sale SIN parentesis y el
+--         pie explica el criterio por componente y que '—' no es cero.
+--   154.5 ✅ LA RUEDA DEL CA3175 YA TRAE ACUM (era el caso de la correccion):
+--         Fe 687,8 · PQ 366,4 · Cu 29,2 · Al 19,7 · Ni 3,1 · Pb 1,5 · Cr 1,3 · Sn 0,2
+--   154.6 RENDIMIENTO:
+--         vw_AcumuladoVida SOLA -> 1 813 filas · 1 scan · 18 212 lecturas · 852 ms. BARATA.
+--         /tendencia CA3195 MT LH -> 6 scans · 41 878 lecturas · 37 009 ms.
+--         ⚠ 37 s. Pero /tendencia ya venia en ~35 s ANTES de esta ronda: el Acum NO lo empeoro,
+--         y la vista nueva por si sola cuesta 852 ms. La deuda es otra y esta identificada por
+--         el radar de check_ddl: vw_TendenciaMD.rowcte x2 · limcte x2 · obslast x2.
+--         Va al mismo saco que vw_DiagnosticoMD, despues de la presentacion del 02/10.

@@ -84,7 +84,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
 | **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL CERRADO** (152) — el resto es Copilot | **152** | determinista |
-| **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **escrito** — falta medir | **154** | determinista + rendimiento |
+| **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **CERRADO** (154) | **154** | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
@@ -208,6 +208,39 @@ del área *y* además no tienen `ComponentStatus`. Salen `—`, y el pie ahora d
 
 📌 Solo se calculan los **8 metales de desgaste** (los únicos que el display muestra); calcular los 18
 sería pagar de más.
+
+### ✅ Resultado del BLOQUE 154 (29/09): **C cerrado**
+
+| | |
+|---|---|
+| **Las dos cifras** | `CA3160 MT LH Fe = 6 785,4` (la del bloque B) · `CA3195 MT LH Fe = 3 718,6` |
+| **Cobertura** | **228 componentes** con `Acum`: Rueda 97 · Tracción 53 · Hidráulico 51 · Motor 27 |
+| **Aislamiento** | solo los 8 de desgaste; los otros 15 parámetros salen `—` |
+| **Coste** | `vw_AcumuladoVida` sola: **852 ms · 1 scan**. Barata |
+
+📌 **Con las dos reglas que yo había dejado fuera, la cobertura era 80. La corrección recuperó 148
+componentes** — rueda e hidráulico.
+
+### 🔴 Una pregunta para Carlos que salió del 154.2b
+
+Cuántas muestras `C` sostienen el acumulado, en Antapaccay:
+
+| Componente | Componentes | Mín | Máx | Promedio |
+|---|---|---|---|---|
+| **Rueda** | 54 | 14 | 36 | **20** ✅ sólido |
+| **Hidráulico** | 32 | **1** | 10 | **6** ⚠ flojo |
+
+En hidráulico hay componentes con **una sola muestra `C`**: ahí el «acumulado» es literalmente el valor de
+esa muestra. El número existe y la regla es la que él pidió, pero **dice poco**.
+⛔ No lo cambio por mi cuenta — es criterio del área. **Preguntar.**
+
+### ⏱ Y `/tendencia` sigue en 37 s, pero no es por esto
+
+`vw_AcumuladoVida` sola cuesta **852 ms**. `/tendencia` estaba en ~35 s **antes** de esta ronda, así que
+el `Acum` **no lo empeoró**. La deuda está identificada por el radar:
+`vw_TendenciaMD.rowcte ×2 · limcte ×2 · obslast ×2`. Mismo saco que `vw_DiagnosticoMD`, después del 02/10.
+
+---
 
 **5 · J** — Prefijar la familia dentro de la celda: `Desgaste: Fe(231.8) · Aditivos: Ca(54.0)`, en el
 orden del formato. No ensancha la tabla.
