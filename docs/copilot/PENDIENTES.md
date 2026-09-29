@@ -92,7 +92,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
 | **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **CERRADO** (160, 4/4 verde) | **160** | determinista |
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
-| **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **escrito** — 19 sitios | **161** | determinista |
+| **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **CERRADO** (161, 0 nulos) | **161** | determinista |
+| **5i** | **S** · Cerro Verde: **1 579 muestras sin componente** → **Carlos** | ⏸ **no es SQL** — es carga | **161.1** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -614,6 +615,34 @@ queda alguno.
 ⚑ **Si el 161.1 devuelve muchas filas**, la etiqueta es un parche correcto pero no la solución: significa
 que hay muestras cargadas **sin componente**, y eso va a Carlos, del mismo saco que los 347 `ISO` sin
 medir. El SQL deja de mentir; la carga sigue incompleta.
+
+### Resultado del BLOQUE 161 — G2 confirmado, y un agujero de carga grande
+
+**161.1 — no eran «algunas filas»:**
+
+| Proyecto | Muestras | Equipos | Desde | Hasta |
+|---|---|---|---|---|
+| **Cerro Verde** | **1 579** | **62** | 01-Mar-2026 | 17-Ago-2026 |
+| Antapaccay | 16 | 3 | 20-Dic-2025 | 22-Sep-2026 |
+| Antamina | 2 | 1 | 03-Abr-2026 | — |
+
+**Cerro Verde lleva seis meses cargando sin componente, en 62 equipos.** No es una anomalía suelta: es
+sistemático, y probablemente explica por qué ese proyecto se comporta raro en varios módulos. ⇒ **S**, a
+Carlos, del mismo saco que los 347 `ISO` sin medir y el límite de las ruedas.
+
+**161.2/161.3 ✅** Donde salía `NULL` ahora sale `**Historial — 3104 · (sin componente)** · 6 muestras`.
+**Cero nulos** en las tres vistas. **161.4 ✅** smoke test completo en **2 s**, las 12 vistas.
+
+### 🔴 Pero el 161.3 tardó 11 minutos, y es culpa mía
+
+Lo filtré por `compAbbr = '(sin componente)'`. **`compAbbr` es una columna calculada** (un `CASE`), así que
+el predicado **no baja**: SQL Server materializa la vista `*MD` entera —arma el markdown de todos los
+equipos— y filtra después. **Es la ley 3 otra vez**, ahora en una consulta de prueba en vez de en una vista.
+
+⇒ **Regla, ya en `CLAUDE.md` como corolario de la ley 3:** una vista `*MD` se filtra **siempre por columna
+real** (`Equipo`, `Proyecto`, `Compartimiento`, `CompTipo`). Nunca por `compAbbr`. El 161.4, que hace
+`TOP 1` sobre las mismas vistas, tarda **2 s**: el `TOP` corta el render. Bloque reescrito filtrando por
+`Equipo`.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

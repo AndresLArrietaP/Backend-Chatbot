@@ -6676,13 +6676,23 @@ FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
 WHERE compAbbr = N'(sin componente)';
 GO
 
--- 161.3 ⚠ Y QUE NO QUEDE NINGUNA OTRA CON MD NULL. Se consulta filtrado a proposito: escanear una
---   vista *MD entera cuelga. Aqui se mira solo la etiqueta nueva, que es donde estaba el problema.
+-- 161.3 ⚠ Y QUE NO QUEDE NINGUNA OTRA CON MD NULL.
+-- 🔴 LA PRIMERA VERSION DE ESTE BLOQUE TARDO 11 MINUTOS, y es culpa mia: filtraba por
+--    'compAbbr = N''(sin componente)''. compAbbr es una COLUMNA CALCULADA (un CASE), asi que el
+--    predicado NO BAJA: SQL Server tiene que materializar la vista *MD ENTERA -- armar el markdown
+--    de todos los equipos y componentes -- y recien despues filtrar. Es la ley 3 otra vez, ahora en
+--    una consulta de prueba en vez de en una vista.
+--    ⇒ REGLA: una vista *MD se filtra SIEMPRE por columna REAL (Equipo, Proyecto, Compartimiento,
+--      CompTipo). Nunca por compAbbr ni por nada derivado de un CASE.
+--    El 161.4, que hace TOP 1 sobre las mismas vistas, tarda 2 segundos: el TOP corta el render.
+-- Los 5 equipos salen del 161.2. Filtrando por Equipo el predicado SI baja.
 SELECT 'HistorialMD' AS Vista, COUNT(*) AS Filas, SUM(CASE WHEN MD IS NULL THEN 1 ELSE 0 END) AS MD_nulos
-FROM [dbo].[vw_HistorialMD] WITH (NOLOCK) WHERE compAbbr = N'(sin componente)'
+FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
+WHERE Equipo IN (N'3104', N'3105', N'CA3164', N'HT338', N'K-301')
 UNION ALL
 SELECT 'UltimoAnalisisMD', COUNT(*), SUM(CASE WHEN MD IS NULL THEN 1 ELSE 0 END)
-FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK) WHERE compAbbr = N'(sin componente)'
+FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK)
+WHERE Equipo IN (N'3104', N'3105', N'CA3164', N'HT338', N'K-301')
 UNION ALL
 SELECT 'TriageMD', COUNT(*), SUM(CASE WHEN MD IS NULL THEN 1 ELSE 0 END)
 FROM [dbo].[vw_TriageMD] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%' AND CompTipo = 'TRACCION';
@@ -6702,6 +6712,26 @@ SELECT TOP 1 'TendenciaMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_Tend
 SELECT TOP 1 'HistorialMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_HistorialMD]      WITH (NOLOCK);
 SELECT TOP 1 'RankingMD'        AS Vista, LEFT(HeaderMD,60) AS x FROM [dbo].[vw_RankingMD]    WITH (NOLOCK);
 GO
+
+-- RESULTADOS BLOQUE 161 (29/09) -- G2 CONFIRMADO, y el 161.1 destapa un agujero de carga grande.
+--
+-- 161.1 ⛔ 1 597 MUESTRAS SIN COMPONENTE, y NO estan repartidas:
+--   Cerro Verde  1 579 muestras · 62 equipos · 01-Mar-2026 a 17-Ago-2026
+--   Antapaccay      16 muestras ·  3 equipos · 20-Dic-2025 a 22-Sep-2026
+--   Antamina         2 muestras ·  1 equipo  · 03-Abr-2026
+--   ⇒ Cerro Verde tiene SEIS MESES de carga sin componente en 62 equipos. Eso no es una anomalia
+--     suelta: es sistematico, y explica por que ese proyecto se comporta raro en varios modulos.
+--     Va a Carlos, del mismo saco que los 347 ISO sin medir del 159.2 y que el limite de las
+--     ruedas de Antapaccay. El SQL ya no miente; la carga sigue incompleta.
+--
+-- 161.2 ✅ LA CURA FUNCIONA. Donde antes salia NULL ahora sale el historial completo y etiquetado:
+--   "**Historial - 3104 · (sin componente)** · 6 muestras (recientes arriba)".
+--   Los 5 equipos: 3104, 3105, CA3164, HT338, K-301.
+--
+-- 161.3 ✅ CERO NULOS en las tres vistas (HistorialMD 66 filas, UltimoAnalisisMD 66, TriageMD 3).
+--   🔴 Pero tardo 11 MINUTOS por como lo escribi: ver la nota del bloque. Reescrito.
+--
+-- 161.4 ✅ SMOKE TEST COMPLETO EN 2 SEGUNDOS. Las 12 vistas responden y HistorialMD ya no es NULL.
 
 /* ⚑ SI EL 161.1 DEVUELVE MUCHAS FILAS, la etiqueta '(sin componente)' es un parche correcto pero
    no la solucion: significa que hay muestras cargadas sin componente y eso es un dato para
