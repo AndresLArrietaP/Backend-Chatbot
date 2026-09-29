@@ -7036,6 +7036,35 @@ GO
 --   * '· ultimas 1 muestras' -- concordancia. Cosmetico, pero se lee mal.
 
 
+-- RESULTADOS BLOQUE 164 (29/09) -- las tres primeras concluyentes; la cuarta la deje comentada y
+-- con 'XXXX', o sea que volvio a no probar nada. Rehecha arriba.
+--
+-- 164.1 ✅ CHARINDEX funciona y el corte ya no estorba. ConAviso = 0 en los 18 componentes de
+--   CA3160, 3115 y 3117. Para CA3160 es lo correcto (tiene limites). Para 3115/3117 tambien:
+--   el 163.3 ya habia mostrado que SI tienen algunos. El caso de verdad estaba en otro lado.
+--
+-- 164.2 ✅ AHI ESTAN. Antamina 930E: HT079, HT080, HT081, HT082 -- MOTOR, MOTOR DE TRACCION LH/RH
+--   y SISTEMA HIDRAULICO, sin un solo limite.
+--   ⚠ Y DE REGALO, UN TYPO EN LA BD: 'MOTORO DE TRACCION RH'. Es un Compartimiento distinto de
+--     'MOTOR DE TRACCION RH', asi que ese componente se cuenta APARTE en todo el sistema. Pasa el
+--     LIKE '%TRACCION%' (por eso no habia reventado), pero duplica el componente. Para Carlos.
+--
+-- 164.3 ⛔⛔ LA DIMENSION REAL, Y ES LA MAS GRANDE DE LA RONDA:
+--   Antamina    930E   441        Antapaccay 930E    54       Antapaccay WA900     7
+--   Cerro Verde 930E   216        Cerro Verde 730E   12       Toquepala  PC7000    5
+--   Cuajone     980E    72        Antapaccay HD1500  10       Toromocho  WD900     2
+--   Toquepala   980E    66
+--   ⇒ 885 COMPONENTES SIN NINGUN LIMITE CARGADO. Y como Estado_General usa ISNULL(LC, 9999), esos
+--     885 salen 'OK' -- verdes -- pase lo que pase con sus valores. No estan sanos: no estan
+--     evaluados. Mismo modo de fallo que los 347 ISO en cero, pero a nivel de COMPONENTE ENTERO.
+--   ⚑ Matiz honesto: L5 ya cubre esto en /triage y /barrido, que avisan cuando el MODELO no tiene
+--     limites. Lo que faltaba era el aviso a nivel de COMPONENTE en /tendencia -- y es justo el
+--     que B estuvo a punto de borrar. Conservarlo no era una precaucion teorica: son 885.
+--
+-- 164.4 🔴 NO PROBO NADA (comentado + 'XXXX'). Tercera vez que escribo una comprobacion que no
+--   puede fallar. Rehecha con HT079/HT080, y con un 164.5 que distingue "el aviso no sale" de
+--   "ese equipo no llega a la vista".
+
 -- ==== BLOQUE 164 - Rehacer las dos comprobaciones que no probaban nada ====
 
 -- 164.1 ⭐ EL AVISO, BUSCADO DONDE ESTA. CHARINDEX no depende de donde caiga el corte.
@@ -7074,14 +7103,21 @@ GROUP BY Proyecto, Modelo
 ORDER BY COUNT(*) DESC;
 GO
 
--- 164.4 ⭐ Y CON UNO DE ESOS, EL AVISO DE VERDAD. Sustituir 'XXXX' por un Equipo del 164.2.
---   Tiene que dar ConAviso = 1 en la columna MD, y el texto de «no se puede decir si hay
---   parametros fuera de umbral» en MD_Relevantes.
-/*
+-- 164.4 🔴 ESTE LO DEJE COMENTADO Y CON 'XXXX' DE PLANTILLA, asi que devolvio 0 filas y no probo
+--   nada -- el mismo error del 163.2 por tercera vez. Rehecho con equipos REALES del 164.2.
+--   HT079..HT082 son 930E de Antamina SIN NINGUN limite cargado.
+--   ESPERADO: ConAviso = 1, y en MD_Relevantes el texto «no se puede decir si hay parametros
+--   fuera de umbral» (NO «opera en condicion normal», que seria mentir sobre algo no evaluado).
 SELECT Equipo, compAbbr,
        CASE WHEN CHARINDEX(N'Sin límites (LP/LC) cargados', MD) > 0 THEN 1 ELSE 0 END AS ConAviso,
-       LEFT(MD_Relevantes, 300) AS Relevantes
+       LEFT(MD_Relevantes, 220) AS Relevantes
 FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
-WHERE Equipo = N'XXXX';
+WHERE Equipo IN (N'HT079', N'HT080');
 GO
-*/
+-- 164.5 ⚠ SI EL 164.4 DEVUELVE 0 FILAS no es que falle el aviso: es que esos equipos no llegan a
+--   vw_TendenciaElemento. Esto lo distingue, para no volver a confundir "no sale" con "no existe".
+SELECT TOP 5 Equipo, Compartimiento, COUNT(*) AS FilasEnTendencia
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo IN (N'HT079', N'HT080')
+GROUP BY Equipo, Compartimiento;
+GO

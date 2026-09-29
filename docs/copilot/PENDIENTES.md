@@ -95,6 +95,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
 | **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **CERRADO** (161, 0 nulos) | **161** | determinista |
 | **5i** | **S** · Cerro Verde: **1 579 muestras sin componente** → **Carlos** | ⏸ **no es SQL** — es carga | **161.1** | dato |
+| **5k** | **U** · **885 componentes sin ningún límite** → **Carlos** | ⏸ **no es SQL** — la más grande | **164.3** | dato |
+| **5l** | **V** · typo en la BD: `MOTORO DE TRACCION RH` | ⏸ **no es SQL** — duplica componente | **164.2** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** — aviso **por confirmar** | **163** · **164** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
@@ -1548,3 +1550,35 @@ Y 43 s con el conector muriendo a los 120 s deja poco margen: `/tendencia` ya no
 
 - `Grado | nan | nan | — | — |` en los `3115` — el bug **`nan`** otra vez, ahora en `Grado`.
 - `· últimas 1 muestras` — concordancia. Cosmético, pero se lee mal.
+
+### ⛔⛔ Resultado del BLOQUE 164 — la dimensión real, y es la mayor de la ronda
+
+| Proyecto | Modelo | Componentes **sin ningún** límite |
+|---|---|---|
+| **Antamina** | 930E | **441** |
+| **Cerro Verde** | 930E | **216** |
+| Cuajone | 980E | 72 |
+| Toquepala | 980E | 66 |
+| Antapaccay | 930E | 54 |
+| Cerro Verde 730E · Antapaccay HD1500/WA900 · Toquepala PC7000 · Toromocho WD900 | | 36 |
+
+**885 componentes sin un solo límite cargado.** Y como `Estado_General` usa `ISNULL(LC, 9999)`, esos 885
+salen **`OK` — verdes — pase lo que pase** con sus valores. **No están sanos: no están evaluados.** Mismo
+modo de fallo que los 347 `ISO` en cero, pero a nivel de **componente entero**.
+
+⚑ **Matiz honesto:** `L5` ya cubre esto en `/triage` y `/barrido`, que avisan cuando el **modelo** no tiene
+límites. Lo que faltaba era el aviso a nivel de **componente** en `/tendencia` — y es justo el que **B
+estuvo a punto de borrar**. Conservarlo no era una precaución teórica: **son 885**.
+
+**164.2 ✅** Aparecieron: `HT079`-`HT082` (930E de Antamina). ⚠ **Y de regalo, un typo en la BD:
+`MOTORO DE TRACCION RH`** — un `Compartimiento` distinto de `MOTOR DE TRACCION RH`, así que ese componente
+se cuenta **aparte en todo el sistema**. Pasa el `LIKE '%TRACCION%'` (por eso no había reventado), pero
+duplica. Para Carlos.
+
+**164.1 ✅** `CHARINDEX` funciona; `ConAviso = 0` en los 18 componentes probados, y es correcto — todos
+tienen algún límite.
+
+### 🔴 164.4 — tercera vez que escribo una comprobación que no puede fallar
+
+Lo dejé **comentado y con `'XXXX'` de plantilla**: 0 filas, y 0 filas se lee como «todo bien». Rehecho con
+`HT079`/`HT080`, más un **164.5** que distingue *«el aviso no sale»* de *«ese equipo no llega a la vista»*.
