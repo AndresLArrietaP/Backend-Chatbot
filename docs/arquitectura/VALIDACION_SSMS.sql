@@ -5315,3 +5315,19 @@ GO
    reescritura completa, y con la fecha del viernes encima conviene decidirlo a conciencia:
    12-20 s no es bonito pero NO bloquea (el conector muere a los 120 s), mientras que los pasos
    2-8 del plan son los que Carlos y Franco van a VER. */
+
+-- RESULTADOS BLOQUE 149 (29/09) -- el fix del raw funciona; el rendimiento NO se movio.
+--   149.1 ✅ Observados del CA3195, ahora SOLO los marcados y cuadra 1:1 con la tabla:
+--       MT LH: PQ, ISO>6 · MT RH: Zn, ISO>6, ISO>14 · RD LH: Ca, Zn, P, Mg, Na
+--       RD RH: Ca, Zn, P, Mg, Na, ISO>4, ISO>6
+--     ⚑ Fijarse en que ahi hay ISO>4/6/14 y P: son observados que ANTES NUNCA SALIAN, porque
+--       obsmetals solo miraba 18 de los 31 parametros. Ese era el bug latente del paso 1.
+--   149.2 ✅ NumCompObs 4 / NumCompTotal 6 / MD de 1 604 caracteres. Sin regresion.
+--   149.3 ❌ LaboratoryData sigue en 7 scans · 76 936 lecturas. (lc en 17 / 408, que es lo bueno
+--       que quedo de la simplificacion del 28/09.) elapsed 15 259 ms.
+--
+-- VEREDICTO DEL PASO 1: mejoro la CORRECCION (un bug latente y uno introducido, los dos
+--   cerrados), no el rendimiento. El conteo de referencias a un CTE no es la palanca: la cadena
+--   se re-deriva igual. La unica cura real seria reescribir la vista anidando derived tables.
+--   ⏸ APARCADO a proposito hasta despues de la presentacion del 02/10: 12-20 s no bloquea (el
+--   conector muere a los 120 s) y los pasos 2-8 son los que se VEN. Deuda medida y con cura escrita.

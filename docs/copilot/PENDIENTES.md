@@ -80,7 +80,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 
 | # | Qué | DDL | Prueba | Tipo |
 |---|---|---|---|---|
-| **1** | **Consolidar `base` en `vw_DiagnosticoMD`** | ⚠ **no bajó los scans** — ver abajo | **148** · **149** | rendimiento |
+| **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | 📋 patrón listo | **148** nuevo | determinista + rendimiento |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **149** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
@@ -128,13 +128,22 @@ así que el patrón matchea de más. **Corregido**: cada tupla lleva el valor **
 > ⚑ **Regla nueva: nunca un emoji dentro de un `LIKE`.** Para decidir se usa la marca ASCII; el emoji es
 > solo presentación.
 
-**La decisión que queda.** Si el BLOQUE 149 sigue dando 7 scans, el conteo de referencias **no es la
-palanca**: la única cura real sería **reescribir la vista anidando derived tables** en vez de encadenar
-CTE referenciados (una derived table anidada se evalúa una vez). Eso es una reescritura completa.
+### ⏸ Veredicto (BLOQUE 149): **corrección sí, rendimiento no. Aparcado.**
 
-**Mi recomendación: aparcarla.** Con el viernes encima, **12-20 s no bloquea** —el conector muere a los
-120 s— y los pasos **2-8** son los que Carlos y Franco van a **ver**. La deuda queda medida y con la cura
-escrita; se ataca después de la presentación.
+✅ **`Observados` quedó exacto** y cuadra 1:1 con la tabla:
+`MT LH: PQ, ISO>6 · MT RH: Zn, ISO>6, ISO>14 · RD LH: Ca, Zn, P, Mg, Na · RD RH: Ca, Zn, P, Mg, Na,
+ISO>4, ISO>6`. Fíjate en que ahí hay **`ISO>4/6/14` y `P`**: observados que **antes nunca salían**, porque
+`obsmetals` solo miraba 18 de los 31 parámetros. Ese era el bug latente.
+
+❌ **`LaboratoryData` sigue en 7 scans · 76 936 lecturas.** El conteo de referencias a un CTE **no es la
+palanca**: la cadena se re-deriva igual. La única cura real sería **reescribir la vista anidando derived
+tables** (una derived table anidada se evalúa una vez) — reescritura completa.
+
+**Decisión: aparcado hasta después del 02/10.** 12-20 s **no bloquea** (el conector muere a los 120 s) y
+los pasos **2-8** son los que Carlos y Franco van a **ver**. La deuda queda medida y con la cura escrita.
+
+**Lo que sí se llevó el paso 1, y no es poco:** dos bugs cerrados (uno latente, uno mío) y `[Eqpcare].[lc]`
+de **2 185 scans / 52 440 lecturas** a **17 / 408**.
 
 **2 · L3** — El patrón está escrito en el bloque L. Dos comprobaciones **antes** de aplicarlo:
 (a) que las 9 fuentes expongan `Proyecto` —las de las líneas 3039 y 3448 leen un CTE `base` propio, y si
