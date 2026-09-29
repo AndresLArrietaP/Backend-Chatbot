@@ -72,11 +72,12 @@ mismos 18 equipos — ahí el parámetro se acepta y **se ignora**. → **Bloque
 | **7** | **B** | `/tendencia`: fuera la tabla de límites | Una línea | chico |
 | **8** | **E** | Encabezado de muestra en `/diagcompleto` y `/condicionmt` | | chico |
 | **9** | **F** | Historial: todos los parámetros del formato | Grande y con decisión de formato de por medio | grande |
-| **10** | **I** | `/barrido`: ¿otro uso o se desactiva? | **Decisión suya**, no fix | — |
+| **10** | **I** | `/barrido` → **Panel de flota**, absorbiendo `/conteo` | Decidido el 28/09; es módulo nuevo, no retoque | grande |
 | **11** | **G** | Acumulados por componente + renombres | Depende de **C** | medio |
 | **12** | **H** | Bugs sueltos | | chico |
 
-> **Para el viernes 02/10 realista:** del 1 al 8. **F** e **I** son de después, y **G** depende de **C**.
+> **Para el viernes 02/10 realista:** del 1 al 8. **F** e **I** son de después (los dos son construir algo
+> nuevo, no retocar), y **G** depende de **C**.
 
 ---
 
@@ -110,9 +111,18 @@ parámetros de cada vista. Aditivo, SQL puro.
 **La regla que ordena todo esto:** un parámetro puede **no medirse** en un componente, y eso es distinto de
 **no tener límite cargado**. Hoy los dos se pintan `—` y se confunden. Hay que distinguirlos.
 
-⚠ **Carlos va a tocar la base:** va a **eliminar los límites de aditivos en las ruedas** («no tiene mucho
-sentido»), recargando desde el externo. `lc` va a cambiar bajo nuestros pies → el mapeo debe ser
-**data-driven** (sin fila, sin límite), nunca una lista fija.
+### ✅ Quién arregla qué (aclarado el 28/09)
+
+**Lo nuestro es leer y mostrar.** Lo que falte o esté mal *dentro* de `lc` lo regula **Carlos**, y ya dijo
+que lo hace — p.ej. va a **eliminar los límites de aditivos en las ruedas** («no tiene mucho sentido»),
+recargando desde el externo. **No es nuestra tarea ni nos bloquea.**
+
+⇒ Dos consecuencias prácticas:
+- El mapeo debe ser **data-driven**: sin fila en `lc`, no hay límite. Nunca una lista fija de parámetros,
+  porque `lc` va a cambiar bajo nuestros pies y no queremos enterarnos por un `NULL` silencioso.
+- Si en el camino **notamos** algo raro del dato, se **reporta**, no se corrige por cuenta propia. Lo que
+  hay hoy en esa lista: el `Pb LP=2 LC=1` de **Cerro Verde MT LH** (invertido y no es aditivo → parece
+  typo), el desajuste **`730E-` vs `730E`** (heredado nº4) y los aditivos de rueda que él ya va a quitar.
 
 **Verificación:** BLOQUES **138** y **139**.
 
@@ -139,6 +149,39 @@ PC1250, principalmente esos 3».
 `980E`, `D475A`, `PC1250`, **`D11T`** y **`797F`** (los dos últimos salieron en sus propios `/conteo`). Y el
 archivo de límites solo cubre **980E, D475A y PC1250**: `D11T` y `797F` **no tienen límites**. Cuando se los
 pidan hay que decirlo, no devolver una tabla muda.
+
+### ✅ L5 · LA REGLA, decidida (28/09) — y sale de las vistas, como él intuía
+
+> «Digamos que en `/barridodet` pongo Antapaccay y PC1250. **Solo esa flota** ha de salirme, no tablas
+> duplicadas. Ya si no pongo nada, `/barridodet Antapaccay`, pues salen 980, D475 y PC1250.»
+
+Eso se traduce en **una sola regla**, y es **data-driven** — no hay que listar modelos a mano en ningún
+sitio, así que escala solo cuando entre otro proyecto:
+
+| Caso | Qué sale |
+|---|---|
+| **Nombra un modelo** (`Antapaccay PC1250`) | **solo ese modelo**. Nada más, sin rollup |
+| **No nombra modelo** (`Antapaccay`) | **todos los modelos del proyecto que tienen límites cargados** en `lc` → hoy 980E, D475A, PC1250 |
+| Un modelo **sin límites** (`D11T`, `797F`) | no entra en el default; si lo nombran, sale **con el aviso** de que no tiene límites |
+
+**Cómo se implementa sin romper lo conocido.** Hoy las vistas de flota exponen las filas **por-modelo** *y*
+un rollup `(todos)` por `CROSS APPLY (VALUES …)`; el rollup es justo el que duplica.
+⛔ [[komfia_barrido_modelo_duplicacion]] avisa de que **colapsar a `(todos)` rompe** cuando sí nombran un
+modelo — pero eso es la dirección contraria. Lo correcto es **quitar el rollup y quedarse con las filas
+por-modelo**: cada equipo aparece **una sola vez**, en la fila de su modelo, y no hay nada que duplicar.
+
+Para que el caso «sin modelo» siga funcionando, la vista expone una columna nueva **`TieneLimites`** (0/1),
+que sale de si `lc` tiene fila para ese proyecto+componente+modelo. El predicado del flujo queda:
+
+```
+AND ( Modelo LIKE '%‹modelo›%'  OR ( ‹modelo› = '' AND TieneLimites = 1 ) )
+```
+
+Una sola expresión, sin `CASE` en el `WHERE` (**ley 3**: un `CASE` ahí bloqueó el push-down y costó
+4 s → +15 min). **Medir igual antes de cablear.**
+
+⚠ **Y el prerrequisito de L1:** mientras el nodo de análisis pueda redibujar la tabla, esto no se nota.
+Primero el filtro baja al SQL; después se mide.
 
 ---
 
@@ -245,11 +288,25 @@ analizar es un elemento en particular» + «para no tener tantos comandos».
 4. **La gráfica ASCII.**
 5. **Sin `Spark`** — la gráfica lo reemplaza.
 
-⚠ **Decisión abierta (la planteó él):** «raro de ver, pero es eso o quitarlos». Un `Prom` o un `σ` que
-cambian columna a columna son **acumulados móviles** y se leen mal en 6 columnas.
-**Mi recomendación:** `Acum` **sí** como fila de 6 columnas (es acumulativo por naturaleza); `Prom`, `σ` y
-`Nº fuera de límite` **una sola vez**, en la línea de texto junto a los límites. Se pueden prototipar las
-dos y que elija viendo.
+### ✅ Decidido (28/09): `Acum` va como fila; los estadísticos van como **texto explicado**
+
+`Acum` se queda como **fila repartida en las 6 columnas** (es acumulativo por naturaleza: se lee solo).
+
+`Prom`, `σ` y `Nº fuera de límite` **salen de la tabla** y pasan a una **lista de texto debajo, detallada y
+diciendo la lógica** — no un número suelto. Formato pedido:
+
+```
+· Prom.: 80.3 ppm  — media de las 6 últimas muestras de monitoreo (no cuenta las DDI)
+· Desv. Est. (σ): 77.3  — cuánto se aparta de esa media; alta = valores dispersos, no una tendencia limpia
+· Nº fuera de límite: 1 de 6  — muestras que superaron el LP (130.0); de esas, 1 superó el LC (150.0)
+```
+
+**Por qué así:** un `Prom` o un `σ` que cambian columna a columna son **acumulados móviles** y en 6 columnas
+no se leen; en cambio dicho en una línea con su definición, el número se vuelve interpretable sin conocer
+la fórmula. Es la misma idea que ya funcionó con la leyenda de `/rankinggraf`.
+
+⚠ **Lo que hay que cuidar:** cada línea tiene que decir **sobre qué universo** está calculada (las 6
+últimas, sin DDI), porque es exactamente la confusión que produjo el `Acum`.
 
 ---
 
@@ -295,13 +352,14 @@ contaminación → desgaste → código de limpieza.
 | **Horizontal** | parámetros | **fechas** | es el formato del Excel que él pasó; se lee igual que `/tendencia` | con rango largo (2 años) se va a lo ancho y **las tarjetas no tienen scroll** (ley 9) |
 | **Vertical** (actual) | **fechas** | parámetros | crece hacia abajo, que sí scrollea en Teams | ~25 columnas de parámetros es mucho igual |
 
-**Mi recomendación:** **horizontal**, por dos razones concretas — (1) es el formato que el área ya usa y
-reconoce, y (2) el nº de parámetros es **fijo por componente** (entre 18 y 25), mientras que el nº de fechas
-lo elige el usuario con `‹rango›`. Poner en columnas lo variable y en filas lo fijo es exactamente al revés
-de lo que conviene: con `2 años` la tabla horizontal explota a lo ancho y **no hay scroll**.
-→ **Corrijo mi propia recomendación:** conviene **vertical** (fechas en filas), que es como está hoy,
-**y** limitar el nº de parámetros al del componente. Se construyen las dos y elige viendo; pero si hay que
-apostar, la que sobrevive a `/historial 3195 mtlh 2 años` es la vertical.
+### ✅ Decidido (28/09): **vertical** — se prueba al llegar
+
+Fechas en **filas** (como está hoy) y parámetros en **columnas**, acotados a los del componente.
+
+**La razón:** el nº de parámetros es **fijo por componente** (entre 18 y 25); el nº de fechas lo elige el
+usuario con `‹rango›`. Lo variable debe crecer hacia **abajo**, que es lo único que scrollea en Teams. Con
+`/historial 3195 mtlh 2 años` la versión horizontal explota a lo ancho y **no hay scroll** (ley 9).
+Se prueba en vivo al llegar al bloque; si no convence, la horizontal es un `PIVOT` de distancia.
 
 **F2 · Historial de flota, dos retoques finos:**
 - El metal debe llevar **su valor al lado**: `Fe` → `Fe(231.8)`, como ya hace el triage.
@@ -312,28 +370,82 @@ Aplica a las 5 variantes: `/historial`, `/historialmetal`, `/historialflota` y l
 
 ---
 
-## 🅸 Bloque I — `/barrido`: el único módulo al que no le vieron sentido
+## 🅸 Bloque I — `/barrido` se convierte en **Panel de flota** y absorbe `/conteo`
 
-Literal: es el único comando que no les cuadró, **porque ya existe `/barridodet`**. Preguntaron si se le
-puede dar otro uso o valor, y si no, **desactivarlo**.
+**El diagnóstico, en sus palabras:** «como paso 1 ya vimos que esto no llega lejos, lo vimos con tendencia,
+que terminó por combinarse». Es exactamente el mismo caso: `/tendencia` PASO 1 y su detalle se fusionaron
+porque el paso 1 no aportaba un paso, aportaba **una segunda lectura de lo mismo**. `/barrido` está igual
+respecto de `/barridodet`: fila por equipo vs. detalle por componente, y con 18 equipos observados el
+resumen no adelanta nada.
 
-**Mi lectura:** los dos responden casi lo mismo con distinto zoom. `/barrido` da una fila por equipo;
-`/barridodet` el detalle por componente. Con 18 equipos observados el resumen **no es un paso previo**, es
-una segunda lectura de lo mismo.
+### ✅ Decidido (28/09): opción (a) — panel, fusionando `/conteo`. Si no convence, se desactiva.
 
-| | Qué sería `/barrido` | A favor | En contra |
-|---|---|---|---|
-| **(a) Panel de flota** | Deja de listar equipos: **estado de la mina de una ojeada** — cuántos equipos, observados y críticos **por componente y por modelo**, y qué metal domina | Ocupa un lugar que hoy no ocupa nadie; es lo primero que mira un gerente | Módulo nuevo, no un retoque. Se solapa con `/conteo` |
-| **(b) Paso 1 acotado** | Resumen pero solo críticos, top N, y cierra invitando a `/barridodet` | Barato | Es lo que ya intenta ser |
-| **(c) Desactivarlo** | `/barridodet` pasa a llamarse `/barrido` | Un comando menos, cero ambigüedad | Se pierde la vista rápida en flotas grandes (Antamina, 66 equipos) |
+**La pregunta que debe responder el panel es otra que la de `/barridodet`.** `/barridodet` responde *«¿qué
+le pasa a cada equipo?»*. El panel responde **«¿cómo está la mina?»** — y hoy eso no lo responde nadie:
+`/conteo` da la mitad (cuántos por componente) y el barrido actual da la otra mitad mal (una lista larga).
 
-**Mi recomendación: (a), fusionando `/conteo` dentro** — `/conteo` ya da equipos/observados/críticos por
-componente, que es la mitad del panel. Dos comandos tibios se vuelven uno útil. ⚠ **Lo decide él.**
+### La salida propuesta
 
-**Lo que es fix y va igual, decida lo que decida:**
-- **quitar la tabla de límites del pie**, y
-- **que los límites salgan junto a su valor**, como en `/ultimo` → depende del **bloque D**;
-- **`‹modelo›` obligatorio y filtrando en el SQL** → **bloque L**.
+```
+Panel de flota — Antapaccay · 980E · D475A · PC1250 · corte 28-Sep-26
+27 equipos · 18 observados (7 con crítico · 11 solo precaución) · 9 sin novedad
+
+Por componente
+| Componente            | Equipos | Observ. | 🟥 | 🟨 | Lo que más se repite |
+|-----------------------|---------|---------|----|----|----------------------|
+| MOTOR                 |      27 |       6 |  3 |  3 | Si en 3 equipos      |
+| MOTOR DE TRACCION LH  |      27 |       4 |  2 |  2 | Fe en 2              |
+| SISTEMA HIDRAULICO    |      27 |       5 |  2 |  3 | Cu en 2              |
+| …                     |         |         |    |    |                      |
+
+Por modelo            ← solo cuando NO se nombró modelo
+| Modelo  | Equipos | Observ. | 🟥 | 🟨 |
+| 980E    |      27 |      16 |  6 | 10 |
+| D475A   |       5 |       1 |  0 |  1 |
+| PC1250  |       3 |       1 |  1 |  0 |
+
+Dónde empezar
+🟥 CA3164 — 3 componentes con crítico (RD LH · Motor)
+🟥 CA3169 — 2 (MT RH · Sist. Hidr.)
+🟥 CA3176 — 2 (MT LH · RD RH)
+
+→ equipo por equipo: /barridodet Antapaccay 980E
+```
+
+### Qué se construye
+
+| Pieza | De dónde sale | Nuevo |
+|---|---|---|
+| Cabecera (equipos · observados · críticos · sin novedad) | ya lo calcula `vw_ObservadosResumen` | no |
+| **Por componente** | **es `vw_ConteoFlotaMD` tal cual** | no |
+| Columna «Lo que más se repite» | contar, por componente, en cuántos equipos aparece cada metal observado y quedarse con el primero | **sí** — es lo único nuevo |
+| **Por modelo** | el mismo agregado, agrupando por `Modelo` en vez de por componente | casi |
+| **Dónde empezar** | top 3 por nº de componentes con crítico; ya se ordena así en el resumen | no |
+
+Vista nueva `vw_PanelFlotaMD`, contrato de siempre (`MD` / `Observados` / `Recomendaciones`), flujo
+`MD_flota`. **Una sola lectura de la fundación** para las cuatro secciones — es el patrón que curó el
+triage (**ley 2**): agregar sobre la misma fila con `OUTER APPLY`, nunca un CTE referenciado varias veces
+con `JOIN` entre sus ramas.
+
+### Qué pasa con `/conteo`
+
+Su tabla **es** la sección «Por componente» del panel. Dos pasos, en este orden:
+
+1. `/conteo` queda como **alias** que entra al mismo tema (igual que `/tendenciadet` → `/tendencia`).
+2. Cuando esté probado, se **desactiva el tema 21** — ⛔ desactivar, **no** borrar el nodo (ley 8).
+
+Se pasa de 2 comandos tibios a 1 útil, y `/barridodet` queda como el detalle.
+
+### El criterio de salida
+
+Si al verlo sigue sin aportar sobre `/barridodet`, **se desactiva `/barrido` y `/barridodet` pasa a
+llamarse `/barrido`** — que era su opción (c). El panel es un intento con fecha, no un compromiso.
+
+### Lo que va igual, decida lo que decida
+
+- **Quitar la tabla de límites del pie.**
+- **Los límites, junto a su valor** (como en `/ultimo`) → depende del **bloque D**.
+- **`‹modelo›` con la regla L5** → **bloque L**.
 
 ---
 
@@ -384,13 +496,16 @@ componente, que es la mitad del panel. Dos comandos tibios se vuelven uno útil.
 
 ---
 
-# ❓ Preguntas abiertas — bloquean parte del trabajo
+# ✅ Decisiones tomadas el 28/09 — ya no hay preguntas que bloqueen
 
-1. **El último punto del primer mensaje quedó cortado** (termina en «`-`»). ¿Qué faltaba?
-2. **Bloque A:** ¿`Prom` / `σ` / `Nº fuera de límite` como filas de 6 columnas, o una sola vez como texto?
-3. **Bloque I:** `/barrido` → ¿**(a)** panel de flota fusionando `/conteo`, **(b)** paso 1 acotado, o
-   **(c)** desactivarlo?
-4. **Bloque F:** ¿horizontal o vertical? (mi apuesta: **vertical**, por el rango largo y la falta de scroll).
-5. **`‹modelo›` obligatorio: ¿en cuáles exactamente?** Confirmado barrido/barridodet/ranking. ¿También
-   `/triage`, `/conteo`, `/incipiente`, `/metalflota`, `/historialflota`?
-6. **¿Cuándo toca Carlos los límites de aditivos en ruedas?** Para no medir contra un `lc` que cambia.
+| | Se preguntó | Respuesta |
+|---|---|---|
+| 1 | El punto cortado del mensaje | Iba a listar los de flota. **No se perdió nada** |
+| 2 | `/barrido`: ¿panel, paso 1 acotado o desactivar? | **Panel fusionando `/conteo`** — «lo de `/conteo` me interesa». Si no convence, se desactiva → **bloque I** |
+| 3 | `Prom` / `σ` / `Nº fuera de límite` | **Texto en lista, detallado y diciendo la lógica** → **bloque A** |
+| 4 | Historial: ¿horizontal o vertical? | **Vertical**, se prueba al llegar → **bloque F** |
+| 5 | `‹modelo›`: ¿en cuáles y cómo? | **Casi obligatorio en toda la flota**, con la regla L5: nombrado → solo ese; vacío → los modelos **con límites cargados** → **bloque L** |
+| 6 | Los huecos de `lc` | **No nos corresponde**: los regula Carlos. Nosotros leemos, mostramos y **reportamos** lo que notemos → **bloque D** |
+
+**Queda una sola decisión, y es de mirar, no de responder:** al construir el panel del bloque I y el
+historial vertical del bloque F, verlos y decir si se quedan.
