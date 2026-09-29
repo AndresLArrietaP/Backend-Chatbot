@@ -287,6 +287,38 @@ FROM (VALUES
 ) v(CompTipo, Parametro, Grupo, GrupoOrden, Orden, Inv, Inf, Disponible);
 GO
 
+/* ============================================================================
+   vw_InvPorComponente -- G1 (29/09). 7 filas: por CompTipo, si cada aditivo lleva el limite
+   INVERTIDO (la alerta es por DEBAJO porque el aditivo se agota).
+
+   POR QUE EXISTE. En el bloque D (28/09) escribi la direccion de Ca/Zn/Mg/B/P/Mo deduciendola
+   DEL DATO -- 'si lim.X_LP > lim.X_LC entonces esta invertido'. La cabecera de
+   vw_FormatoParametro ya advertia, con el BLOQUE 104 detras, que eso NO se hace: el archivo de
+   gerencia trae typos y el bucket 'OTRO' fabrica inversiones artificiales al colapsar
+   componentes distintos con MIN(). Lei el aviso despues de que el dato me lo demostrara.
+
+   LO QUE COSTO (BLOQUE 159.4): en Antamina las 102 ruedas con Ca entre 3 006 y 4 264 ppm salian
+   CRITICAS contra un LC de 2 250. Como ahi el par LP/LC no viene invertido, el CASE caia al ramo
+   de CONTAMINANTE y las reprobaba por tener DEMASIADO calcio -- cuando en una rueda el Ca es un
+   ADITIVO y 3 000 ppm es exactamente lo normal (Cerro Verde corre 3 690, Toromocho 2 832).
+   164 falsos criticos de un solo parametro.
+
+   La direccion es una propiedad del GRUPO (Aditivos -> invertido), no del par de numeros que
+   alguien cargo. Aqui se lee de una sola fuente: vw_FormatoParametro.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_InvPorComponente] AS
+SELECT CompTipo,
+       MAX(CASE WHEN Parametro = N'Ca' THEN Inv END) AS Ca_Inv,
+       MAX(CASE WHEN Parametro = N'Zn' THEN Inv END) AS Zn_Inv,
+       MAX(CASE WHEN Parametro = N'Mg' THEN Inv END) AS Mg_Inv,
+       MAX(CASE WHEN Parametro = N'B'  THEN Inv END) AS B_Inv,
+       MAX(CASE WHEN Parametro = N'P'  THEN Inv END) AS P_Inv,
+       MAX(CASE WHEN Parametro = N'Mo' THEN Inv END) AS Mo_Inv
+FROM [dbo].[vw_FormatoParametro]
+WHERE CompTipo <> N'(CRUZADO)'
+GROUP BY CompTipo;
+GO
+
 /* ----------------------------------------------------------------------------
    1) vw_LimitesPorComponente — los 31 parametros del formato (D2, 28/09)
    ----------------------------------------------------------------------------
@@ -518,14 +550,15 @@ SELECT
 
     /* CONTAMINANTES nuevos (informativos: NO entran a Estado_General hasta validación del área) */
     m.Ca_ppm,  lim.Ca_LP,  lim.Ca_LC,
-    /* Ca/Zn/Mg cambian de sentido segun el componente: en Motor de Traccion son CONTAMINANTES
+    /* Ca/Zn/Mg/Mo cambian de sentido segun el componente: en Motor de Traccion son CONTAMINANTES
        (alerta por ENCIMA) y en el resto son ADITIVOS (alerta por DEBAJO: el aditivo se agota).
-       La direccion no se decide con una lista de componentes sino con los propios limites: si
-       LP > LC el limite esta invertido, que es como el Excel del area define a los aditivos.
        Sin esto, /diagcompleto dejaba SIN marcar 53 componentes de RUEDA que /ultimo SI marcaba
-       -- el mismo valor, dos modulos, dos respuestas (BLOQUE 122). */
+       -- el mismo valor, dos modulos, dos respuestas (BLOQUE 122).
+       ⛔ G1 (29/09): la direccion se lee del GRUPO (vw_InvPorComponente), no del par LP/LC. En el
+       bloque D la deduje del dato y costo 164 falsos criticos en las ruedas de Antamina, donde ese
+       par no viene invertido y el Ca normal de 3 000 ppm se leia como exceso (BLOQUE 159.4). */
     CASE WHEN m.Ca_ppm IS NULL THEN 'SIN DATO'
-         WHEN lim.Ca_LP > lim.Ca_LC THEN
+         WHEN inv.Ca_Inv = 1 THEN   /* G1: del formato, NO de 'LP > LC' */
               CASE WHEN m.Ca_ppm = 0 THEN 'SIN DATO'   /* G0 */
                    WHEN m.Ca_ppm < lim.Ca_LC THEN 'CRITICO'
                    WHEN m.Ca_ppm < lim.Ca_LP THEN 'PRECAUCION' ELSE 'OK' END
@@ -535,7 +568,7 @@ SELECT
     m.Zn_ppm,  lim.Zn_LP,  lim.Zn_LC,
     /* Mismo criterio que en Ca: si LP > LC el limite esta invertido (aditivo). */
     CASE WHEN m.Zn_ppm IS NULL THEN 'SIN DATO'
-         WHEN lim.Zn_LP > lim.Zn_LC THEN
+         WHEN inv.Zn_Inv = 1 THEN   /* G1: del formato, NO de 'LP > LC' */
               CASE WHEN m.Zn_ppm = 0 THEN 'SIN DATO'   /* G0 */
                    WHEN m.Zn_ppm < lim.Zn_LC THEN 'CRITICO'
                    WHEN m.Zn_ppm < lim.Zn_LP THEN 'PRECAUCION' ELSE 'OK' END
@@ -554,7 +587,7 @@ SELECT
     m.Mg_ppm,  lim.Mg_LP,  lim.Mg_LC,
     /* Mismo criterio que en Ca: si LP > LC el limite esta invertido (aditivo). */
     CASE WHEN m.Mg_ppm IS NULL THEN 'SIN DATO'
-         WHEN lim.Mg_LP > lim.Mg_LC THEN
+         WHEN inv.Mg_Inv = 1 THEN   /* G1: del formato, NO de 'LP > LC' */
               CASE WHEN m.Mg_ppm = 0 THEN 'SIN DATO'   /* G0 */
                    WHEN m.Mg_ppm < lim.Mg_LC THEN 'CRITICO'
                    WHEN m.Mg_ppm < lim.Mg_LP THEN 'PRECAUCION' ELSE 'OK' END
@@ -602,7 +635,7 @@ SELECT
     m.B_ppm, lim.B_LP, lim.B_LC,
     CASE WHEN m.B_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.B_LP IS NULL OR lim.B_LC IS NULL THEN 'OK'
-         WHEN lim.B_LP > lim.B_LC THEN
+         WHEN inv.B_Inv = 1 THEN   /* G1: del formato, NO de 'LP > LC' */
               CASE WHEN m.B_ppm = 0 THEN 'SIN DATO'   /* G0 */
                    WHEN m.B_ppm < lim.B_LC THEN 'CRITICO'
                    WHEN m.B_ppm < lim.B_LP THEN 'PRECAUCION' ELSE 'OK' END
@@ -612,7 +645,7 @@ SELECT
     m.P_ppm, lim.P_LP, lim.P_LC,
     CASE WHEN m.P_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.P_LP IS NULL OR lim.P_LC IS NULL THEN 'OK'
-         WHEN lim.P_LP > lim.P_LC THEN
+         WHEN inv.P_Inv = 1 THEN   /* G1: del formato, NO de 'LP > LC' */
               CASE WHEN m.P_ppm = 0 THEN 'SIN DATO'   /* G0 */
                    WHEN m.P_ppm < lim.P_LC THEN 'CRITICO'
                    WHEN m.P_ppm < lim.P_LP THEN 'PRECAUCION' ELSE 'OK' END
@@ -622,7 +655,7 @@ SELECT
     m.Mo_ppm, lim.Mo_LP, lim.Mo_LC,
     CASE WHEN m.Mo_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.Mo_LP IS NULL OR lim.Mo_LC IS NULL THEN 'OK'
-         WHEN lim.Mo_LP > lim.Mo_LC THEN
+         WHEN inv.Mo_Inv = 1 THEN   /* G1: del formato, NO de 'LP > LC' */
               CASE WHEN m.Mo_ppm = 0 THEN 'SIN DATO'   /* G0 */
                    WHEN m.Mo_ppm < lim.Mo_LC THEN 'CRITICO'
                    WHEN m.Mo_ppm < lim.Mo_LP THEN 'PRECAUCION' ELSE 'OK' END
@@ -754,6 +787,8 @@ SELECT
 
     m.LaboratoryDataId
 FROM calc m
+/* G1: la direccion de los aditivos sale del formato, no del par LP/LC. Ver vw_InvPorComponente. */
+LEFT JOIN [dbo].[vw_InvPorComponente] inv ON inv.CompTipo = m.CompTipo
 LEFT JOIN [dbo].[vw_LimitesPorComponente] lim
     ON lim.ProyKey   = m.ProyKey
    AND lim.ModeloKey = m.ModeloKey

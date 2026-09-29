@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   160 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   161 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -180,6 +180,7 @@
      BLOQUE 157  La bandera 'Inf' YA existe + dos bloques que huelen a limite
      BLOQUE 158  El cero bajo limite invertido, y el ISO6 de Antapaccay MT
      BLOQUE 159  G0 desplegado: el 0 no es una medicion (9 guardas)
+     BLOQUE 160  G1: la inversion se deduce del GRUPO, no del dato
    ============================================================================ */
 
 /* ============================================================================
@@ -6453,7 +6454,9 @@ GO
 SELECT TOP 1 'MuestrasEstado' AS Vista, Equipo FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1;
 SELECT TOP 1 'TriageMD'       AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_TriageMD]       WITH (NOLOCK);
 SELECT TOP 1 'DiagnosticoMD'  AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_DiagnosticoMD]  WITH (NOLOCK);
-SELECT TOP 1 'CondicionMTMD'  AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_CondicionMTMD]  WITH (NOLOCK);
+-- 🔴 AQUI ESCRIBI MAL EL NOMBRE (no existe vw_CondicionMTMD, es vw_CondicionMT_MD) y el lote
+--    SE CORTO: las dos lineas de abajo nunca corrieron. Smoke test completo en el 160.5.
+SELECT TOP 1 'CondicionMT_MD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK);
 SELECT TOP 1 'UltimoAnalisisMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK);
 SELECT TOP 1 'BarridoMD'      AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_BarridoMD]      WITH (NOLOCK);
 GO
@@ -6466,3 +6469,128 @@ GO
    - Un componente que pasa a 'SIN DATO' NO es una buena noticia: significa que llevamos tiempo
      dandolo por limpio sin medirlo. Si el 159.2 devuelve numeros grandes, eso es un dato para
      Carlos tanto como los limites. */
+
+
+-- RESULTADOS BLOQUE 159 (29/09) -- G0 hizo exactamente lo medido, el 159.2 da la cifra del fallo
+-- silencioso, y el 159.4 RESUELVE Antamina: era un bug mio, y estaba advertido en este archivo.
+--
+-- 159.1 ✅ G0 EN LOS ADITIVOS, CLAVADO A LA PREDICCION:
+--   Antapaccay 980E  Zn_crit 54 -> 48 (los 6 ceros)  ·  Mg_crit 54 -> 41 (los 13 ceros)
+--                    Ca_crit 54 -> 54 (no tenia ceros)
+--   Antamina   980E  164/166/166 SIN MOVERSE, tal cual dije: sus ceros caian en componentes sin
+--                    limite de Ca. Ningun otro proyecto tiene criticos de aditivo.
+--   ⚠ Antapaccay 930E: 18 de 36 en 'SIN DATO' de Ca y Zn -- ese modelo no trae ni valores ni
+--     limites. Es el hueco de siempre del 930E, ahora visible en vez de disfrazado de OK.
+--
+-- 159.2 ⭐⭐ LA CIFRA DEL FALLO SILENCIOSO. Componentes con ISO6 = 0, que hasta hoy salian 'OK':
+--   Antamina MOTOR     158 de 158 (!)    Antamina TRACCION  92 de 388
+--   Antamina RUEDA      65 de 129        Antamina HIDRAULICO 28 de 158
+--   Cerro Verde          3 · Antapaccay   1
+--   ⇒ 347 COMPONENTES venian leyendose como "codigo de limpieza dentro de limite" SIN UNA SOLA
+--     MEDICION. Los 158 motores de Antamina al completo. No es que estuvieran limpios: es que
+--     nadie los midio, y el 0 los hacia indistinguibles de los limpios de verdad.
+--   ⚠ Esto NO es una victoria de G0: es la cuenta de lo que llevabamos tiempo dando por bueno.
+--     Va a Carlos igual que los limites.
+--   (El resto de 'SIN DATO' del 159.2 son NULL, que ya se trataban bien: Cerro Verde TRACCION
+--    tiene 128 sin dato de los cuales solo 2 eran ceros -- los otros 126 nunca tuvieron valor.)
+--
+-- 159.3 ✅ SIN REGRESION. "6 de 54 observados (3 criticos)", identico. Estado_General no se toco.
+--
+-- 159.4 ⭐⭐ ANTAMINA RESUELTO, Y ERA UN BUG MIO. Distribucion del Ca en las ruedas de Antamina:
+--   Mobiltrans HD 60 · 3000 o mas      102 ruedas   Ca 3 006,2 - 4 264,2
+--   Mobiltrans HD 60 · 0 (no medido)    23 ruedas
+--   Mobiltrans HD 60 · 1 - 999           1 rueda    Ca 47,9
+--   Mobiltrans HD 30 · 3000 o mas        1 · HD 30 · 0 (no medido) 1 · NULL · 3000 o mas 1
+--   ⛔ 102 ruedas ENTRE 3 006 Y 4 264 ppm contra un LC de 2 250, y salian CRITICAS. Solo hay una
+--      forma de que eso pase: el CASE cayendo al ramo de CONTAMINANTE y reprobandolas por tener
+--      DEMASIADO calcio. En una rueda el Ca es un ADITIVO y 3 000 ppm es lo normal -- Cerro Verde
+--      corre 3 690, Toromocho 2 832, y ninguno sale critico porque ahi el par LP/LC SI viene
+--      invertido. 164 falsos criticos de un solo parametro.
+--   🔴 Y ESTABA ADVERTIDO EN ESTE MISMO ARCHIVO. La cabecera de vw_FormatoParametro, con el
+--      BLOQUE 104 detras: "Inv = 1 -> limite INVERTIDO. Se deduce del GRUPO, no del dato.
+--      ⛔ NO derivarlo de 'LP > LC' aunque el dato lo respalde en general -- el archivo de gerencia
+--      trae un typo y el bucket 'OTRO' produce inversiones artificiales al colapsar componentes
+--      distintos con MIN()." En el bloque D escribi exactamente lo que ese aviso prohibe.
+--
+-- 159.5 🔴 MI SMOKE TEST ESTABA MAL ESCRITO. 'dbo.vw_CondicionMTMD' no existe: es
+--   vw_CondicionMT_MD. Y lo grave no es el Msg 208 -- es que el lote SE CORTO AHI, asi que
+--   vw_UltimoAnalisisMD y vw_BarridoMD NUNCA SE PROBARON. Un smoke test incompleto se lee como
+--   aprobado. Corregido y completado en el 160.5.
+
+
+-- ==== BLOQUE 160 - G1: la inversion se deduce del GRUPO, no del dato ====
+-- QUE CAMBIO: nueva vista vw_InvPorComponente (7 filas, el Inv del formato pivotado) + UN LEFT
+--   JOIN en vw_MuestrasEstado + los 6 CASE de aditivos pasan de 'lim.X_LP > lim.X_LC' a
+--   'inv.X_Inv = 1'. La direccion es una propiedad del GRUPO, no del par de numeros cargado.
+-- Estado_General NO se toco. G0 (las 9 guardas del 0) se mantiene.
+
+-- 160.1 ⭐ LA EVIDENCIA, PARA QUE QUEDE ESCRITA. Como viene el par LP/LC de cada proyecto y que
+--   dice el formato. Donde 'Par_invertido' = 0 y 'Formato_Inv' = 1, ahi estaba el falso critico.
+SELECT b.Proyecto, b.CompTipo, COUNT(*) AS Componentes,
+       MIN(b.Ca_LP) AS Ca_LP, MIN(b.Ca_LC) AS Ca_LC,
+       MAX(CASE WHEN b.Ca_LP > b.Ca_LC THEN 1 ELSE 0 END) AS Par_invertido,
+       MAX(i.Ca_Inv)                                      AS Formato_Inv
+FROM [dbo].[vw_MuestrasEstado] b WITH (NOLOCK)
+LEFT JOIN [dbo].[vw_InvPorComponente] i ON i.CompTipo = b.CompTipo
+WHERE b.rn_recencia = 1 AND b.CompTipo = 'RUEDA' AND b.Ca_LC IS NOT NULL
+GROUP BY b.Proyecto, b.CompTipo
+ORDER BY b.Proyecto;
+GO
+
+-- 160.2 ⭐ EL EFECTO. Contra el 159.1: Antamina 980E debe pasar de 164/166/166 a CERO o casi.
+--   Antapaccay 980E NO debe moverse de 54/48/41 -- ese si es real: es el Shell Spirax (158.4).
+SELECT Proyecto, Modelo, COUNT(*) AS Componentes,
+       SUM(CASE WHEN Estado_Ca = 'CRITICO' THEN 1 ELSE 0 END) AS Ca_crit,
+       SUM(CASE WHEN Estado_Zn = 'CRITICO' THEN 1 ELSE 0 END) AS Zn_crit,
+       SUM(CASE WHEN Estado_Mg = 'CRITICO' THEN 1 ELSE 0 END) AS Mg_crit
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo IN ('RUEDA','HIDRAULICO','MOTOR','MANDO','TRANSMISION')
+GROUP BY Proyecto, Modelo
+ORDER BY Proyecto, Modelo;
+GO
+
+-- 160.3 ⚠ LA OTRA DIRECCION, QUE NO SE PUEDE ROMPER. En MOTOR DE TRACCION el Ca/Zn/Mg son
+--   CONTAMINANTES (Inv = 0): la alerta es por ARRIBA. El CA3165 con Zn 194,8 contra LC 25 tiene
+--   que SEGUIR saliendo critico. Si G1 lo apago, invertimos el error en vez de arreglarlo.
+SELECT TOP 15 Equipo, Compartimiento, Modelo,
+       CAST(Zn_ppm AS decimal(18,1)) AS Zn, Zn_LP, Zn_LC, Estado_Zn
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'TRACCION' AND Proyecto LIKE '%Antapaccay%'
+ORDER BY Zn_ppm DESC;
+GO
+
+-- 160.4 COBERTURA DEL JOIN. Si algun CompTipo real no tiene fila en vw_InvPorComponente, su Inv
+--   llega NULL, 'inv.X_Inv = 1' da falso y el aditivo se juzga como contaminante EN SILENCIO
+--   (ley 5, modo A). Esto tiene que devolver CERO filas.
+SELECT DISTINCT b.CompTipo
+FROM [dbo].[vw_MuestrasEstado] b WITH (NOLOCK)
+LEFT JOIN [dbo].[vw_InvPorComponente] i ON i.CompTipo = b.CompTipo
+WHERE b.rn_recencia = 1 AND i.CompTipo IS NULL;
+GO
+
+-- 160.5 SMOKE TEST COMPLETO Y CON LOS NOMBRES BIEN (el del 159.5 se corto en la 4a linea y dejo
+--   dos vistas sin probar). Cada SELECT va suelto a proposito: si uno falla, los demas corren.
+SELECT TOP 1 'MuestrasEstado'   AS Vista, Equipo        AS x FROM [dbo].[vw_MuestrasEstado]   WITH (NOLOCK) WHERE rn_recencia = 1;
+SELECT TOP 1 'InvPorComponente' AS Vista, CompTipo      AS x FROM [dbo].[vw_InvPorComponente] WITH (NOLOCK);
+SELECT TOP 1 'TriageMD'         AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_TriageMD]         WITH (NOLOCK);
+SELECT TOP 1 'DiagnosticoMD'    AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_DiagnosticoMD]    WITH (NOLOCK);
+SELECT TOP 1 'CondicionMT_MD'   AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_CondicionMT_MD]   WITH (NOLOCK);
+SELECT TOP 1 'CondicionCompMD'  AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_CondicionCompMD]  WITH (NOLOCK);
+SELECT TOP 1 'UltimoAnalisisMD' AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK);
+SELECT TOP 1 'BarridoMD'        AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_BarridoMD]        WITH (NOLOCK);
+SELECT TOP 1 'TendenciaMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_TendenciaMD]      WITH (NOLOCK);
+SELECT TOP 1 'HistorialMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_HistorialMD]      WITH (NOLOCK);
+SELECT TOP 1 'RankingMD'        AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_RankingMD]        WITH (NOLOCK);
+GO
+
+-- 160.6 NO REGRESION DEL TRIAGE. Estado_General sigue sin mirar ninguno de estos parametros:
+--   "6 de 54 observados (3 criticos)".
+SELECT LEFT(MD, 120) AS Cabecera
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+
+/* ⚑ SI EL 160.2 NO BAJA ANTAMINA A CERO, G1 NO ES LA CAUSA Y HAY QUE REVERTIRLO (git), no
+   insistir. La hipotesis es fuerte pero es una hipotesis: 102 ruedas entre 3 006 y 4 264 contra
+   un LC de 2 250 solo se explican por el ramo de contaminante, y el formato dice que ahi el Ca es
+   aditivo. Si el numero no se mueve, me equivoque en donde. */

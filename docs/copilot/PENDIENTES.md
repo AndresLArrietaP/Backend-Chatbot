@@ -90,7 +90,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
 | **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **escrito** — falta ver | **159** | determinista |
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
-| **5f** | **Q** · Antamina RUEDA: 104 de 128 **sin explicar** | ⏳ **medir** | **159.4** | dato |
+| **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **escrito** — falta ver | **160** | determinista |
+| **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -498,6 +499,60 @@ escrito como tal en la ley 5 de `CLAUDE.md`.
 
 ⚠ **Un componente que pasa a `SIN DATO` no es una buena noticia**: significa que llevamos tiempo dándolo por
 limpio sin medirlo. Si el **159.2** devuelve números grandes, eso va a Carlos tanto como los límites.
+
+---
+
+## Resultado del BLOQUE 159 — G0 clavado, y Antamina resuelto
+
+**G0 hizo exactamente lo medido.** Antapaccay `Zn` 54 → **48** (los 6 ceros), `Mg` 54 → **41** (los 13),
+`Ca` 54 → 54 (no tenía ceros). Antamina **sin moverse**, tal cual estaba previsto. Triage **idéntico**.
+
+### ⭐⭐ La cifra del fallo silencioso: **347 componentes**
+
+Venían leyéndose como «código de limpieza dentro de límite» **sin una sola medición** — `ISO6 = 0` salía
+`OK`. Entre ellos **los 158 motores de Antamina, al completo**. No es que estuvieran limpios: es que nadie
+los midió, y el `0` los hacía indistinguibles de los limpios de verdad.
+
+⚠ **Esto no es una victoria de G0**: es la cuenta de lo que veníamos dando por bueno. Va a Carlos igual
+que los límites. *(El resto de `SIN DATO` del 159.2 son NULL, que ya se trataban bien.)*
+
+### 🔴 159.4 — Antamina era un bug mío, y estaba advertido en este mismo archivo
+
+| Grado | Banda | Ruedas | `Ca` |
+|---|---|---|---|
+| Mobiltrans HD 60 | **3000 o más** | **102** | 3 006 – 4 264 |
+| Mobiltrans HD 60 | 0 (no medido) | 23 | — |
+
+**102 ruedas entre 3 006 y 4 264 ppm contra un `LC` de 2 250, y salían críticas.** Solo hay una forma: el
+`CASE` cayendo al ramo de **contaminante** y reprobándolas por tener *demasiado* calcio. En una rueda el
+`Ca` es un **aditivo** y 3 000 ppm es lo normal — Cerro Verde corre 3 690 y Toromocho 2 832, y no salen
+críticos porque ahí el par `LP`/`LC` **sí** viene invertido. **164 falsos críticos de un solo parámetro.**
+
+Y la cabecera de `vw_FormatoParametro` ya lo advertía, con el BLOQUE 104 detrás:
+
+> *`Inv = 1` → límite INVERTIDO. Se deduce del **GRUPO**, no del dato. ⛔ **NO derivarlo de `LP > LC`**
+> aunque el dato lo respalde en general — el archivo de gerencia trae un typo y el bucket `OTRO` produce
+> inversiones artificiales al colapsar componentes distintos con `MIN()`.*
+
+En el bloque D escribí exactamente lo que ese aviso prohíbe.
+
+### 🔴 159.5 — mi smoke test estaba mal escrito, y eso es peor que el error
+
+`dbo.vw_CondicionMTMD` no existe (es `vw_CondicionMT_MD`). Lo grave no es el `Msg 208`: **el lote se cortó
+ahí**, así que `vw_UltimoAnalisisMD` y `vw_BarridoMD` **nunca se probaron**. *Un smoke test incompleto se
+lee como aprobado.* Corregido, y el **160.5** cubre **11 vistas** con cada `SELECT` suelto, para que un
+fallo no tape a los que siguen.
+
+## ✅ G1 desplegado (BLOQUE 160)
+
+Nueva vista **`vw_InvPorComponente`** (7 filas, el `Inv` del formato pivotado) + **un** `LEFT JOIN` en
+`vw_MuestrasEstado` + los 6 `CASE` pasan de `lim.X_LP > lim.X_LC` a **`inv.X_Inv = 1`**. `Estado_General`
+sin tocar; `G0` se mantiene.
+
+⚑ **Si el 160.2 no baja Antamina a cero, G1 no es la causa y se revierte** (`git`), no se insiste. El
+**160.3** cuida la dirección contraria: en MT el `Ca`/`Zn` son contaminantes y el `CA3165` con `Zn 194,8`
+tiene que **seguir** saliendo crítico. El **160.4** comprueba que ningún `CompTipo` se quede sin fila en el
+JOIN — si se queda, el aditivo se juzgaría como contaminante **en silencio**.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo
