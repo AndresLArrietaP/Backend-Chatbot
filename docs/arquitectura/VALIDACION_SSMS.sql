@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   159 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   160 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -179,6 +179,7 @@
      BLOQUE 156  DECISION: 'fuera de limite = observado' para TODO parametro
      BLOQUE 157  La bandera 'Inf' YA existe + dos bloques que huelen a limite
      BLOQUE 158  El cero bajo limite invertido, y el ISO6 de Antapaccay MT
+     BLOQUE 159  G0 desplegado: el 0 no es una medicion (9 guardas)
    ============================================================================ */
 
 /* ============================================================================
@@ -6328,3 +6329,140 @@ GO
    - 158.4 -> si el Grado de las ruedas de Antapaccay es otro, el 157.2 queda explicado y la
      correccion va al archivo de limites, con nombre y apellido.
 */
+
+
+-- RESULTADOS BLOQUE 158 (29/09) -- el 158.4 cierra la pregunta de las ruedas, y el 158.1 me
+-- DESMIENTE en la causa que le habia atribuido a Antamina.
+--
+-- 158.4 ⭐⭐ LA RESPUESTA, Y ESTABA EN LA BD TODO EL TIEMPO. Grado del aceite de las ruedas:
+--   Antamina    980E  Mobiltrans HD 60         125 ruedas   Ca 2823.5  Zn  860.3   (LC 2250)
+--   Cerro Verde 980E  Mobiltrans HD 50          16 ruedas   Ca 3690.6  Zn 1172.2   (LC 1864)
+--   Cerro Verde 730E  Mobiltrans HD 50           4 ruedas   Ca 3798.3  Zn 1190.8
+--   Toromocho   980E  MOBILTRANS HD50           18 ruedas   Ca 2832.3  Zn   NULL   (LC 1720.8)
+--   Antapaccay  980E  SHELL SPIRAX S5 CFD M 60  54 ruedas   Ca  189.1  Zn    3.9   (LC 1560) ⛔
+--   ⇒ TODOS corren Mobiltrans HD. Antapaccay corre SHELL SPIRAX. No es el mismo producto ni la
+--     misma quimica: Zn de 3,9 contra 860-1190 en el resto. El limite Ca_LC = 1560 se escribio
+--     para un Mobiltrans, y esas ruedas no llevan Mobiltrans.
+--     NO HAY NADA QUE ARREGLAR EN SQL: el limite hay que actualizarlo al aceite que de verdad
+--     usan, en LIMITES CONDENATORIOS 1.xlsm. Con el Grado al lado, la correccion tiene nombre.
+--   ⚠ De paso: Antapaccay 930E trae Grado = 'nan' LITERAL (la cadena, no NULL). Es el bug 'nan'
+--     ya conocido, aqui en otra columna.
+--
+-- 158.1 🔴 ME DESMIENTE. Yo atribui el 104/128 de Antamina a los ceros. FALSO:
+--   Antamina   980E  260 comp · Ca_cero 28 · Ca_crit_hoy 164 -> con_guarda 164  (NO MUEVE)
+--   Antapaccay 980E  108 comp · Zn_cero  6 · Zn_crit_hoy  54 -> con_guarda  48  (-6)
+--   ⇒ Los 28 ceros de Antamina no estaban contados como criticos (caen en componentes sin limite
+--     de Ca). La guarda '> 0' corrige 6 casos reales en Antapaccay y NADA en Antamina.
+--     La guarda SIGUE SIENDO CORRECTA -- un 0 no es una medicion, y Estado_TBN ya la tenia --
+--     pero NO es la explicacion de Antamina. Eso queda abierto: ver 159.4.
+--
+-- 158.2 LOS CEROS, DE CERCA. Las filas de Antamina con Ca = 0 traen TAMBIEN Zn, Mg, Fe y Si en
+--   0.0, con Grado 'Mobiltrans HD 60' y fechas de septiembre. No es una columna que falte: es la
+--   MUESTRA ENTERA en cero. Un registro creado sin resultados de laboratorio.
+--
+-- 158.3 ⭐⭐ Y AQUI ESTA LO GRAVE, QUE NO ERA LO QUE BUSCABA. ISO6 en Motor de Traccion:
+--   Proyecto    Modelo  ISO6_LP  ISO6_LC  min  max  prom   Obs
+--   Antamina     930E    NULL     NULL      0   25  16.8     0
+--   Antamina     980E    19.0     20.0      0   24  10.6    31
+--   Antapaccay   930E    NULL     NULL     18   26  21.2     0
+--   Antapaccay   980E    19.0     20.0     18   25  21.1    48
+--   Cerro Verde  930E    NULL     NULL      0    0   0.0     0   ⛔
+--   * LOS LIMITES SON IDENTICOS (19/20) entre Antamina 980E y Antapaccay 980E. Asi que la
+--     diferencia NO es de criterio.
+--   * PERO el promedio no se puede comparar: Antamina tiene min = 0 y Antapaccay min = 18. Los
+--     ceros de Antamina HUNDEN su promedio a 10,6. Su distribucion real esta mucho mas arriba.
+--   * ⛔ Cerro Verde 930E: min 0, max 0, prom 0,0 en los tres canales. Figuraba con "0
+--     observados" y yo lo lei como flota limpia. NO ESTA LIMPIA: NO ESTA MEDIDA.
+--   ⇒ ESTE es el hallazgo de la ronda. Bajo un limite NORMAL el 0 no fabrica un falso positivo:
+--     fabrica un FALSO NEGATIVO, y encima invisible. Un componente sin medir se lee igual que uno
+--     impecable. Es el modo de fallo silencioso de la ley 5, en una variante nueva.
+
+
+-- ==== BLOQUE 159 - G0 desplegado: el 0 no es una medicion ====
+-- QUE CAMBIO en vw_MuestrasEstado (9 guardas, todas marcadas /* G0 */ en el DDL):
+--   (A) Los 6 aditivos (Ca, Zn, Mg, B, P, Mo) devuelven 'SIN DATO' cuando el valor es 0 Y el
+--       limite esta INVERTIDO. Solo en ese ramo: para un CONTAMINANTE un 0 es una lectura valida
+--       ("no hay contaminacion") y ahi no se toca nada.
+--   (B) Los 3 canales ISO devuelven 'SIN DATO' cuando el codigo es 0. Un codigo ISO 4406 de 0 es
+--       fisicamente imposible (<=0,01 particulas/ml): es la marca de "no reportado".
+-- Estado_General NO se toco.
+
+-- 159.1 ⭐ EL EFECTO EN LOS ADITIVOS. Contra el 158.1: Antapaccay debe bajar de 54 a 48 criticos
+--   de Zn; Antamina no se mueve (sus ceros caian en componentes sin limite).
+SELECT Proyecto, Modelo, COUNT(*) AS Componentes,
+       SUM(CASE WHEN Estado_Ca = 'CRITICO'  THEN 1 ELSE 0 END) AS Ca_crit,
+       SUM(CASE WHEN Estado_Zn = 'CRITICO'  THEN 1 ELSE 0 END) AS Zn_crit,
+       SUM(CASE WHEN Estado_Mg = 'CRITICO'  THEN 1 ELSE 0 END) AS Mg_crit,
+       SUM(CASE WHEN Estado_Ca = 'SIN DATO' THEN 1 ELSE 0 END) AS Ca_sindato,
+       SUM(CASE WHEN Estado_Zn = 'SIN DATO' THEN 1 ELSE 0 END) AS Zn_sindato
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo IN ('RUEDA','HIDRAULICO','MOTOR','MANDO','TRANSMISION')
+GROUP BY Proyecto, Modelo
+ORDER BY Proyecto, Modelo;
+GO
+
+-- 159.2 ⭐⭐ EL EFECTO EN LOS ISO, QUE ES EL QUE IMPORTA. 'ISO6_cero_antes' son los componentes
+--   que hasta hoy salian OK sin haberse medido. Cerro Verde 930E MT deberia pasar de "todo OK" a
+--   "todo SIN DATO": el 158.3 mostro min=0 y max=0.
+SELECT Proyecto, CompTipo, COUNT(*) AS Componentes,
+       SUM(CASE WHEN ISO6 = 0 THEN 1 ELSE 0 END)                AS ISO6_cero,
+       SUM(CASE WHEN Estado_ISO6 = 'SIN DATO' THEN 1 ELSE 0 END) AS ISO6_sindato,
+       SUM(CASE WHEN Estado_ISO6 = 'OK' THEN 1 ELSE 0 END)       AS ISO6_ok,
+       SUM(CASE WHEN Estado_ISO6 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS ISO6_obs
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
+GROUP BY Proyecto, CompTipo
+ORDER BY Proyecto, CompTipo;
+GO
+
+-- 159.3 NO REGRESION. Estado_General no mira ninguno de los 9 parametros tocados, asi que el
+--   triage tiene que dar EXACTAMENTE lo mismo: Antapaccay TRACCION "6 de 54 observados
+--   (3 criticos)". Si se movio, algo se rompio en otra parte.
+SELECT LEFT(MD, 120) AS Cabecera
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+
+-- 159.4 ⭐ LO QUE SIGUE SIN EXPLICACION. Antamina RUEDA 980E: 104 de 128 criticos de Ca, con un
+--   promedio de flota (2823,5) que esta POR ENCIMA del piso critico (2250). Un promedio arriba y
+--   el 81% abajo solo pasa si la distribucion tiene dos grupos. Esto los separa.
+SELECT Grado,
+       CASE WHEN Ca_ppm IS NULL THEN 'sin dato'
+            WHEN Ca_ppm = 0     THEN '0 (no medido)'
+            WHEN Ca_ppm < 1000  THEN '1 - 999'
+            WHEN Ca_ppm < 2250  THEN '1000 - 2249 (bajo el LC)'
+            WHEN Ca_ppm < 3000  THEN '2250 - 2999'
+            ELSE '3000 o mas' END AS Banda,
+       COUNT(*) AS Ruedas,
+       CAST(MIN(Ca_ppm) AS decimal(18,1)) AS Ca_min,
+       CAST(MAX(Ca_ppm) AS decimal(18,1)) AS Ca_max
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'RUEDA' AND Proyecto LIKE '%Antamina%'
+GROUP BY Grado,
+       CASE WHEN Ca_ppm IS NULL THEN 'sin dato'
+            WHEN Ca_ppm = 0     THEN '0 (no medido)'
+            WHEN Ca_ppm < 1000  THEN '1 - 999'
+            WHEN Ca_ppm < 2250  THEN '1000 - 2249 (bajo el LC)'
+            WHEN Ca_ppm < 3000  THEN '2250 - 2999'
+            ELSE '3000 o mas' END
+ORDER BY Grado, Banda;
+GO
+
+-- 159.5 SMOKE TEST OBLIGATORIO (ley 5: un CREATE VIEW con columnas invalidas SE GUARDA y revienta
+--   recien al consultarla). Todas las vistas que cuelgan de vw_MuestrasEstado.
+SELECT TOP 1 'MuestrasEstado' AS Vista, Equipo FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1;
+SELECT TOP 1 'TriageMD'       AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_TriageMD]       WITH (NOLOCK);
+SELECT TOP 1 'DiagnosticoMD'  AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_DiagnosticoMD]  WITH (NOLOCK);
+SELECT TOP 1 'CondicionMTMD'  AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_CondicionMTMD]  WITH (NOLOCK);
+SELECT TOP 1 'UltimoAnalisisMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK);
+SELECT TOP 1 'BarridoMD'      AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_BarridoMD]      WITH (NOLOCK);
+GO
+
+/* ⚠ LO QUE G0 NO ARREGLA, Y NO DEBE PARECER QUE ARREGLA:
+   - Las ruedas de Antapaccay (157.2 / 158.4) son un LIMITE que no corresponde al aceite. G0 no
+     las toca y no debe tocarlas: esos valores (Ca 154-228) son mediciones REALES de un Shell
+     Spirax. El arreglo va al archivo de limites, no al SQL.
+   - Antamina RUEDA sigue sin explicacion (159.4).
+   - Un componente que pasa a 'SIN DATO' NO es una buena noticia: significa que llevamos tiempo
+     dandolo por limpio sin medirlo. Si el 159.2 devuelve numeros grandes, eso es un dato para
+     Carlos tanto como los limites. */

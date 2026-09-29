@@ -503,6 +503,19 @@ SELECT
          WHEN m.Al_ppm > ISNULL(lim.Al_LC,9999) THEN 'CRITICO'
          WHEN m.Al_ppm > ISNULL(lim.Al_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Al,
 
+    /* ⛔ G0 (29/09) -- EL 0 NO ES UNA MEDICION, Y ROMPE EN LAS DOS DIRECCIONES.
+       Un 0 en la BD significa casi siempre "el laboratorio no reporto esa columna", no "el valor
+       es cero". Lo que hace depende del sentido del limite, y los dos casos son malos:
+         · Limite INVERTIDO (aditivos): 0 < LC SIEMPRE -> fabrica un critico de la nada.
+         · Limite NORMAL (ISO): 0 > LC NUNCA -> el componente sale limpio sin haberse medido.
+           Este es el peor de los dos, porque es un FALLO SILENCIOSO: no se ve.
+       Estado_TBN ya llevaba esta guarda desde antes ('TBN > 0', lineas ~713/851/881): un TBN de 0
+       significa no medido, no base agotada. Los aditivos que entraron en el bloque D (28/09) se
+       escribieron SIN ella -- descuido mio, medido en el BLOQUE 158.1.
+       La guarda va SOLO en el ramo invertido: para un CONTAMINANTE un 0 si es una lectura valida
+       y legitima ("no hay contaminacion"), y ahi no se toca.
+       Verificado con datos: BLOQUE 158.1 y 158.3. */
+
     /* CONTAMINANTES nuevos (informativos: NO entran a Estado_General hasta validación del área) */
     m.Ca_ppm,  lim.Ca_LP,  lim.Ca_LC,
     /* Ca/Zn/Mg cambian de sentido segun el componente: en Motor de Traccion son CONTAMINANTES
@@ -513,7 +526,8 @@ SELECT
        -- el mismo valor, dos modulos, dos respuestas (BLOQUE 122). */
     CASE WHEN m.Ca_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.Ca_LP > lim.Ca_LC THEN
-              CASE WHEN m.Ca_ppm < lim.Ca_LC THEN 'CRITICO'
+              CASE WHEN m.Ca_ppm = 0 THEN 'SIN DATO'   /* G0 */
+                   WHEN m.Ca_ppm < lim.Ca_LC THEN 'CRITICO'
                    WHEN m.Ca_ppm < lim.Ca_LP THEN 'PRECAUCION' ELSE 'OK' END
          WHEN m.Ca_ppm > ISNULL(lim.Ca_LC,9999) THEN 'CRITICO'
          WHEN m.Ca_ppm > ISNULL(lim.Ca_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Ca,
@@ -522,7 +536,8 @@ SELECT
     /* Mismo criterio que en Ca: si LP > LC el limite esta invertido (aditivo). */
     CASE WHEN m.Zn_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.Zn_LP > lim.Zn_LC THEN
-              CASE WHEN m.Zn_ppm < lim.Zn_LC THEN 'CRITICO'
+              CASE WHEN m.Zn_ppm = 0 THEN 'SIN DATO'   /* G0 */
+                   WHEN m.Zn_ppm < lim.Zn_LC THEN 'CRITICO'
                    WHEN m.Zn_ppm < lim.Zn_LP THEN 'PRECAUCION' ELSE 'OK' END
          WHEN m.Zn_ppm > ISNULL(lim.Zn_LC,9999) THEN 'CRITICO'
          WHEN m.Zn_ppm > ISNULL(lim.Zn_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Zn,
@@ -540,7 +555,8 @@ SELECT
     /* Mismo criterio que en Ca: si LP > LC el limite esta invertido (aditivo). */
     CASE WHEN m.Mg_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.Mg_LP > lim.Mg_LC THEN
-              CASE WHEN m.Mg_ppm < lim.Mg_LC THEN 'CRITICO'
+              CASE WHEN m.Mg_ppm = 0 THEN 'SIN DATO'   /* G0 */
+                   WHEN m.Mg_ppm < lim.Mg_LC THEN 'CRITICO'
                    WHEN m.Mg_ppm < lim.Mg_LP THEN 'PRECAUCION' ELSE 'OK' END
          WHEN m.Mg_ppm > ISNULL(lim.Mg_LC,9999) THEN 'CRITICO'
          WHEN m.Mg_ppm > ISNULL(lim.Mg_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Mg,
@@ -587,7 +603,8 @@ SELECT
     CASE WHEN m.B_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.B_LP IS NULL OR lim.B_LC IS NULL THEN 'OK'
          WHEN lim.B_LP > lim.B_LC THEN
-              CASE WHEN m.B_ppm < lim.B_LC THEN 'CRITICO'
+              CASE WHEN m.B_ppm = 0 THEN 'SIN DATO'   /* G0 */
+                   WHEN m.B_ppm < lim.B_LC THEN 'CRITICO'
                    WHEN m.B_ppm < lim.B_LP THEN 'PRECAUCION' ELSE 'OK' END
          WHEN m.B_ppm > lim.B_LC THEN 'CRITICO'
          WHEN m.B_ppm > lim.B_LP THEN 'PRECAUCION' ELSE 'OK' END AS Estado_B,
@@ -596,7 +613,8 @@ SELECT
     CASE WHEN m.P_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.P_LP IS NULL OR lim.P_LC IS NULL THEN 'OK'
          WHEN lim.P_LP > lim.P_LC THEN
-              CASE WHEN m.P_ppm < lim.P_LC THEN 'CRITICO'
+              CASE WHEN m.P_ppm = 0 THEN 'SIN DATO'   /* G0 */
+                   WHEN m.P_ppm < lim.P_LC THEN 'CRITICO'
                    WHEN m.P_ppm < lim.P_LP THEN 'PRECAUCION' ELSE 'OK' END
          WHEN m.P_ppm > lim.P_LC THEN 'CRITICO'
          WHEN m.P_ppm > lim.P_LP THEN 'PRECAUCION' ELSE 'OK' END AS Estado_P,
@@ -605,7 +623,8 @@ SELECT
     CASE WHEN m.Mo_ppm IS NULL THEN 'SIN DATO'
          WHEN lim.Mo_LP IS NULL OR lim.Mo_LC IS NULL THEN 'OK'
          WHEN lim.Mo_LP > lim.Mo_LC THEN
-              CASE WHEN m.Mo_ppm < lim.Mo_LC THEN 'CRITICO'
+              CASE WHEN m.Mo_ppm = 0 THEN 'SIN DATO'   /* G0 */
+                   WHEN m.Mo_ppm < lim.Mo_LC THEN 'CRITICO'
                    WHEN m.Mo_ppm < lim.Mo_LP THEN 'PRECAUCION' ELSE 'OK' END
          WHEN m.Mo_ppm > lim.Mo_LC THEN 'CRITICO'
          WHEN m.Mo_ppm > lim.Mo_LP THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Mo,
@@ -656,20 +675,25 @@ SELECT
     /* ================= D3 — CODIGO DE LIMPIEZA ISO =================
        Contador de particulas por tamano (4, 6 y 14 micras). El numero es ADIMENSIONAL y
        LOGARITMICO: cada punto que sube DUPLICA las particulas (20 ~ 40 000 -> 21 ~ 80 000).
-       Direccion normal. En Antapaccay el MOTOR no lo mide (bloque 142.1: 13% de las
+       Direccion normal.
+       ⛔ G0: un codigo ISO 4406 de 0 es FISICAMENTE IMPOSIBLE (seria <=0,01 particulas/ml). Es la
+       marca de "no reportado". Como el limite es normal, un 0 sale OK y el componente se lee como
+       LIMPIO sin haberse medido nunca: fallo silencioso puro. Medido en el BLOQUE 158.3 -- Cerro
+       Verde 930E MT tiene min=0, max=0, prom=0,0 en los 3 canales, y por eso figuraba con "0
+       observados". Eso no era limpieza, era ausencia de medicion. En Antapaccay el MOTOR no lo mide (bloque 142.1: 13% de las
        muestras) y lc no le carga limite -> la fila se cae sola por la regla D5. */
     m.ISO4, lim.ISO4_LP, lim.ISO4_LC,
-    CASE WHEN m.ISO4 IS NULL THEN 'SIN DATO'
+    CASE WHEN m.ISO4 IS NULL OR m.ISO4 = 0 THEN 'SIN DATO'   /* G0 */
          WHEN m.ISO4 > ISNULL(lim.ISO4_LC,9999) THEN 'CRITICO'
          WHEN m.ISO4 > ISNULL(lim.ISO4_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_ISO4,
 
     m.ISO6, lim.ISO6_LP, lim.ISO6_LC,
-    CASE WHEN m.ISO6 IS NULL THEN 'SIN DATO'
+    CASE WHEN m.ISO6 IS NULL OR m.ISO6 = 0 THEN 'SIN DATO'   /* G0 */
          WHEN m.ISO6 > ISNULL(lim.ISO6_LC,9999) THEN 'CRITICO'
          WHEN m.ISO6 > ISNULL(lim.ISO6_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_ISO6,
 
     m.ISO14, lim.ISO14_LP, lim.ISO14_LC,
-    CASE WHEN m.ISO14 IS NULL THEN 'SIN DATO'
+    CASE WHEN m.ISO14 IS NULL OR m.ISO14 = 0 THEN 'SIN DATO'   /* G0 */
          WHEN m.ISO14 > ISNULL(lim.ISO14_LC,9999) THEN 'CRITICO'
          WHEN m.ISO14 > ISNULL(lim.ISO14_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_ISO14,
 

@@ -88,8 +88,9 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
 | **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | 🔑 **medido (156): la decisión ya estaba en el código** | **156** · **157** | decisión |
 | **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
-| **5d** | **O** · el `0` bajo límite invertido — **bug mío del bloque D** | ✍ **escribir** — guarda `> 0` | **158.1** | determinista |
-| **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ⏸ **no es SQL** — el límite no es de ese aceite | **157.2** · **158.4** | dato |
+| **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **escrito** — falta ver | **159** | determinista |
+| **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
+| **5f** | **Q** · Antamina RUEDA: 104 de 128 **sin explicar** | ⏳ **medir** | **159.4** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -450,6 +451,53 @@ puede ser una constante por `CompTipo` porque depende de la MINA** — Antapacca
 Antamina al revés. Como **nadie la consume** (solo se declara y se proyecta), lo correcto es documentarla
 como **no usable** y decidir por fila con la regla D5 (*sin valor y sin límite → no sale*), que es lo que
 el 142.2 ya había resuelto. **No inventar un tercer criterio.**
+
+---
+
+## ⭐⭐ Resultado del BLOQUE 158: las ruedas de Antapaccay llevan **otro aceite**
+
+El dato estaba en la BD todo el tiempo, en la columna `Grado`:
+
+| Proyecto | Grado | Ruedas | `Ca_prom` | `Zn_prom` | `Ca_LC` |
+|---|---|---|---|---|---|
+| Antamina 980E | Mobiltrans HD 60 | 125 | 2823 | 860 | 2250 |
+| Cerro Verde 980E | Mobiltrans HD 50 | 16 | 3691 | 1172 | 1864 |
+| Toromocho 980E | MOBILTRANS HD50 | 18 | 2832 | — | 1721 |
+| **Antapaccay 980E** | **SHELL SPIRAX S5 CFD M 60** | **54** | **189** | **3,9** | **1560** |
+
+Todos corren **Mobiltrans HD**; Antapaccay corre **Shell Spirax**. No es el mismo producto ni la misma
+química: `Zn` de **3,9 contra 860-1190**. El límite se escribió para un Mobiltrans y esas ruedas no llevan
+Mobiltrans. ⇒ **No hay nada que arreglar en SQL**: el límite se actualiza en `LIMITES CONDENATORIOS 1.xlsm`,
+y ahora la corrección tiene nombre y apellido. *(De paso: Antapaccay 930E trae `Grado = 'nan'` literal — el
+bug `nan` conocido, en otra columna.)*
+
+### 🔴 Y el 158.1 me desmiente
+
+Atribuí el 104/128 de Antamina a los ceros. **Falso:** `Ca_crit` 164 → **164** con la guarda. Los 28 ceros
+de Antamina no estaban contados (caen en componentes sin límite de `Ca`). La guarda corrige **6 casos
+reales en Antapaccay y ninguno en Antamina**. Sigue siendo correcta —un `0` no es una medición, y
+`Estado_TBN` ya la tenía— pero **no explica Antamina**, que queda abierto en **Q / 159.4**.
+
+### ⭐⭐ Lo grave, que no era lo que buscaba
+
+**BLOQUE 158.3** — `ISO6` en Motor de Tracción, con los límites **idénticos** (19/20) entre Antamina 980E y
+Antapaccay 980E. Pero **Cerro Verde 930E: `min 0`, `max 0`, `prom 0,0`** en los tres canales. Figuraba con
+«0 observados» y lo leí como flota limpia. **No está limpia: no está medida.**
+
+⇒ Bajo un límite **normal**, el `0` no fabrica un falso positivo: **fabrica un falso negativo, e invisible**.
+Un componente sin medir se lee igual que uno impecable. Es un **tercer modo de fallo silencioso**, y ya está
+escrito como tal en la ley 5 de `CLAUDE.md`.
+
+## ✅ G0 desplegado — 9 guardas (BLOQUE 159)
+
+- **6 aditivos** (`Ca`, `Zn`, `Mg`, `B`, `P`, `Mo`): `= 0 → 'SIN DATO'`, **solo en el ramo invertido**. Para
+  un *contaminante* un `0` es una lectura válida («no hay contaminación») y ahí no se toca nada.
+- **3 canales ISO**: `= 0 → 'SIN DATO'`. Un código ISO 4406 de `0` es físicamente imposible (≤0,01
+  partículas/ml).
+- `Estado_General` **no se tocó** → el triage debe dar exactamente lo mismo (**159.3**).
+
+⚠ **Un componente que pasa a `SIN DATO` no es una buena noticia**: significa que llevamos tiempo dándolo por
+limpio sin medirlo. Si el **159.2** devuelve números grandes, eso va a Carlos tanto como los límites.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo
