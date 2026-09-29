@@ -1049,6 +1049,44 @@ GO
      - EsRelevante=1 si superó su umbral en >=1 muestra (TBN/P INVERSOS: por debajo).
    PASO 2 por defecto: WHERE EsRelevante=1 (~4-8 filas). Matriz completa: sin ese filtro.
    ---------------------------------------------------------------------------- */
+/* ==== vw_AcumuladoVida (bloque C, 29/09) — el acumulado REAL del componente instalado ====
+   Reemplaza al CTE 'acc', que sumaba TODAS las muestras no-DDI de la fundacion... que ventanea
+   a 12 MESES. O sea que el viejo "Σvida" eran 12 meses, no la vida del componente: por eso la
+   cifra de Carlos no se reproducia con ningun criterio (bloque B, ronda 23/09).
+
+   LA FORMULA, que dio Carlos y esta VALIDADA AL DECIMAL dos veces:
+     - filtrar [ComponentStatus] = 'En uso'  -> las muestras del componente ACTUALMENTE instalado
+     - y el tipo de muestra segun el componente:
+           MOTOR DE TRACCION -> CM IN ('ADI','C')   (la de ANTES del dializado, no la de despues)
+           MOTOR             -> todas               (el motor no se dializa)
+     Verificado: CA3195 MT LH Fe = 3 718,6 (bloque 137.3 y 153.3) y CA3160 MT Fe = 6 785,4,
+     que es exactamente el numero que Carlos habia dado el 23/09 (bloque 153.5).
+
+   ⚠ SOLO ESOS DOS COMPONENTES. El bloque 153.2 midio que 'En uso' NO EXISTE para rueda,
+   hidraulico, mando ni transmision: no hay ni una fila. No es que falte la regla -- es que no
+   hay componente instalado que seguir. De 306 componentes con muestra, 80 tienen acumulado.
+   Los otros 226 salen '—', y '—' NO ES CERO: es "no se puede calcular".
+
+   ⚠ Lee [Oil].[LaboratoryData] DIRECTO, sin la fundacion y SIN la ventana de 12 meses: el
+   acumulado es de toda la vida del componente, que es justo lo que la ventana impedia.
+   Solo los 8 metales de DESGASTE, que son los unicos que el display muestra. */
+CREATE OR ALTER VIEW [dbo].[vw_AcumuladoVida] AS
+SELECT ME.[Code] AS Equipo, LD.[Compartimiento], pa.Parametro,
+       CAST(SUM(pa.Valor) AS decimal(18,1)) AS Acumulado
+FROM [Oil].[LaboratoryData] LD
+INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
+CROSS APPLY (VALUES
+    (N'Fe', LD.[Fe_ppm]), (N'PQ', LD.[Indice_PQ]), (N'Cr', LD.[Cr_ppm]), (N'Ni', LD.[Ni_ppm]),
+    (N'Cu', LD.[Cu_ppm]), (N'Pb', LD.[Pb_ppm]), (N'Sn', LD.[Sn_ppm]), (N'Al', LD.[Al_ppm])
+) pa(Parametro, Valor)
+WHERE LD.[ComponentStatus] = N'En uso'
+  AND pa.Valor IS NOT NULL
+  AND (   (LD.[Compartimiento] LIKE '%TRACCION%' AND LD.[CM] IN ('ADI','C'))
+       OR (LD.[Compartimiento] LIKE 'MOTOR%' AND LD.[Compartimiento] NOT LIKE '%TRACCION%') )
+GROUP BY ME.[Code], LD.[Compartimiento], pa.Parametro;
+GO
+
+
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaElemento] AS
 WITH s AS (
     SELECT Equipo, Proyecto, CompTipo, Compartimiento, FechaMuestreo, rn_recencia, HorasComponente, CM, Grado,
@@ -1117,30 +1155,6 @@ v AS (
           END AS FueraUmbral
     FROM u
 )
-, sa AS (   -- TODAS las muestras no-DDI (no solo 6) para el ACUMULADO de vida del componente
-    SELECT Equipo, Compartimiento, Fe_ppm, Indice_PQ, Cr_ppm, Ni_ppm, Cu_ppm, Pb_ppm, Sn_ppm, Al_ppm,
-           Si_ppm, Ca_ppm, Zn_ppm, K_ppm, Na_ppm, B_ppm, P_ppm, Mg_ppm, V100, TBN
-    FROM [dbo].[vw_MuestrasRankeadas]   -- ya filtra EsDDI=0 → suma solo muestras de monitoreo
-)
-, acc AS (
-    -- Σ acumulada del metal = suma de su ppm en TODAS las muestras registradas del componente
-    -- (proxy de exposición/desgaste acumulado en la vida del componente) + nº de muestras.
-    SELECT sa.Equipo, sa.Compartimiento, pa.Parametro,
-           CAST(SUM(pa.Valor) AS decimal(18,1)) AS Acumulado,
-           COUNT(pa.Valor) AS NmAcum
-    FROM sa
-    CROSS APPLY (VALUES
-        ('Fe',sa.Fe_ppm),('PQ',sa.Indice_PQ),('Cr',sa.Cr_ppm),('Ni',sa.Ni_ppm),('Cu',sa.Cu_ppm),
-        ('Pb',sa.Pb_ppm),('Sn',sa.Sn_ppm),('Al',sa.Al_ppm),('Si',sa.Si_ppm),('Ca',sa.Ca_ppm),
-        ('Zn',sa.Zn_ppm),('K',sa.K_ppm),('Na',sa.Na_ppm),('B',sa.B_ppm),('P',sa.P_ppm),
-        ('Mg',sa.Mg_ppm),('V100',sa.V100),('TBN',sa.TBN)
-    ) AS pa(Parametro, Valor)
-    -- ⛔ 'Proyecto' NO entra en la clave. Se probo el 25/09 (F4.2, prevencion sin beneficio medido:
-    -- 0 colisiones) y tumbo a vw_TendenciaMetalMD: el JOIN contra g.Proyecto, que es un MAX() de un
-    -- GROUP BY, degrado el plan y /tendenciametal paso a >2 min (FlowActionTimedOut en produccion).
-    -- Si algun dia dos minas comparten codigo de equipo, se resuelve en la fundacion, no aqui.
-    GROUP BY sa.Equipo, sa.Compartimiento, pa.Parametro
-)
 , g AS (
 SELECT
     Equipo, Compartimiento, Parametro, Grupo, Orden, Inf,
@@ -1196,9 +1210,10 @@ SELECT
         CASE WHEN n5 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n5-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END,
         CASE WHEN n6 IS NULL THEN N'·' WHEN mm.mx = mm.mn THEN N'▄' ELSE SUBSTRING(N'▁▂▃▄▅▆▇█', 1 + CAST(ROUND((n6-mm.mn)/NULLIF(mm.mx-mm.mn,0)*7, 0) AS int), 1) END
     ) AS Spark,
-    acc.Acumulado, acc.NmAcum   -- Σ acumulada de vida (todas las muestras no-DDI) + nº de muestras sumadas
+    av.Acumulado   -- Acum = suma del metal en la vida del componente INSTALADO (vw_AcumuladoVida)
 FROM g
-LEFT JOIN acc ON acc.Equipo = g.Equipo AND acc.Compartimiento = g.Compartimiento AND acc.Parametro = g.Parametro
+LEFT JOIN [dbo].[vw_AcumuladoVida] av
+       ON av.Equipo = g.Equipo AND av.Compartimiento = g.Compartimiento AND av.Parametro = g.Parametro
 CROSS APPLY (SELECT MIN(x) AS mn, MAX(x) AS mx FROM (VALUES (n1),(n2),(n3),(n4),(n5),(n6)) t(x)) mm;
 GO
 
@@ -2347,7 +2362,7 @@ JOIN body bd ON bd.Equipo=h.Equipo AND bd.compAbbr=h.compAbbr;
 GO
 
 
-/* ==== vw_TendenciaMD (tendencia DETALLE: params x fechas + Σvida + Spark) ==== */
+/* ==== vw_TendenciaMD (tendencia DETALLE: params x fechas + Acum + Spark) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaMD] AS
 WITH te AS (
     SELECT *, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr FROM [dbo].[vw_TendenciaElemento]
@@ -2359,7 +2374,7 @@ rowcte AS (
         CASE WHEN ROW_NUMBER() OVER (PARTITION BY Equipo, Compartimiento, Grupo ORDER BY Orden) = 1
              THEN 1 ELSE 0 END AS EsInicioGrupo,
         CAST(N'| ' + Parametro + N' | '
-           + ISNULL(REPLACE(REPLACE(CAST(d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))) + ISNULL(N' (' + CONVERT(nvarchar(10), NmAcum) + N')', N''), N'—') END + N' | ' + ISNULL(Spark, N'—') + N' |' AS nvarchar(max)) AS rowMD
+           + ISNULL(REPLACE(REPLACE(CAST(d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
 limcte AS (   -- limites de referencia en tabla APARTE (pedido gerencia): solo params con LP o LC
@@ -2393,9 +2408,9 @@ limbody_rel AS (   -- tabla de limites SOLO de los relevantes
     SELECT Equipo, Compartimiento, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM limcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
 ),
-statbody AS (   -- Resumen estadístico por parámetro (Prom, σ, Σvida, Nº fuera)
+statbody AS (   -- Resumen estadístico por parámetro (Prom, σ, Acum, Nº fuera)
     SELECT Equipo, Compartimiento,
-        STRING_AGG(CAST(N'| ' + CONVERT(nvarchar(20),Parametro) + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))),N'—') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))) + ISNULL(N' (' + CONVERT(nvarchar(10), NmAcum) + N')', N''), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
+        STRING_AGG(CAST(N'| ' + CONVERT(nvarchar(20),Parametro) + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))),N'—') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM te GROUP BY Equipo, Compartimiento
 ),
 /* Observados y Recomendaciones sobre la ÚLTIMA muestra (d6), MT-scoped */
@@ -2434,7 +2449,7 @@ SELECT
     CAST(   -- DEFAULT (columna=MD)
         ISNULL(p1.MD_Contexto, N'**Tendencia — ' + d.Equipo + N' · ' + d.compAbbr + N'**') + NCHAR(10) + NCHAR(10)
       + N'**Detalle por parámetro**' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida (nº m.) | Spark |' + NCHAR(10)
+      + N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Acum | Spark |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10)
       + ba.bodyMD + NCHAR(10) + NCHAR(10)
       + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
@@ -2447,22 +2462,22 @@ SELECT
                 + N'muestran, pero no hay contra qué compararlos. ⚠ Esto **no** significa que estén dentro de límite._'
              ELSE N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + lb.bodyMD END + NCHAR(10) + NCHAR(10)
       /* Dos 'acumulados' distintos con el mismo nombre coloquial confunden: se dice cual es cual. */
-      + N'_Σvida = suma del parámetro en **todas** las muestras del componente dentro de la ventana, con el número de muestras entre paréntesis. **No se reinicia** al cambiar el componente — a diferencia de `/rankingacum`, que arranca de cero con el motor nuevo. Solo se calcula en metales de desgaste._' + NCHAR(10) + NCHAR(10)
+      + N'_**Acum** = suma del metal en toda la vida del componente **que está instalado hoy** (`ComponentStatus = En uso`), contando la muestra previa al dializado. Solo en metales de desgaste, y solo en **Motor** y **Motor de Tracción**: son los únicos componentes de los que la base registra cuál está instalado. Un `—` significa **no se puede calcular**, no cero._' + NCHAR(10) + NCHAR(10)
       + N'_¿Quieres el **resumen estadístico** (promedio, σ, nº fuera de límite) o la **gráfica** de un metal?_'
     AS nvarchar(max)) AS MD,
     /* CONTINUACION (columna=MD_Estadistica): lo que salio del bloque principal por tamano.
        Mismo patron que MD_Relevantes -- una columna mas, no un modulo mas. */
     CAST(
         N'**Resumen estadístico — ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | Prom. | σ | Σvida (nº m.) | Nº fuera de límite |' + NCHAR(10)
+      + N'| Par. | Prom. | σ | Acum | Nº fuera de límite |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10)
       + ISNULL(st.bodyMD, N'_Sin muestras suficientes para el resumen._') + NCHAR(10) + NCHAR(10)
-      + N'_Σvida = suma del parámetro en **todas** las muestras del componente dentro de la ventana, con el número de muestras entre paréntesis. **No se reinicia** al cambiar el componente — a diferencia de `/rankingacum`, que arranca de cero con el motor nuevo. Solo se calcula en metales de desgaste._'
+      + N'_**Acum** = suma del metal en toda la vida del componente **que está instalado hoy** (`ComponentStatus = En uso`), contando la muestra previa al dializado. Solo en metales de desgaste, y solo en **Motor** y **Motor de Tracción**: son los únicos componentes de los que la base registra cuál está instalado. Un `—` significa **no se puede calcular**, no cero._'
     AS nvarchar(max)) AS MD_Estadistica,
     CAST(   -- opt-in (columna=MD_Relevantes): TABLA solo si hay relevantes; si no, solo el mensaje
         N'**Tendencia — parámetros relevantes · ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
       + CASE WHEN br.bodyMD IS NOT NULL THEN
-            N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Σvida (nº m.) | Spark |' + NCHAR(10)
+            N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Acum | Spark |' + NCHAR(10)
           + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10) + br.bodyMD + NCHAR(10) + NCHAR(10)
           + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
           + N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(lbr.bodyMD, N'_—_')
@@ -2494,10 +2509,10 @@ SELECT
                N'**Tendencia — ' + g.Equipo + N' · ' + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END + N'**')
       + NCHAR(10) + NCHAR(10)
       + N'**Gráfica de ' + CONVERT(nvarchar(20), g.Parametro) + N'**' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Σvida (nº m.) | Spark |' + NCHAR(10)
+      + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Acum | Spark |' + NCHAR(10)
       + N'|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
       + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
-        + N' | ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))) + ISNULL(N' (' + CONVERT(nvarchar(10), te.NmAcum) + N')', N''), N'—') END + N' | ' + ISNULL(te.Spark, N'·') + N' |' + NCHAR(10) + NCHAR(10)
+        + N' | ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(te.Spark, N'·') + N' |' + NCHAR(10) + NCHAR(10)
       + N'**Límites de referencia (ppm)**: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') + NCHAR(10) + NCHAR(10)
       + N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```'
     AS nvarchar(max)) AS MD
@@ -2547,7 +2562,7 @@ GO
 /* ==== vw_TendenciaMetalMD (tendencia de un metal en todos los componentes) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaMetalMD] AS
 WITH te AS (
-    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, NmAcum, Spark, Orden, Prom, Sigma, NVecesObs, Grado, HorasComponente,
+    SELECT Equipo, Parametro, LP, LC, d6, Tendencia, Acumulado, Spark, Orden, Prom, Sigma, NVecesObs, Grado, HorasComponente,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento='MOTOR' THEN 5 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr
     FROM [dbo].[vw_TendenciaElemento]
 ),
@@ -2565,7 +2580,7 @@ lrows AS (   -- limites de referencia en tabla APARTE (pedido gerencia: no como 
 srows AS (
     SELECT Equipo, Parametro, compOrd,
         CAST(N'| ' + compAbbr + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))),N'—')
-           + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))) + ISNULL(N' (' + CONVERT(nvarchar(10), NmAcum) + N')', N''), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)) AS rowMD
+           + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
 qbody AS (SELECT Equipo, Parametro, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY compOrd) AS b FROM qrows GROUP BY Equipo, Parametro),
@@ -2583,7 +2598,7 @@ SELECT
       + N'| Componente | LP | LC |' + NCHAR(10)
       + N'|---|---|---|' + NCHAR(10) + l.b + NCHAR(10) + NCHAR(10)
       + N'**Resumen estadístico**' + NCHAR(10) + NCHAR(10)
-      + N'| Componente | Prom. | σ | Σvida (nº m.) | Nº fuera de límite |' + NCHAR(10)
+      + N'| Componente | Prom. | σ | Acum | Nº fuera de límite |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10) + s.b
     AS nvarchar(max)) AS MD
 FROM qbody q JOIN sbody s ON s.Equipo=q.Equipo AND s.Parametro=q.Parametro

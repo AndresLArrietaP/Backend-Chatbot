@@ -84,7 +84,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
 | **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL CERRADO** (152) — el resto es Copilot | **152** | determinista |
-| **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
+| **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **escrito** — falta medir | **154** | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
@@ -176,11 +176,24 @@ flujo filtra además por el `top` que pide el usuario. Resultado: pedir **top 30
 decía. El corte sube a **50** — el techo real lo pone el flujo, y 50 filas por
 (proyecto, modelo, componente, metal) es trivial.
 
-**4 · C** — La fórmula ya está validada al decimal (**3 718,6**). Diseño: vista dedicada
-`vw_AcumuladoVida` que lea `[Oil].[LaboratoryData]` **directo**, sin la fundación y sin window functions.
-⚠ Dos cosas medidas que condicionan: `ComponentStatus` solo está poblado en el **43 %** de las filas —el
-resto va `—`, nunca un número calculado con otro criterio—, y el literal es **`'En uso'`** con u
-minúscula. Y el renombre **`Σvida` → `Acum`** toca 4 vistas.
+**4 · C** — ✅ **escrito el 29/09 (BLOQUE 154).** `vw_AcumuladoVida` lee `[Oil].[LaboratoryData]`
+**directo**, sin la fundación y **sin la ventana de 12 meses** — que era la causa de fondo: el «Σvida»
+viejo eran 12 meses, no la vida del componente.
+
+**La fórmula, validada al decimal dos veces:** `ComponentStatus = 'En uso'` (con u minúscula) +
+`CM IN ('ADI','C')` en Motor de Tracción, **todos** los CM en Motor.
+→ `CA3195 MT LH Fe = 3 718,6` y `CA3160 MT Fe = 6 785,4`, **la cifra del bloque B**.
+
+🔴 **Lo que el 153.2 cambió del diseño:** `ComponentStatus = 'En uso'` **solo existe para Motor y Motor
+de Tracción**. No hay ni una fila en rueda, hidráulico, mando ni transmisión. ⇒ **no hubo que inventar
+ninguna regla** para los componentes que Carlos no mencionó: no hay componente instalado que seguir.
+
+⚠ **Consecuencia visible, y hay que contarla:** de **306** componentes con muestra, **80** tendrán `Acum`
+y **226 pasarán a `—`**. Hoy muestran un número — pero ese número eran 12 meses, no la vida. No es una
+regresión: es dejar de decir algo que no era cierto. El pie de la tabla ahora dice que **`—` no es cero**.
+
+📌 Solo se calculan los **8 metales de desgaste** (los únicos que el display muestra); calcular los 18
+sería pagar de más.
 
 **5 · J** — Prefijar la familia dentro de la celda: `Desgaste: Fe(231.8) · Aditivos: Ca(54.0)`, en el
 orden del formato. No ensancha la tabla.

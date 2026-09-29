@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   154 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   155 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -174,6 +174,7 @@
      BLOQUE 151  PASO 2b (L5): avisar cuando el modelo NO tiene limites
      BLOQUE 152  PASO 3 (L4): el ranking y el <modelo> -- H3 y el tope silencioso
      BLOQUE 153  PASO 4 (C): reconocimiento ANTES de escribir el Acum
+     BLOQUE 154  PASO 4 (C): el Acum desplegado
    ============================================================================ */
 
 /* ============================================================================
@@ -5699,3 +5700,63 @@ GO
 --      los unicos que el display muestra hoy. Calcular los 18 seria pagar de mas.
 --   3. vw_TendenciaElemento la consume con LEFT JOIN y el resto sale '—'.
 --   4. Renombre 'Σvida' -> 'Acum' y fuera el '(nº de muestras)'.
+
+
+-- ==== BLOQUE 154 - PASO 4 (C): el Acum desplegado ====
+-- QUE CAMBIO: los CTE 'sa' y 'acc' de vw_TendenciaElemento (que sumaban sobre la fundacion, o
+--   sea sobre 12 MESES) se reemplazan por la vista dedicada vw_AcumuladoVida, que lee
+--   [Oil].[LaboratoryData] directo, SIN ventana, con ComponentStatus='En uso' y el CM que
+--   corresponde a cada componente. Fuera el '(nº de muestras)'. 'Σvida' pasa a llamarse 'Acum'.
+
+-- 154.1 ⭐ SMOKE + LAS DOS CIFRAS VERIFICADAS. Tienen que salir 3 718,6 y 6 785,4.
+SELECT Equipo, Compartimiento, Parametro, Acumulado
+FROM [dbo].[vw_AcumuladoVida]
+WHERE (Equipo = 'CA3195' AND Compartimiento LIKE '%TRACCION%LH' AND Parametro = 'Fe')
+   OR (Equipo = 'CA3160' AND Compartimiento LIKE '%TRACCION%'   AND Parametro = 'Fe')
+ORDER BY Equipo, Compartimiento;
+GO
+-- 154.2 COBERTURA: tiene que dar 80 filas de componente (27 motores + 53 MT) para Antapaccay,
+--   y NINGUNA de rueda, hidraulico, mando ni transmision (bloque 153.2).
+SELECT CASE WHEN Compartimiento LIKE '%TRACCION%' THEN 'TRACCION'
+            WHEN Compartimiento LIKE 'MOTOR%'     THEN 'MOTOR'
+            ELSE 'OTRO -- NO DEBERIA SALIR' END AS CompTipo,
+       COUNT(DISTINCT Equipo + '|' + Compartimiento) AS Componentes,
+       COUNT(*) AS Filas
+FROM [dbo].[vw_AcumuladoVida]
+GROUP BY CASE WHEN Compartimiento LIKE '%TRACCION%' THEN 'TRACCION'
+              WHEN Compartimiento LIKE 'MOTOR%'     THEN 'MOTOR'
+              ELSE 'OTRO -- NO DEBERIA SALIR' END;
+GO
+-- 154.3 ⭐ QUE LLEGUE A vw_TendenciaElemento. El Fe del CA3195 MT LH debe traer 3 718,6, y el
+--   resto de parametros (Si, Ca, Zn...) debe venir NULL: solo se calculan los 8 de desgaste.
+SELECT Parametro, Acumulado
+FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK)
+WHERE Equipo = 'CA3195' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY CASE WHEN Acumulado IS NULL THEN 1 ELSE 0 END, Parametro;
+GO
+-- 154.4 ⭐ COMO SE VE. La cabecera debe decir 'Acum' (no 'Σvida (nº m.)'), el numero debe salir
+--   SIN parentesis, y el pie debe explicar que '—' no es cero.
+SELECT MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%3195%' AND compAbbr LIKE '%MT LH%';
+GO
+-- 154.5 ⭐ EL CASO QUE CAMBIA A LA VISTA DEL USUARIO: un componente SIN acumulado. La rueda del
+--   CA3175 mostraba un numero (calculado sobre 12 meses) y ahora debe mostrar '—'.
+--   No es una regresion: es que antes decia un numero que no significaba lo que decia.
+SELECT MD FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%3175%' AND compAbbr LIKE '%RD LH%';
+GO
+-- 154.6 ⚠ MEDIR. vw_AcumuladoVida lee TODA la historia (9 anos) sin ventana, y ahora cuelga de
+--   /tendencia y /tendenciametal. Referencias: /tendencia ~35 s y /tendenciametal ~30 s ANTES
+--   de esta ronda (esos numeros ya eran malos: ver el radar de CTE de check_ddl).
+--   Con LIKE, como el flujo. Correr 2 veces, usar la 2a.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%3195%' AND compAbbr LIKE '%MT LH%';
+GO
+SELECT COUNT(*) FROM [dbo].[vw_AcumuladoVida];
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+/* SI 154.6 SE DISPARA: la salida es materializar el acumulado por otra via (una tabla que el
+   area refresque, o acotar vw_AcumuladoVida a los equipos del proyecto consultado). NO se
+   vuelve a la formula vieja: esa daba un numero que no era el que pedia el area. */
