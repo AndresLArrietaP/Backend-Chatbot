@@ -95,7 +95,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
 | **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **CERRADO** (161, 0 nulos) | **161** | determinista |
 | **5i** | **S** · Cerro Verde: **1 579 muestras sin componente** → **Carlos** | ⏸ **no es SQL** — es carga | **161.1** | dato |
-| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** — falta ver | **163** | determinista |
+| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** — aviso **por confirmar** | **163** · **164** | determinista |
+| **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
 
@@ -1519,3 +1520,31 @@ alguien pregunta por un modelo sin límites hay que **decírselo**, no devolver 
 
 **Queda una sola decisión, y es de mirar, no de responder:** al construir el panel del bloque I y el
 historial vertical del bloque F, verlos y decir si se quedan.
+
+### Resultado del BLOQUE 163 — funciona lo visible, pero dos tests míos no probaban nada
+
+**163.1 ✅** La tabla de límites ya no está y la de valores conserva su semáforo por celda.
+**163.5 ✅** Las tres columnas responden, ninguna NULL.
+
+**163.2 ⚠ no concluyente, y es culpa del test.** Puse el aviso **después** del cuerpo y luego lo busqué
+con `LEFT(MD, 1500)`: el corte cae antes. *Un test que no puede fallar tampoco puede aprobar.* Rehecho en
+**164.1** con `CHARINDEX`.
+
+**163.3 ⚠ me equivoqué de equipo.** Para `3115` sale «opera en condición normal», o sea que **sí tiene
+algún límite**. Lo elegí creyendo que los 930E no tenían ninguno, pero lo medido en el 156.3/158.3 es que
+les faltan el `Zn` y los `ISO` — no que no tengan nada. El **164.2** **busca** un componente con cero
+límites en vez de suponerlo. *(El cambio en sí está bien: `CA3160` MT LH y MT RH muestran sus relevantes.)*
+
+**163.4 🔴 mi predicción falló.** Dije «tiene que bajar». **No bajó: 43 047 ms** para un equipo, `Scan
+count 21` sobre `LaboratoryData` y 533 lecturas físicas en Workfile — está volcando a tempdb. Quitar
+`limcte` se llevó dos lecturas de `te` **del papel**, pero el coste no estaba ahí: está en `rowcte ×2` y
+`obslast ×2`, que siguen.
+
+⇒ **El radar de CTE dice dónde mirar, no cuánto se ahorra.** Lo único afirmable es que no se rompió nada.
+Y 43 s con el conector muriendo a los 120 s deja poco margen: `/tendencia` ya no es «una vista lenta», es
+**la más cara del sistema**.
+
+### Dos cosas que se ven en las capturas y no son de este paso
+
+- `Grado | nan | nan | — | — |` en los `3115` — el bug **`nan`** otra vez, ahora en `Grado`.
+- `· últimas 1 muestras` — concordancia. Cosmético, pero se lee mal.

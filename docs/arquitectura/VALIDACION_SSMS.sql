@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   164 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   165 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -184,6 +184,7 @@
      BLOQUE 161  G2: compAbbr nunca puede salir NULL (el MD venia vacio)
      BLOQUE 162  PASO 5c (N): el contador del triage sale de las celdas
      BLOQUE 163  PASO 6 (B): /tendencia sin la tabla de limites
+     BLOQUE 164  Rehacer las dos comprobaciones del 163 que no probaban nada
    ============================================================================ */
 
 /* ============================================================================
@@ -7000,3 +7001,87 @@ GO
    SIN los limites al lado. El semaforo dice QUE esta fuera, pero ya no dice DE CUANTO. Si en la
    marcha alguien pregunta "fuera de cuanto", la respuesta no es devolver la tabla: es que el
    numero del limite vaya en la MISMA celda, y eso es un cambio distinto que hay que pedir. */
+
+
+-- RESULTADOS BLOQUE 163 (29/09) -- B funciona en lo visible, pero DOS de mis comprobaciones
+-- estaban mal disenadas y UNA prediccion mia fallo. Por orden:
+--
+-- 163.1 ✅ LA TABLA DE LIMITES YA NO ESTA, y la de valores conserva su semaforo por celda. Se ve
+--   la cabecera (Campo/SMR/Hrs Aceite/Hrs Comp/CM/Estado/Grado), el detalle agrupado por familia
+--   (Salud · Aditivos · Contaminacion · Desgaste · Codigo Limpieza), el Acum y el Spark.
+--
+-- 163.2 ⚠ NO CONCLUYENTE, Y ES CULPA DEL TEST. Puse el aviso DESPUES del cuerpo de la tabla y
+--   luego lo busque con LEFT(MD, 1500): el corte cae antes del aviso, asi que no se ve ni cuando
+--   esta. Un test que no puede fallar tampoco puede aprobar. Rehecho en el 164.1 con CHARINDEX.
+--
+-- 163.3 ⚠ Y AQUI ME EQUIVOQUE DE EQUIPO. Para 3115 sale «opera en condicion normal», o sea que
+--   'limflag' encontro limites: ese componente SI tiene alguno cargado. Yo lo elegi creyendo que
+--   los 930E no tenian ninguno, pero lo que se midio en el 156.3 y el 158.3 es que les faltan el
+--   Zn y los ISO -- no que no tengan nada. El caso que hay que probar es un componente con CERO
+--   limites, y el 164.2 lo busca en vez de suponerlo.
+--   (El cambio en si esta bien: CA3160 MT LH y MT RH muestran sus relevantes con Zn, Fe, Cr, Pb.)
+--
+-- 163.4 🔴 MI PREDICCION FALLO. Dije "tiene que BAJAR". NO bajo: 43 047 ms para UN equipo, con
+--   Scan count 21 sobre LaboratoryData y 533 lecturas fisicas en Workfile (esta volcando a
+--   tempdb). Quitar limcte se llevo dos lecturas de 'te' del papel, pero el coste no estaba ahi:
+--   esta en rowcte x2 y obslast x2, que siguen. Aprendido otra vez: el radar de CTE dice DONDE
+--   mirar, no cuanto se ahorra. Lo unico que se puede afirmar es que no se rompio nada.
+--   ⚠ 43 s con el conector muriendo a los 120 s deja poco margen. Sigue aparcado para despues del
+--     02/10, pero ya no es "una vista lenta": es la mas cara del sistema.
+--
+-- 163.5 ✅ SMOKE. Las tres columnas (MD, MD_Estadistica, MD_Relevantes) responden, ninguna NULL.
+--
+-- ⚑ DE PASO, DOS COSAS QUE SE VEN EN LAS CAPTURAS Y NO SON DE ESTE PASO:
+--   * 'Grado | nan | nan | — | — |' en los 3115 -- el bug 'nan' otra vez, ahora en Grado.
+--   * '· ultimas 1 muestras' -- concordancia. Cosmetico, pero se lee mal.
+
+
+-- ==== BLOQUE 164 - Rehacer las dos comprobaciones que no probaban nada ====
+
+-- 164.1 ⭐ EL AVISO, BUSCADO DONDE ESTA. CHARINDEX no depende de donde caiga el corte.
+--   'ConAviso' = 1 significa que el MD lleva la linea «Sin límites (LP/LC) cargados».
+--   Un componente CON limites (CA3160) debe dar 0; uno SIN limites, 1.
+SELECT Equipo, compAbbr,
+       CASE WHEN CHARINDEX(N'Sin límites (LP/LC) cargados', MD) > 0 THEN 1 ELSE 0 END AS ConAviso,
+       LEN(MD) AS LargoMD
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo IN (N'CA3160', N'3115', N'3117')
+ORDER BY Equipo, compAbbr;
+GO
+
+-- 164.2 ⭐⭐ BUSCAR UN COMPONENTE CON CERO LIMITES, en vez de suponer cual. Se pregunta a la
+--   fundacion, que es barata, y no a la vista *MD (corolario de la ley 3).
+--   Los 8 parametros de desgaste son los que SIEMPRE deberian tener limite: si ni uno solo lo
+--   tiene, ese componente no se puede evaluar en absoluto.
+SELECT TOP 20 Proyecto, Modelo, Equipo, Compartimiento
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
+  AND Fe_LP IS NULL AND Fe_LC IS NULL AND Cr_LP IS NULL AND Cr_LC IS NULL
+  AND Cu_LP IS NULL AND Cu_LC IS NULL AND Pb_LP IS NULL AND Pb_LC IS NULL
+  AND Al_LP IS NULL AND Al_LC IS NULL AND Si_LP IS NULL AND Si_LC IS NULL
+ORDER BY Proyecto, Equipo;
+GO
+
+-- 164.3 CUANTOS SON, por proyecto y modelo. Esto da la dimension real del aviso: si son pocos, el
+--   aviso casi nunca se ve; si son muchos, es una linea que va a leer mucha gente.
+SELECT Proyecto, Modelo, COUNT(*) AS ComponentesSinNingunLimite
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
+  AND Fe_LP IS NULL AND Fe_LC IS NULL AND Cr_LP IS NULL AND Cr_LC IS NULL
+  AND Cu_LP IS NULL AND Cu_LC IS NULL AND Pb_LP IS NULL AND Pb_LC IS NULL
+  AND Al_LP IS NULL AND Al_LC IS NULL AND Si_LP IS NULL AND Si_LC IS NULL
+GROUP BY Proyecto, Modelo
+ORDER BY COUNT(*) DESC;
+GO
+
+-- 164.4 ⭐ Y CON UNO DE ESOS, EL AVISO DE VERDAD. Sustituir 'XXXX' por un Equipo del 164.2.
+--   Tiene que dar ConAviso = 1 en la columna MD, y el texto de «no se puede decir si hay
+--   parametros fuera de umbral» en MD_Relevantes.
+/*
+SELECT Equipo, compAbbr,
+       CASE WHEN CHARINDEX(N'Sin límites (LP/LC) cargados', MD) > 0 THEN 1 ELSE 0 END AS ConAviso,
+       LEFT(MD_Relevantes, 300) AS Relevantes
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo = N'XXXX';
+GO
+*/
