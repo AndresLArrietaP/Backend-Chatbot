@@ -82,7 +82,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 |---|---|---|---|---|
 | **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
-| **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✍ escribir | **151** nuevo | determinista |
+| **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **escrito** — falta medir | **151** | determinista |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **152** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
@@ -482,6 +482,25 @@ cuanto llegue el parámetro**.
 ⛔ **Tocar las 9 vistas con rollup no habría arreglado nada.** Por eso el bloque 147 fue primero.
 
 ---
+
+### ✅ L5 · Avisar cuando el modelo no tiene límites (29/09)
+
+El BLOQUE 150.3 dejó esta frase: `Antapaccay · 930E · 0 de 18 observados (0 críticos)`.
+**No significa que los 18 estén sanos** — significa que no hay límites con que evaluarlos. Es la misma
+familia de fallos silenciosos de toda la ronda, y encima da un verde tranquilizador sobre 18 equipos que
+nadie ha mirado.
+
+**Qué se hizo:** **7 encabezados** —`/triage`, `/barrido`, las **4 variantes** de `/barridodet` y
+`/conteo`— añaden una línea **solo** cuando el modelo pedido no tiene fila en `[Eqpcare].[lc]`:
+
+> ⚠ **930E no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.
+
+⛔ **No restringe nada.** El modelo sigue saliendo entero, con todos sus equipos. Es el criterio que pidió
+Andrés: *«los límites han de estar para cuando se los necesite… pero no deben ser invasivos ni
+restrictivos con el resto de flotas»*. No restringimos: **avisamos**.
+
+📌 El `NOT EXISTS` se evalúa **una vez por fila del resultado** (una por proyecto+modelo+componente), no
+por equipo. Verificado en el 151.4.
 
 ### L1 · Lo que hay que arreglar, y es en Copilot Studio
 

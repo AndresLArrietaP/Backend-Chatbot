@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   151 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   152 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -171,6 +171,7 @@
      BLOQUE 148  PASO 1: vw_DiagnosticoMD consolidada -- MEDIR los scans
      BLOQUE 149  PASO 1: re-medicion tras el fix del raw
      BLOQUE 150  PASO 2 (L3): '(todos)' = los modelos con limites cargados
+     BLOQUE 151  PASO 2b (L5): avisar cuando el modelo NO tiene limites
    ============================================================================ */
 
 /* ============================================================================
@@ -5413,3 +5414,56 @@ GO
 --      restringe nada (sigue saliendo), pero deja de dar un verde tranquilizador.
 --   ⚑ 'vw_ObservadosBarridoMD' aparece con 5 scans de LaboratoryData: su CTE 'fila' se lee 3
 --      veces (radar de check_ddl). Es la misma deuda del diagnostico, anotada, no urgente.
+
+
+-- ==== BLOQUE 151 - PASO 2b (L5): avisar cuando el modelo NO tiene limites ====
+-- POR QUE: el bloque 150.3 dejo "Antapaccay · 930E · 0 de 18 observados (0 criticos)". Eso NO
+--   significa que los 18 esten sanos: significa que no hay limites con que evaluarlos. Es la
+--   misma familia de fallos silenciosos de toda la ronda, y encima da un verde tranquilizador
+--   sobre 18 equipos que nadie miro.
+-- QUE SE HIZO: 7 encabezados (triage, barrido resumen, las 4 variantes de barridodet y conteo)
+--   anaden una linea SOLO cuando el modelo pedido no tiene fila en [Eqpcare].[lc].
+--   ⛔ No se restringe NADA: el modelo sigue saliendo entero, con todos sus equipos.
+
+-- 151.1 ⭐ El caso: pedir 930E tiene que traer la tabla Y el aviso.
+SELECT CASE WHEN MD LIKE '%no tiene l%mites cargados%' THEN 'ok: avisa' ELSE 'FALTA EL AVISO' END AS Chk,
+       LEN(MD) AS LargoMD, LEFT(MD, 220) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%930E%' AND CompTipo = 'TRACCION';
+GO
+-- 151.2 ⭐ Y EL CONTRARIO, que es lo que no se puede romper: un modelo CON limites NO debe
+--   traer el aviso, ni '(todos)' tampoco.
+SELECT '980E' AS Caso,
+       CASE WHEN MD LIKE '%no tiene l%mites cargados%' THEN 'MAL: avisa de mas' ELSE 'ok: sin aviso' END AS Chk
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980E%' AND CompTipo = 'TRACCION'
+UNION ALL
+SELECT '(todos)',
+       CASE WHEN MD LIKE '%no tiene l%mites cargados%' THEN 'MAL: avisa de mas' ELSE 'ok: sin aviso' END
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+-- 151.3 Las otras tres vistas que llevan el aviso.
+SELECT 'barrido'  AS Vista, CASE WHEN MD LIKE '%no tiene l%mites cargados%' THEN 'ok: avisa' ELSE 'FALTA' END AS Chk
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%930E%'
+UNION ALL
+SELECT 'barridodet', CASE WHEN MD LIKE '%no tiene l%mites cargados%' THEN 'ok: avisa' ELSE 'FALTA' END
+FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%930E%'
+UNION ALL
+SELECT 'conteo', CASE WHEN MD LIKE '%no tiene l%mites cargados%' THEN 'ok: avisa' ELSE 'FALTA' END
+FROM [dbo].[vw_ConteoFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%930E%';
+GO
+-- ⚠ Si alguna de las tres devuelve 0 FILAS en vez de 'FALTA', no es que no avise: es que esa
+--   vista no tiene fila para ese modelo (p.ej. el barrido solo lista equipos OBSERVADOS, y el
+--   930E no tiene ninguno). Eso es correcto y no hay nada que arreglar ahi.
+-- 151.4 Coste: el NOT EXISTS se evalua una vez por fila del RESULTADO (una por proyecto+modelo+
+--   comptipo), no por equipo. Referencia del triage: 1 scan · 1 365 lecturas · 1 373 ms.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO

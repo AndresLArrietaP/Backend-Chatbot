@@ -1644,14 +1644,32 @@ SELECT
     CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
         N'**Detalle de todos — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN ta.Modelo <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(ta.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(ta.Modelo))))
+             THEN N'⚠ **' + ta.Modelo + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       + ta.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
     AS nvarchar(max)) AS MD,
     CAST(
         N'**Detalle de todos — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN ta.Modelo <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(ta.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(ta.Modelo))))
+             THEN N'⚠ **' + ta.Modelo + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       + ta.Secciones + NCHAR(10) + NCHAR(10) + l.LimitesMD
     AS nvarchar(max)) AS DetalleTodosMD,
     CAST(
         N'**Detalle — SOLO CRÍTICOS — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN ta.Modelo <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(ta.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(ta.Modelo))))
+             THEN N'⚠ **' + ta.Modelo + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       /* Sin criticos, 'ca.Secciones' es NULL y anula el MD entero -> 'no encontre datos' cuando la
          respuesta correcta es 'no hay ninguno critico', que es una BUENA noticia. (Modo A, G2.) */
       + ISNULL(ca.Secciones, N'_Ningún equipo de esta flota está en estado **crítico**. Los observados que hay son de precaución._')
@@ -1659,6 +1677,12 @@ SELECT
     AS nvarchar(max))  AS MD_Criticos,
     CAST(
         N'**Detalle — SOLO PRECAUCIÓN — flota observada, agrupado por componente**' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN ta.Modelo <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(ta.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(ta.Modelo))))
+             THEN N'⚠ **' + ta.Modelo + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       + ISNULL(pa.Secciones, N'_Ningún equipo de esta flota está en **precaución**._')
       + NCHAR(10) + NCHAR(10) + l.LimitesMD
     AS nvarchar(max))  AS MD_Precaucion
@@ -1781,6 +1805,15 @@ SELECT
       + N'**' + CAST(c.NumEquipos AS nvarchar(10)) + N' equipos con ≥1 componente observado — '
         + CAST(c.NumCriticos AS nvarchar(10)) + N' con CRÍTICO · '
         + CAST(c.NumSoloPrecau AS nvarchar(10)) + N' solo PRECAUCIÓN**' + NCHAR(10) + NCHAR(10)
+      /* L5 (29/09): avisar si el modelo pedido no tiene limites cargados. No restringe nada
+         -- el modelo sigue saliendo entero -- pero evita que "0 observados" se lea como
+         "todos sanos" cuando lo que pasa es que no hay con que evaluarlos. */
+      + CASE WHEN t.Modelo <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(t.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(t.Modelo))))
+             THEN N'⚠ **' + t.Modelo + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       + N'| Equipo | 🔴 Crít | 🟡 Prec | SMR | Últ. | T. muestra | Comp. Observados | Met. Obs. |' + NCHAR(10)
       + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
       + t.FilasMD
@@ -3140,6 +3173,18 @@ SELECT
       + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motores de Tracción' WHEN 'HIDRAULICO' THEN N'Sistemas Hidráulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE b.CompTipo END
       + N' — ' + b.Proyecto + CASE WHEN b.ModeloG<>N'(todos)' THEN N' · ' + b.ModeloG ELSE N'' END + N'** · '
       + CAST(b.nObs AS nvarchar(10)) + N' de ' + CAST(b.nTot AS nvarchar(10)) + N' observados (' + CAST(b.nCrit AS nvarchar(10)) + N' críticos)' + NCHAR(10) + NCHAR(10)
+      /* L5 (29/09): si el modelo que se pidio NO tiene limites cargados, decirlo.
+         Sin esto, "930E · 0 de 18 observados" se lee como "los 18 estan sanos", cuando lo
+         que pasa es que no hay con que evaluarlos -- el mismo fallo silencioso que venimos
+         cerrando toda la ronda. ⛔ NO se restringe nada: el modelo sigue saliendo entero.
+         El NOT EXISTS se evalua una vez por fila del resultado (una por proyecto+modelo+
+         comptipo), no por equipo: es barato. */
+      + CASE WHEN b.ModeloG <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(b.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(b.ModeloG))))
+             THEN N'⚠ **' + b.ModeloG + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       + b.bodyMD
     AS nvarchar(max)) AS MD
 FROM body b
@@ -3312,6 +3357,15 @@ SELECT
       + CAST(f.nEq AS nvarchar(10)) + N' equipos · ' + CAST(f.nObs AS nvarchar(10)) + N' observados ('
       + CAST(f.nCrit AS nvarchar(10)) + N' criticos · ' + CAST(f.nObs - f.nCrit AS nvarchar(10)) + N' precaucion) · '
       + CAST(f.nEq - f.nObs AS nvarchar(10)) + N' sin novedad' + NCHAR(10) + NCHAR(10)
+      /* L5 (29/09): avisar si el modelo pedido no tiene limites cargados. No restringe nada
+         -- el modelo sigue saliendo entero -- pero evita que "0 observados" se lea como
+         "todos sanos" cuando lo que pasa es que no hay con que evaluarlos. */
+      + CASE WHEN f.Modelo <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(f.Proyecto)))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(f.Modelo))))
+             THEN N'⚠ **' + f.Modelo + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       + N'| Componente | Equipos | Observ. | Criticos | Precau. |' + NCHAR(10)
       + N'|---|---|---|---|---|' + NCHAR(10) + ISNULL(b.bodyMD, N'—')
     AS nvarchar(max)) AS MD
