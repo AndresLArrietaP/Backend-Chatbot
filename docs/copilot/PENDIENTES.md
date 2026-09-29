@@ -651,19 +651,59 @@ llamarse `/barrido`** — que era su opción (c). El panel es un intento con fec
 
 ---
 
-## 🅷 Bloque H — bugs sueltos de la marcha del 28/09
+## 🅷 Bloque H — los bugs sueltos, que resultaron ser **uno solo**
 
-| | Qué pasó | Nota |
+### 🔴 La causa común: **el fallback fabrica tablas indistinguibles de las reales**
+
+Comparando las **insignias** de las capturas de la marcha del 28/09:
+
+| Consulta | Insignia | Qué era |
 |---|---|---|
-| **H1** | **`/ranking` a secas** respondió literalmente **«Tas a una»** | Basura. Sin parámetros debe pedirlos o mandar a `/comandos` |
-| **H2** | **`/ayuda`** respondió dos cosas distintas seguidas: primero «indica específicamente qué concepto…», luego la tabla completa | La aleatoriedad del 17/09 **no está cerrada** |
-| **H3** | `/ranking antapaccay mtlh PQ 20` mezcló equipos **`3114`…`3118`** sin límites junto a los `CA####` | Probable `‹modelo›` → puede cerrarse con **L** |
-| **H4** | `/ranking antapaccay motor hollin 20` → «alta demanda», y al reintentar dijo que `Hollín` no existe | **Sí existe**: `HOLLIN - LP/LC` está en `lc`. La respuesta era falsa → **D** |
-| **H5** | `/conteo antapaccay d475` lista un componente llamado **`nan`** | Viene de un `Compartimiento` nulo |
-| **H6** | `/triage mtrh antapaccay 980` salió con columnas descuadradas (`Salud`, `Hrs Comp`) | Solo en la variante `mtrh`; con `mt` sale bien |
-| **H7** | `/rankingacum antamina` devolvió **la tabla de Antapaccay** y debajo el aviso de que Antamina no tiene datos | Contradictorio: imprime una tabla que no corresponde |
+| `/conteo antapaccay d475` | «KomfIA» | tema determinista, **dato real** |
+| `/conteo Antamina 798` | «KomfIA · **Generado por la IA**» | **fabricado** |
+| `/conteo Antapaccay 797` | «**Generado por la IA**» | **fabricado** |
+| `/conteo Antapaccay d11` | «**Generado por la IA**» | **fabricado** |
+| `/ranking antapaccay motor K 20` | «**Generado por la IA**» | fabricado |
+| `/rankingacum antamina` | «**Generado por la IA**» | fabricado — devolvió la tabla de **Antapaccay** |
+| `/barrido antapaccay d475` y `… 980` | sin insignia | deterministas los dos ⇒ el bug es **L1** |
 
----
+**La prueba:** `/conteo Antapaccay 797` devolvía «797F · 4 equipos» y `/conteo Antapaccay d11`, «D11T ·
+5 equipos» con las mismas filas que el D475A. Pero el **BLOQUE 147.4** midió que Antapaccay tiene **6
+modelos** — `980E`, `D475A`, `PC1250`, `930E`, `HD1500`, `WA900`. **Ni `D11T` ni `797F` existen ahí.**
+
+Y la tabla traía encabezado, columnas, conteos y semáforo. **Indistinguible de una real.** Es el peor
+fallo de los que hemos tenido: no se cae, no avisa, y parece correcto.
+
+> ⚑ **Regla de trabajo, desde hoy:** al revisar capturas de una marcha, **mirar la insignia antes de
+> creerse una tabla**. Sin insignia = determinista. Con insignia = sospechosa hasta probar lo contrario.
+
+**La cura NO es mejorar el prompt del fallback.** Es que **el fallback no dibuje tablas** (ley 1), y que
+cuando un comando no encuentra su tema lo **diga** en vez de improvisar. Conecta con **L2**: el mismo
+vicio que hace que el análisis redibuje la tabla del barrido.
+
+### Los que quedan tras colapsar la causa común
+
+| | Qué pasó | Estado |
+|---|---|---|
+| **H1** | `/ranking` a secas respondió «Tas a una» | Sin parámetros debe pedirlos o mandar a `/comandos` |
+| **H2** | `/ayuda` respondió dos cosas distintas seguidas | La aleatoriedad del 17/09 sigue abierta |
+| **H3** | `/ranking antapaccay mtlh PQ 20` mezcló `3114`…`3118` | **Doble causa:** falta `‹modelo›` en la firma (→ **L4**) **y** los equipos sin límites de `930E` |
+| **H4** | «`Hollín` no existe» | ❌ **Falso, y fabricado.** `HOLLIN - LP/LC` está en `lc` y el bloque D ya lo lee |
+| **H5** | `/conteo` lista un componente `nan` | Vivo — `Compartimiento` nulo. Se ve en `/conteo antapaccay d475` (determinista) |
+| **H6** | `/triage mtrh antapaccay 980` con columnas descuadradas | Vivo, solo en la variante `mtrh` |
+| **H7** | `/rankingacum antamina` devolvió la tabla de Antapaccay | ✅ **Explicado**: fabricado por el fallback |
+
+### 📌 Por qué existen esos equipos «raros» — contexto del negocio (28/09)
+
+`797F`, `798AC` y `D11T` son **CAT**, la competencia, y **están de verdad en la base**. No es un error:
+los proyectos van bajo distintos contratos —**MARC**, **LLP MARC** (Antapaccay), **LLP** (Quellaveco, Las
+Bambas)— y **la mina carga la data de toda su flota**, sea Komatsu o CAT. KMMP lo sabe; puede que los
+depuren más adelante.
+
+⇒ **Un modelo sin límites suele ser un equipo que KMMP no gestiona**, no un hueco que haya que tapar.
+Es el argumento de fondo de **L3**: el `(todos)` por defecto debe apoyarse en `vw_ModeloConLimites`, y si
+alguien pregunta por un modelo sin límites hay que **decírselo**, no devolver una tabla muda.
+
 
 # Heredado de la ronda 23/09 — lo que sigue abierto
 
