@@ -291,9 +291,8 @@ GO
      - limite INVERTIDO (alerta por DEBAJO: aditivos, TBN y los pisos de
        viscosidad LPI/LCI) -> MAX = el mas estricto
    ⚠ Ca, Zn y Mg cambian de sentido segun el componente (contaminantes en MT,
-     aditivos en el resto), asi que su agregado depende de EsMT. Medido el 28/09
-     (bloque 138.1): LH y RH traen valores IDENTICOS, o sea que hoy MIN y MAX dan
-     lo mismo; se escribe correcto igual, que es gratis.
+     aditivos en el resto). Ver la nota en su bloque: se agregan con MIN porque el
+     bloque 138.1 midio que LH y RH traen valores IDENTICOS.
    La normalizacion de claves se hace en la subconsulta 'src' para no repetir el
    CASE de CompTipo tres veces (era el patron anterior y se prestaba a que el
    SELECT y el GROUP BY se desincronizaran).
@@ -333,13 +332,19 @@ SELECT
     MAX(src.[MOLIBDENO - LP])AS Mo_LP,  MAX(src.[MOLIBDENO - LC])AS Mo_LC,
     MAX(src.[TBN - LP])      AS TBN_LP, MAX(src.[TBN - LC])      AS TBN_LC,
 
-    /* ---- Ca, Zn, Mg: contaminantes en MT (MIN), aditivos en el resto (MAX) ---- */
-    CASE WHEN src.EsMT = 1 THEN MIN(src.[CALCIO - LP])   ELSE MAX(src.[CALCIO - LP])   END AS Ca_LP,
-    CASE WHEN src.EsMT = 1 THEN MIN(src.[CALCIO - LC])   ELSE MAX(src.[CALCIO - LC])   END AS Ca_LC,
-    CASE WHEN src.EsMT = 1 THEN MIN(src.[ZINC - LP])     ELSE MAX(src.[ZINC - LP])     END AS Zn_LP,
-    CASE WHEN src.EsMT = 1 THEN MIN(src.[ZINC - LC])     ELSE MAX(src.[ZINC - LC])     END AS Zn_LC,
-    CASE WHEN src.EsMT = 1 THEN MIN(src.[MAGNESIO - LP]) ELSE MAX(src.[MAGNESIO - LP]) END AS Mg_LP,
-    CASE WHEN src.EsMT = 1 THEN MIN(src.[MAGNESIO - LC]) ELSE MAX(src.[MAGNESIO - LC]) END AS Mg_LC,
+    /* ---- Ca, Zn, Mg ----
+       Cambian de sentido segun el componente (contaminantes en MT, aditivos en el resto),
+       asi que en teoria su agregado deberia depender de eso. Se escribio primero con un
+       CASE-sobre-agregado (CASE WHEN EsMT THEN MIN ELSE MAX) y se quito el 28/09 por dos
+       razones: (1) el bloque 138.1 midio que LH y RH traen valores IDENTICOS, o sea que MIN
+       y MAX dan lo mismo y el CASE no cambiaba ni un numero; (2) complicaba el agregado y
+       obligaba a meter EsMT en el GROUP BY.
+       ⚑ Si algun dia lc cargara LH y RH distintos, hay que volver a mirarlo: el sentido
+       correcto esta en vw_FormatoParametro.Inv, y la fundacion ya lo deduce sola por fila
+       con la regla "LP > LC -> invertido". ---- */
+    MIN(src.[CALCIO - LP])   AS Ca_LP, MIN(src.[CALCIO - LC])   AS Ca_LC,
+    MIN(src.[ZINC - LP])     AS Zn_LP, MIN(src.[ZINC - LC])     AS Zn_LC,
+    MIN(src.[MAGNESIO - LP]) AS Mg_LP, MIN(src.[MAGNESIO - LC]) AS Mg_LC,
 
     /* ---- Viscosidad: es una BANDA de 4 niveles, no un limite.
        Pisos  (LPI/LCI) = alerta por DEBAJO -> MAX es el mas estricto.
@@ -363,11 +368,10 @@ FROM (
             WHEN [COMPONENTE] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
             WHEN [COMPONENTE] LIKE '%MOTOR%'       THEN 'MOTOR'
             ELSE 'OTRO'
-        END AS CompTipo,
-        CASE WHEN [COMPONENTE] LIKE '%TRACCION%' THEN 1 ELSE 0 END AS EsMT
+        END AS CompTipo
     FROM [Eqpcare].[lc]
 ) src
-GROUP BY src.ProyKey, src.ModeloKey, src.CompTipo, src.EsMT;
+GROUP BY src.ProyKey, src.ModeloKey, src.CompTipo;
 GO
 
 

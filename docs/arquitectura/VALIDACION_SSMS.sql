@@ -5110,3 +5110,24 @@ GO
 -- Desgaste 8 (Fe,PQ,Cr,Ni,Al,Cu,Pb,Sn) + Codigo Limpieza 3 = 31 filas.
 -- 146.3 Y QUE LOS VALORES NUEVOS YA SALGAN (antes todos con guion aunque el dato existia):
 --   en el CA3195 MT LH, Mo debe mostrar ~2.2 y los ISO deben traer numero.
+
+-- RESULTADOS BLOQUE 146 (28/09) -- la cura funciono, y destapo la causa de fondo.
+--   ANTES (145.5): 348 185 ms · LaboratoryData 431 scans · 11 910 696 lecturas
+--   AHORA (146.1):  12 152 ms · LaboratoryData   7 scans ·     76 928 lecturas
+--   => 29x mas rapido, 61x menos scans, 155x menos lecturas.
+--   146.2: las 31 filas del formato salen COMPLETAS y CON DATO. Mo 3.5/7.9/0.0/6.5,
+--     ISO>4 22/23/20/23, ISO>6 20/21/18/21, ISO>14 16/17/13/14, TAN, Oxidacion, Hollin,
+--     Agua con valor. V40, Diesel y Refrigerante en guion, que es correcto: Antapaccay no
+--     los mide (bloque 142.1). D queda FUNCIONALMENTE CERRADO.
+--
+-- ⚠ PERO SIGUE A 12 s CONTRA LOS 2 418 ms DE REFERENCIA, y la causa quedo a la vista:
+--   'base' se referencia SIETE VECES en vw_DiagnosticoMD (lineas 21, 31, 72, 77, 108, 132,
+--   142) y LaboratoryData tiene EXACTAMENTE 7 scans. Uno por referencia. Es el anti-patron
+--   nº1 (ley 2) a escala: cada CTE que lee 'base' re-deriva la cadena de 4 vistas entera.
+--   Los 2 185 scans de [Eqpcare].[lc] son consecuencia de lo mismo (7 x ~312).
+--   Esto NO lo introdujo D: el 25/09 ya se habian medido 4 scans y quedo anotado como
+--   "margen". D solo lo hizo visible.
+--   CURA PENDIENTE: consolidar las 7 lecturas en 1, agregando sobre la misma fila con
+--   window functions / OUTER APPLY en vez de en CTEs paralelos. Es la misma cura que llevo
+--   vw_TriageMD de 113 780 ms a 860 ms. Es una reestructuracion de verdad: se mide antes,
+--   se hace de una y se vuelve a medir. -> BLOQUE 147 cuando se ataque.
