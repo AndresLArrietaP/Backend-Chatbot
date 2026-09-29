@@ -1790,7 +1790,7 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
             (N'P', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(P AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'))
+            (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'Mo', ISNULL(REPLACE(REPLACE(CAST(Mo AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'TAN', ISNULL(REPLACE(REPLACE(CAST(TAN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'Oxidacion', ISNULL(REPLACE(REPLACE(CAST(Oxidacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
@@ -1803,7 +1803,7 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
             (N'ISO>4', ISNULL(REPLACE(REPLACE(CAST(ISO4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'ISO>6', ISNULL(REPLACE(REPLACE(CAST(ISO6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'ISO>14', ISNULL(REPLACE(REPLACE(CAST(ISO14 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
-            (N'V40', ISNULL(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'V40', ISNULL(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—'))
         ) v(Parametro, cell) WHERE v.Parametro = f.Parametro
     ) p
 ),
