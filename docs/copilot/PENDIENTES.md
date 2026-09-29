@@ -92,6 +92,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
 | **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **CERRADO** (160, 4/4 verde) | **160** | determinista |
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
+| **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **escrito** — 19 sitios | **161** | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -589,6 +590,30 @@ real (el Shell Spirax). **164 falsos críticos eliminados de un solo parámetro.
 `AS MD` —una subconsulta que arma el MD y la de fuera lo mide— no la delata. Ese falso positivo me hizo
 «corregir» el **BLOQUE 152.1**, que era correcto, y romperlo. Revertido. *Un control que grita en falso se
 termina ignorando, y entonces no sirve para nada.*
+
+## 🔴 El smoke test completo encontró un `MD` NULL — BLOQUE 161
+
+Corrió entero por primera vez, las 11 vistas, y **`HistorialMD` devolvió `NULL`**. El MD completo, vacío.
+
+**Causa: modo A de la ley 5.** En SQL Server **un solo operando NULL anula toda la concatenación**.
+`compAbbr` se calculaba con un `CASE` cuyo `ELSE` devolvía `Compartimiento` tal cual — y `Compartimiento`
+**puede ser NULL** (el bug `nan` conocido). Esa fila forma su propio grupo, `MAX(compAbbr)` da NULL, y la
+vista entera devuelve `MD = NULL` → el tema imprime «no encontré datos» **sin que nadie sepa por qué**.
+Es el fallo silencioso perfecto: no hay error, hay vacío.
+
+**Cura (G2):** `ISNULL(Compartimiento, N'(sin componente)')` en los **19 sitios** donde se calcula
+`compAbbr` — ninguno tenía guarda. La fila pasa a **verse, etiquetada**, en vez de tumbar el mensaje.
+
+### Por qué 19 y no 22
+
+Auditando las **24 vistas que arman `MD`** aparecieron operandos sin `ISNULL` en **22**. Pero casi todos
+son claves de `GROUP BY` o `STRING_AGG` sobre grupos con filas: **no pueden ser NULL**. Poner 22 `ISNULL`
+a ciegas es ruido que tapa el que sí importa. Se corrige el que **tiene evidencia** y el 161.1 mide si
+queda alguno.
+
+⚑ **Si el 161.1 devuelve muchas filas**, la etiqueta es un parche correcto pero no la solución: significa
+que hay muestras cargadas **sin componente**, y eso va a Carlos, del mismo saco que los 347 `ISO` sin
+medir. El SQL deja de mentir; la carga sigue incompleta.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

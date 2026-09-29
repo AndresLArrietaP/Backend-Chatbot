@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   161 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   162 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -181,6 +181,7 @@
      BLOQUE 158  El cero bajo limite invertido, y el ISO6 de Antapaccay MT
      BLOQUE 159  G0 desplegado: el 0 no es una medicion (9 guardas)
      BLOQUE 160  G1: la inversion se deduce del GRUPO, no del dato
+     BLOQUE 161  G2: compAbbr nunca puede salir NULL (el MD venia vacio)
    ============================================================================ */
 
 /* ============================================================================
@@ -6636,3 +6637,73 @@ GO
    insistir. La hipotesis es fuerte pero es una hipotesis: 102 ruedas entre 3 006 y 4 264 contra
    un LC de 2 250 solo se explican por el ramo de contaminante, y el formato dice que ahi el Ca es
    aditivo. Si el numero no se mueve, me equivoque en donde. */
+
+
+-- RESULTADOS BLOQUE 160.5 (29/09) -- el smoke test corrio COMPLETO por primera vez, las 11 vistas,
+-- y encontro algo. Para eso sirve.
+--   ✅ MuestrasEstado (HT303) · InvPorComponente (HIDRAULICO) · TriageMD · DiagnosticoMD ·
+--      CondicionMT_MD · CondicionCompMD · UltimoAnalisisMD · ObservadosBarridoMD ·
+--      ObservadosResumenMD · TendenciaMD · RankingMD (HeaderMD).
+--   ⛔ HistorialMD devolvio NULL. El MD entero, nulo.
+
+
+-- ==== BLOQUE 161 - G2: compAbbr nunca puede salir NULL ====
+-- LA CAUSA (modo A de la ley 5): en SQL Server UN SOLO OPERANDO NULL ANULA TODA LA CONCATENACION.
+--   compAbbr se calculaba con un CASE cuyo ELSE devolvia Compartimiento tal cual, y Compartimiento
+--   PUEDE ser NULL (el bug 'nan' ya conocido). Una fila asi forma su propio grupo en el GROUP BY,
+--   MAX(compAbbr) da NULL, y la vista entera devuelve MD = NULL -> el tema imprime "no encontre
+--   datos" y nadie sabe por que. Es el fallo silencioso perfecto: no hay error, hay vacio.
+-- LA CURA: ISNULL(Compartimiento, N'(sin componente)') en los 19 sitios donde se calcula compAbbr.
+--   La fila pasa a VERSE, etiquetada, en vez de tumbar el mensaje.
+-- ⚑ POR QUE SOLO ESTE Y NO LOS 22. Una auditoria de las 24 vistas que arman MD encontro operandos
+--   sin ISNULL en 22 de ellas, pero casi todos son claves de GROUP BY o STRING_AGG sobre grupos
+--   con filas: no pueden ser NULL. Poner 22 ISNULL a ciegas es ruido que tapa el que si importa.
+--   Se corrige el que tiene evidencia -- compAbbr -- y el 161.1 mide si queda alguno mas.
+
+-- 161.1 ⭐ LA RAIZ. Cuantas muestras recientes traen Compartimiento NULL, y de que equipos.
+--   Estas son las que tumbaban el MD.
+SELECT Proyecto, COUNT(*) AS Muestras, COUNT(DISTINCT Equipo) AS Equipos,
+       MIN(FechaMuestreo) AS Desde, MAX(FechaMuestreo) AS Hasta
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE Compartimiento IS NULL
+GROUP BY Proyecto
+ORDER BY COUNT(*) DESC;
+GO
+
+-- 161.2 ⭐ QUE LA CURA FUNCIONE. HistorialMD ya no puede devolver NULL. Antes: 'HistorialMD NULL'.
+SELECT TOP 5 Equipo, compAbbr, LEFT(MD, 70) AS Inicio
+FROM [dbo].[vw_HistorialMD] WITH (NOLOCK)
+WHERE compAbbr = N'(sin componente)';
+GO
+
+-- 161.3 ⚠ Y QUE NO QUEDE NINGUNA OTRA CON MD NULL. Se consulta filtrado a proposito: escanear una
+--   vista *MD entera cuelga. Aqui se mira solo la etiqueta nueva, que es donde estaba el problema.
+SELECT 'HistorialMD' AS Vista, COUNT(*) AS Filas, SUM(CASE WHEN MD IS NULL THEN 1 ELSE 0 END) AS MD_nulos
+FROM [dbo].[vw_HistorialMD] WITH (NOLOCK) WHERE compAbbr = N'(sin componente)'
+UNION ALL
+SELECT 'UltimoAnalisisMD', COUNT(*), SUM(CASE WHEN MD IS NULL THEN 1 ELSE 0 END)
+FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK) WHERE compAbbr = N'(sin componente)'
+UNION ALL
+SELECT 'TriageMD', COUNT(*), SUM(CASE WHEN MD IS NULL THEN 1 ELSE 0 END)
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK) WHERE Proyecto LIKE '%Antapaccay%' AND CompTipo = 'TRACCION';
+GO
+
+-- 161.4 SMOKE TEST otra vez -- la misma lista del 160.5. Ninguna puede volver NULL.
+SELECT TOP 1 'MuestrasEstado'   AS Vista, Equipo        AS x FROM [dbo].[vw_MuestrasEstado]   WITH (NOLOCK) WHERE rn_recencia = 1;
+SELECT TOP 1 'InvPorComponente' AS Vista, CompTipo      AS x FROM [dbo].[vw_InvPorComponente] WITH (NOLOCK);
+SELECT TOP 1 'TriageMD'         AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_TriageMD]         WITH (NOLOCK);
+SELECT TOP 1 'DiagnosticoMD'    AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_DiagnosticoMD]    WITH (NOLOCK);
+SELECT TOP 1 'CondicionMT_MD'   AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_CondicionMT_MD]   WITH (NOLOCK);
+SELECT TOP 1 'CondicionCompMD'  AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_CondicionCompMD]  WITH (NOLOCK);
+SELECT TOP 1 'UltimoAnalisisMD' AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK);
+SELECT TOP 1 'ObservadosBarridoMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK);
+SELECT TOP 1 'ObservadosResumenMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK);
+SELECT TOP 1 'TendenciaMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_TendenciaMD]      WITH (NOLOCK);
+SELECT TOP 1 'HistorialMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_HistorialMD]      WITH (NOLOCK);
+SELECT TOP 1 'RankingMD'        AS Vista, LEFT(HeaderMD,60) AS x FROM [dbo].[vw_RankingMD]    WITH (NOLOCK);
+GO
+
+/* ⚑ SI EL 161.1 DEVUELVE MUCHAS FILAS, la etiqueta '(sin componente)' es un parche correcto pero
+   no la solucion: significa que hay muestras cargadas sin componente y eso es un dato para
+   Carlos, del mismo saco que los 347 ISO sin medir del 159.2. El SQL deja de mentir; la carga
+   sigue incompleta. */
