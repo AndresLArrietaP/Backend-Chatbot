@@ -95,7 +95,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
 | **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **CERRADO** (161, 0 nulos) | **161** | determinista |
 | **5i** | **S** · Cerro Verde: **1 579 muestras sin componente** → **Carlos** | ⏸ **no es SQL** — es carga | **161.1** | dato |
-| **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
+| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** — falta ver | **163** | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
 

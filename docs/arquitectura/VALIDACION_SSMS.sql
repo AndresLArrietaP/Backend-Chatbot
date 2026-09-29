@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   163 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   164 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -183,6 +183,7 @@
      BLOQUE 160  G1: la inversion se deduce del GRUPO, no del dato
      BLOQUE 161  G2: compAbbr nunca puede salir NULL (el MD venia vacio)
      BLOQUE 162  PASO 5c (N): el contador del triage sale de las celdas
+     BLOQUE 163  PASO 6 (B): /tendencia sin la tabla de limites
    ============================================================================ */
 
 /* ============================================================================
@@ -6940,3 +6941,62 @@ GO
    limpieza no deberia disparar el triage, es poner ISO>4/6/14 en Inf = 1 y volver a desplegar.
    La conversacion pasa de "hay que rehacer el triage" a "que cuenta y que no", que es la que el
    area sabe contestar. */
+
+
+-- ==== BLOQUE 163 - PASO 6 (B): /tendencia sin la tabla de limites ====
+-- QUE CAMBIO: fuera 'limcte', 'limbody' y 'limbody_rel'. En su lugar 'limflag', que solo CUENTA si
+--   hay algun limite cargado. La tabla «Límites de referencia (ppm)» desaparece de las dos salidas.
+-- POR QUE ES CORRECTO QUITARLA: cada celda de la tabla de valores YA trae su semaforo (':C' -> 🟥,
+--   ':P' -> 🟨). El LP/LC repetido abajo no anadia nada que no se viera ya.
+-- ⚠ LO QUE NO SE PODIA PERDER: el aviso de «sin limites cargados» vivia PEGADO a esa tabla, y son
+--   45 combinaciones proyecto+modelo las que lo necesitan (BLOQUE 102). Sobrevive como LINEA de
+--   texto. Sin el, un componente sin limites se lee igual que uno en regla: fallo silencioso.
+-- ⭐ BONUS DE RENDIMIENTO: 'limcte' leia 'te' dos veces mas (limbody + limbody_rel). El radar de
+--   tools/check_ddl.py ya no lo lista; en vw_TendenciaMD solo quedan rowcte x2 y obslast x2.
+
+-- 163.1 ⭐ LA SALIDA NORMAL. Un componente CON limites (CA3160 es 980E de Antapaccay): tiene que
+--   salir la tabla de valores con sus 🟥/🟨 y NINGUNA tabla de limites debajo.
+SELECT LEFT(MD, 1800) AS Inicio
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo = N'CA3160';
+GO
+
+-- 163.2 ⭐⭐ QUE EL AVISO SOBREVIVA. Los 930E de Antapaccay (3110..3118) no tienen limites
+--   cargados -- se vio en el 156.3 (Zn_LP/Zn_LC NULL) y en el 158.3 (ISO6_LP NULL).
+--   Aqui TIENE que aparecer la linea «⚠ Sin límites (LP/LC) cargados». Si no aparece, volvimos a
+--   meter un fallo silencioso y hay que revertir.
+--   (Se filtra por Equipo, que es columna REAL: corolario de la ley 3, BLOQUE 161.3.)
+SELECT Equipo, compAbbr, LEFT(MD, 1500) AS Inicio
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo IN (N'3115', N'3117');
+GO
+
+-- 163.3 ⭐ LA SALIDA DE RELEVANTES, Y UN FALLO QUE YA ESTABA. Sin limites cargados NADA puede ser
+--   'relevante', asi que la vista afirmaba «opera en condicion normal» de un componente que nadie
+--   pudo evaluar. Ahora distingue los dos casos: sin limites dice que NO SE PUEDE SABER.
+SELECT Equipo, compAbbr, LEFT(MD_Relevantes, 700) AS Relevantes
+FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK)
+WHERE Equipo IN (N'3115', N'CA3160');
+GO
+
+-- 163.4 COSTE. /tendencia venia en ~37 s y la causa esta identificada (rowcte x2, limcte x2,
+--   obslast x2). Quitar limcte se lleva DOS de esas seis lecturas. No arregla el tema -- eso es
+--   despues del 02/10 -- pero tiene que BAJAR, no subir.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+
+-- 163.5 SMOKE. Las tres columnas de la vista tienen que responder, ninguna NULL.
+SELECT TOP 1 'MD' AS Col, LEFT(MD,50) AS x FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo = N'CA3160'
+UNION ALL
+SELECT 'MD_Estadistica', LEFT(MD_Estadistica,50) FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo = N'CA3160'
+UNION ALL
+SELECT 'MD_Relevantes', LEFT(MD_Relevantes,50) FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+
+/* ⚑ LO QUE HAY QUE MIRAR CON LOS OJOS, NO CON EL SQL: que la tabla de valores se siga entendiendo
+   SIN los limites al lado. El semaforo dice QUE esta fuera, pero ya no dice DE CUANTO. Si en la
+   marcha alguien pregunta "fuera de cuanto", la respuesta no es devolver la tabla: es que el
+   numero del limite vaya en la MISMA celda, y eso es un cambio distinto que hay que pedir. */

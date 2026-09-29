@@ -2462,10 +2462,11 @@ rowcte AS (
            + ISNULL(REPLACE(REPLACE(CAST(d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(Spark, N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM te
 ),
-limcte AS (   -- limites de referencia en tabla APARTE (pedido gerencia): solo params con LP o LC
-    SELECT Equipo, Compartimiento, Orden, EsRelevante,
-        CAST(N'| ' + Parametro + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))), N'—') + N' |' AS nvarchar(max)) AS rowMD
+limflag AS (   -- B (29/09): ya no se arma la tabla de limites, solo se pregunta SI HAY alguno.
+               -- Una cuenta en vez de un STRING_AGG: mas barato y es todo lo que hace falta.
+    SELECT Equipo, Compartimiento, COUNT(*) AS nLim
     FROM te WHERE LP IS NOT NULL OR LC IS NOT NULL
+    GROUP BY Equipo, Compartimiento
 ),
 datehdr AS (
     SELECT Equipo, Compartimiento, MAX(compAbbr) AS compAbbr,
@@ -2485,14 +2486,7 @@ body_rel AS (   -- tabla SOLO de los parámetros relevantes (sin cabeceras de gr
         STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
     FROM rowcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
 ),
-limbody AS (   -- tabla de limites (todos los params con limite)
-    SELECT Equipo, Compartimiento, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
-    FROM limcte GROUP BY Equipo, Compartimiento
-),
-limbody_rel AS (   -- tabla de limites SOLO de los relevantes
-    SELECT Equipo, Compartimiento, STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
-    FROM limcte WHERE EsRelevante=1 GROUP BY Equipo, Compartimiento
-),
+
 statbody AS (   -- Resumen estadístico por parámetro (Prom, σ, Acum, Nº fuera)
     SELECT Equipo, Compartimiento,
         STRING_AGG(CAST(N'| ' + CONVERT(nvarchar(20),Parametro) + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Prom AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Sigma AS decimal(18,1))),N'—') + N' | ' + CASE WHEN Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(Acumulado AS decimal(18,1))), N'—') END + N' | ' + CONVERT(nvarchar(10), NVecesObs) + CASE WHEN NVecesObs>0 THEN N' 🟥' ELSE N'' END + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyMD
@@ -2537,15 +2531,17 @@ SELECT
       + N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Acum | Spark |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10)
       + ba.bodyMD + NCHAR(10) + NCHAR(10)
-      + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
-      /* Sin limites cargados, 'lb.bodyMD' viene NULL y ANULA TODO EL MD -> el flujo responde
-         'no encontre datos' y suena a que el equipo no tiene muestras. Las tiene; lo que falta son
-         los limites, y eso hay que DECIRLO. (Modo A del barrido G2; 45 combinaciones proyecto+modelo
-         sin limites, BLOQUE 102.) */
-      + CASE WHEN lb.bodyMD IS NULL
-             THEN N'_Sin límites (LP/LC) cargados para este componente en este proyecto: los valores se '
-                + N'muestran, pero no hay contra qué compararlos. ⚠ Esto **no** significa que estén dentro de límite._'
-             ELSE N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + lb.bodyMD END + NCHAR(10) + NCHAR(10)
+      /* B (29/09): FUERA la tabla de limites, pedido de Carlos. Y es redundante de verdad: cada
+         celda de la tabla de arriba ya trae su semaforo (':C' -> 🟥, ':P' -> 🟨), asi que repetir
+         LP/LC abajo no anade nada que no se vea ya.
+         ⚠ LO QUE NO SE PODIA PERDER es el aviso de «sin limites cargados». Vivia PEGADO a esa
+         tabla, y son 45 combinaciones proyecto+modelo las que lo necesitan (BLOQUE 102). Sin el,
+         un componente sin limites se lee igual que uno en regla: fallo silencioso. Sobrevive como
+         LINEA DE TEXTO, que era la unica condicion. */
+      + CASE WHEN lf.nLim IS NULL
+             THEN N'_⚠ **Sin límites (LP/LC) cargados** para este componente en este proyecto: los valores se '
+                + N'muestran, pero no hay contra qué compararlos. Esto **no** significa que estén dentro de límite._' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
       /* Dos 'acumulados' distintos con el mismo nombre coloquial confunden: se dice cual es cual. */
       + N'_**Acum** = suma del metal, solo en metales de desgaste y con el criterio del área: en **Motor de Tracción** las muestras previas al dializado y los cambios, en **Motor** todas, y en **Rueda** e **Hidráulico** solo los cambios. En MT y Motor está acotado al componente instalado hoy; en rueda e hidráulico no, porque la base no registra cuál lo está. Un `—` significa **no se puede calcular**, no cero._' + NCHAR(10) + NCHAR(10)
       + N'_¿Quieres el **resumen estadístico** (promedio, σ, nº fuera de límite) o la **gráfica** de un metal?_'
@@ -2563,17 +2559,20 @@ SELECT
         N'**Tendencia — parámetros relevantes · ' + d.Equipo + N' · ' + d.compAbbr + N'**' + NCHAR(10) + NCHAR(10)
       + CASE WHEN br.bodyMD IS NOT NULL THEN
             N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Acum | Spark |' + NCHAR(10)
-          + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10) + br.bodyMD + NCHAR(10) + NCHAR(10)
-          + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
-          + N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(lbr.bodyMD, N'_—_')
-        ELSE N'_Sin parámetros fuera de umbral — el componente opera en condición normal._' END
+          + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10) + br.bodyMD
+        /* B (29/09): aqui la tabla de limites tambien sobra. Y de paso se arregla un fallo
+           silencioso que ya estaba: sin limites cargados NADA puede ser 'relevante', asi que la
+           vista afirmaba «opera en condicion normal» -- de un componente que nadie pudo evaluar.
+           Ahora distingue los dos casos. */
+        ELSE CASE WHEN lf.nLim IS NULL
+                  THEN N'_⚠ **Sin límites (LP/LC) cargados** para este componente: no se puede decir si hay parámetros fuera de umbral._'
+                  ELSE N'_Sin parámetros fuera de umbral — el componente opera en condición normal._' END END
     AS nvarchar(max)) AS MD_Relevantes
 FROM datehdr d
 LEFT JOIN [dbo].[vw_TendenciaP1MD] p1 ON p1.Equipo=d.Equipo AND p1.compAbbr=d.compAbbr
 JOIN body_all ba ON ba.Equipo=d.Equipo AND ba.Compartimiento=d.Compartimiento
 LEFT JOIN body_rel br ON br.Equipo=d.Equipo AND br.Compartimiento=d.Compartimiento
-LEFT JOIN limbody lb ON lb.Equipo=d.Equipo AND lb.Compartimiento=d.Compartimiento
-LEFT JOIN limbody_rel lbr ON lbr.Equipo=d.Equipo AND lbr.Compartimiento=d.Compartimiento
+LEFT JOIN limflag lf ON lf.Equipo=d.Equipo AND lf.Compartimiento=d.Compartimiento
 LEFT JOIN statbody st ON st.Equipo=d.Equipo AND st.Compartimiento=d.Compartimiento
 LEFT JOIN obsall oa ON oa.Equipo=d.Equipo AND oa.Compartimiento=d.Compartimiento
 LEFT JOIN recoblock rb ON rb.Equipo=d.Equipo AND rb.Compartimiento=d.Compartimiento;
