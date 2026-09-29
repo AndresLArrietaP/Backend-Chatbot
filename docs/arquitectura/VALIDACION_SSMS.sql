@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   145 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   146 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -165,6 +165,7 @@
      BLOQUE 142  D7.3: de los 13 valores "nuevos", cuales traen dato de verdad
      BLOQUE 143  D2 desplegada: vw_LimitesPorComponente con los 31 parametros
      BLOQUE 144  D3 desplegada: la fundacion con los 13 valores nuevos (+ MEDIR)
+     BLOQUE 145  REGRESION 6 MIN en /diagcompleto tras D3 -- aislar capa por capa
    ============================================================================ */
 
 /* ============================================================================
@@ -5019,3 +5020,48 @@ GO
 -- CRITERIO: si el triage se va por encima de ~2 s, D3 hay que replantearlo -- los 13
 -- parametros nuevos se proyectan en una vista aparte que solo consuman las 4 vistas de
 -- formato, y la fundacion se queda como estaba.
+
+
+-- ==== BLOQUE 145 - REGRESION: /diagcompleto paso de 2.4 s a ~6 min tras D3 ====
+-- CONTEXTO (28/09): el bloque 144.5 tardo 6:15. El TRIAGE salio rapido; el que se colgo fue
+--   vw_DiagnosticoMD. La fundacion sumo 13 parametros (valor + limites + estado): ~50 columnas.
+-- ⛔ NO TEORIZAR. La ronda del barrido tumbo 3 hipotesis antes de dar con la buena. Esto mide
+--   capa por capa, de abajo hacia arriba, y la primera que se dispare es la culpable.
+-- ⚠ SIEMPRE con LIKE, como el flujo. Con '=' los numeros salen 5x optimistas (ley 3).
+-- Correr cada una DOS veces y anotar la 2a (warm). Anotar "elapsed time" y "logical reads".
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+GO
+-- 145.1 CAPA 1 - la fundacion, un equipo. Referencia: era instantanea.
+SELECT COUNT(*) FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 145.2 CAPA 2 - la fundacion + HorasComponente (el JOIN a HsCc).
+SELECT COUNT(*) FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 145.3 CAPA 3 - vw_UltimoAnalisisFlota. SOSPECHOSA PRINCIPAL: es de FLOTA y D3 la ensancho
+--   ~50 columnas. Si el salto esta aqui, la cura es no arrastrar los 13 nuevos hasta arriba.
+SELECT COUNT(*) FROM [dbo].[vw_UltimoAnalisisFlota] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 145.4 CAPA 4 - vw_DiagnosticoEquipo (arma las celdas con marca).
+SELECT COUNT(*) FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 145.5 CAPA 5 - vw_DiagnosticoMD. Aqui estaba el 2 418 ms de la ronda anterior.
+SELECT LEFT(MD, 80) FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 145.6 CONTROL - el triage, que ayer salio rapido. Si sigue rapido, el problema NO es la
+--   fundacion en si: es como la consume la cadena del diagnostico. Referencia: 860 ms.
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+/* COMO LEER EL RESULTADO
+   - Si el salto esta en 145.3 -> es el ANCHO subiendo por una vista de flota. Cura: los 13
+     parametros nuevos salen de la fundacion y van a una vista aparte, unida por
+     LaboratoryDataId, que solo consuman las 4 vistas de formato.
+   - Si el salto esta en 145.4/145.5 -> es la cadena del diagnostico, no la fundacion. Mirar
+     si algun CTE se referencia 2 veces con JOIN entre sus ramas (anti-patron nº1, el que
+     curo el triage: 113 780 ms -> 860 ms).
+   - Si 145.1/145.2 ya son lentas -> es la fundacion. Ahi la palanca es el window de 'calc',
+     que hoy arrastra TODAS las columnas: se calcula sobre las claves y se re-une despues.
+   - Si TODAS son rapidas y solo el bloque 144.5 era lento -> era el SET STATISTICS IO sobre
+     una consulta que devuelve un MD gigante. Volver a medir sin IO. */

@@ -1324,11 +1324,26 @@ SELECT
     CONVERT(varchar(20),CAST(K_ppm     AS decimal(18,1))) + CASE Estado_K   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS K,
     CONVERT(varchar(20),CAST(Na_ppm    AS decimal(18,1))) + CASE Estado_Na  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Na,
     CONVERT(varchar(20),CAST(Mg_ppm    AS decimal(18,1))) + CASE Estado_Mg  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Mg,
-    CONVERT(varchar(20),CAST(B_ppm     AS decimal(18,1))) AS B,
-    CONVERT(varchar(20),CAST(P_ppm     AS decimal(18,1))) AS P,
+    /* D6 (28/09): B y P dejan de ser valor suelto -- ahora llevan marca, porque D3 les dio
+       limite. Y entran los 13 del formato que faltaban. El TBN ya distingue critico. */
+    CONVERT(varchar(20),CAST(B_ppm      AS decimal(18,1))) + CASE Estado_B      WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS B,
+    CONVERT(varchar(20),CAST(P_ppm      AS decimal(18,1))) + CASE Estado_P      WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS P,
+    CONVERT(varchar(20),CAST(Mo_ppm     AS decimal(18,1))) + CASE Estado_Mo     WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Mo,
+    CONVERT(varchar(20),CAST(TAN        AS decimal(18,1))) + CASE Estado_TAN    WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TAN,
+    CONVERT(varchar(20),CAST(Oxidacion  AS decimal(18,1))) + CASE Estado_Oxi    WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Oxidacion,
+    CONVERT(varchar(20),CAST(Sulfatacion AS decimal(18,1))) + CASE Estado_Sulf   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Sulfatacion,
+    CONVERT(varchar(20),CAST(Nitracion  AS decimal(18,1))) + CASE Estado_Nit    WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Nitracion,
+    CONVERT(varchar(20),CAST(Hollin     AS decimal(18,1))) + CASE Estado_Hollin WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Hollin,
+    CONVERT(varchar(20),CAST(Diesel     AS decimal(18,1))) + CASE Estado_Diesel WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Diesel,
+    CONVERT(varchar(20),CAST(Agua       AS decimal(18,1))) + CASE Estado_Agua   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Agua,
+    CONVERT(varchar(20),CAST(ISO4       AS decimal(18,1))) + CASE Estado_ISO4   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO4,
+    CONVERT(varchar(20),CAST(ISO6       AS decimal(18,1))) + CASE Estado_ISO6   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO6,
+    CONVERT(varchar(20),CAST(ISO14      AS decimal(18,1))) + CASE Estado_ISO14  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO14,
+    CONVERT(varchar(20),CAST(V40        AS decimal(18,1))) + CASE Estado_V40    WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS V40,
+    CONVERT(varchar(20),CAST(Refrigerante AS decimal(18,1))) AS Refrigerante,
     CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
     Estado_V100,
-    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN
+    CONVERT(varchar(20),CAST(TBN       AS decimal(18,1))) + CASE Estado_TBN WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS TBN
 FROM [dbo].[vw_UltimoAnalisisFlota];
 GO
 
@@ -1744,8 +1759,8 @@ WITH base AS (   /* UNICA lectura de la fundacion. Antes se leia 4 veces (base, 
            Antes se usaba Estado_General, que solo mira 9 metales de desgaste + TBN: el encabezado
            contaba 0 mientras la tabla pintaba un Zn en rojo (BLOQUE 118). Va aqui, en la unica
            lectura de la fundacion, para no agregar referencias al CTE (BLOQUE 117). */
-        CASE WHEN CONCAT(Fe,PQ,Cr,Ni,Cu,Pb,Sn,Al,Si,Ca,Zn,K,Na,Mg,B,P,V100,TBN) LIKE '%:C%'
-               OR CONCAT(Fe,PQ,Cr,Ni,Cu,Pb,Sn,Al,Si,Ca,Zn,K,Na,Mg,B,P,V100,TBN) LIKE '%:P%' THEN 1 ELSE 0 END AS CompMarcado,
+        CASE WHEN CONCAT(Fe,PQ,Cr,Ni,Cu,Pb,Sn,Al,Si,Ca,Zn,K,Na,Mg,B,P,V100,TBN,Mo,TAN,Oxidacion,Sulfatacion,Nitracion,Hollin,Diesel,Agua,ISO4,ISO6,ISO14,V40) LIKE '%:C%'
+               OR CONCAT(Fe,PQ,Cr,Ni,Cu,Pb,Sn,Al,Si,Ca,Zn,K,Na,Mg,B,P,V100,TBN,Mo,TAN,Oxidacion,Sulfatacion,Nitracion,Hollin,Diesel,Agua,ISO4,ISO6,ISO14,V40) LIKE '%:P%' THEN 1 ELSE 0 END AS CompMarcado,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 WHEN Compartimiento='MOTOR' THEN 5 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr
     FROM [dbo].[vw_DiagnosticoEquipo] d
 ),
@@ -1776,6 +1791,19 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
             (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—')),
             (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'))
+            (N'Mo', ISNULL(REPLACE(REPLACE(CAST(Mo AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'TAN', ISNULL(REPLACE(REPLACE(CAST(TAN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Oxidacion', ISNULL(REPLACE(REPLACE(CAST(Oxidacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Sulfatacion', ISNULL(REPLACE(REPLACE(CAST(Sulfatacion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Nitracion', ISNULL(REPLACE(REPLACE(CAST(Nitracion AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Hollin', ISNULL(REPLACE(REPLACE(CAST(Hollin AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Diesel', ISNULL(REPLACE(REPLACE(CAST(Diesel AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Agua', ISNULL(REPLACE(REPLACE(CAST(Agua AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'Refrigerante', ISNULL(REPLACE(REPLACE(CAST(Refrigerante AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'ISO>4', ISNULL(REPLACE(REPLACE(CAST(ISO4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'ISO>6', ISNULL(REPLACE(REPLACE(CAST(ISO6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'ISO>14', ISNULL(REPLACE(REPLACE(CAST(ISO14 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
+            (N'V40', ISNULL(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'—')),
         ) v(Parametro, cell) WHERE v.Parametro = f.Parametro
     ) p
 ),
@@ -1867,6 +1895,9 @@ obsmet AS (
             (N'Ca', Ca),
             (N'Zn', Zn),
             (N'P', P),
+            (N'Mo', Mo), (N'TAN', TAN), (N'Oxidacion', Oxidacion), (N'Sulfatacion', Sulfatacion),
+            (N'Nitracion', Nitracion), (N'Hollin', Hollin), (N'Diesel', Diesel), (N'Agua', Agua),
+            (N'ISO>4', ISO4), (N'ISO>6', ISO6), (N'ISO>14', ISO14), (N'V40', V40),
             (N'V100', V100)
     ) mm(metal, val)
     WHERE (mm.val LIKE '%:C%' OR mm.val LIKE '%:P%') AND Compartimiento LIKE '%TRACCION%'
