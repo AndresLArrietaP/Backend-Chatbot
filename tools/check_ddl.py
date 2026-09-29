@@ -94,6 +94,72 @@ def catalogo_vs_celdas(texto):
     return len(cat), len(celdas), fallos
 
 
+VALID = pathlib.Path(__file__).resolve().parent.parent / "docs" / "arquitectura" / "VALIDACION_SSMS.sql"
+
+# Vistas que SI existen en la base pero NO se versionan aqui: son del dashboard del area. Sin esta
+# lista el control gritaria en falso, y un control que grita en falso se termina ignorando.
+EXTERNAS = {"vw_RankingHistorico", "vw_RankingAtencion"}
+
+
+def _borra_comentarios(s):
+    """Sustituye cada comentario por espacios, conservando el largo -- asi las posiciones (y por
+    tanto los numeros de linea) siguen valiendo."""
+    def blanco(m):
+        return "".join(c if c == "\n" else " " for c in m.group(0))
+    s = re.sub(r"/\*.*?\*/", blanco, s, flags=re.S)
+    return re.sub(r"--[^\n]*", blanco, s)
+
+
+def validacion_vs_ddl(texto):
+    """Comprueba que VALIDACION_SSMS.sql no nombre vistas inexistentes ni pida la columna MD a una
+    vista que no la proyecta.
+
+    Existe porque el 29/09 escribi mal un nombre DOS veces seguidas: 'vw_CondicionMTMD' por
+    'vw_CondicionMT_MD', y 'vw_BarridoMD', que directamente no existe (es vw_ObservadosBarridoMD).
+    Lo caro no es el Msg 208 -- es que el lote SE CORTA en el error, las consultas de abajo no
+    corren, y un smoke test incompleto se lee como aprobado.
+    El segundo caso es el Msg 207: las vistas del contrato *FilasMD exponen HeaderMD + Fila y NO
+    tienen columna MD. vw_RankingMD es una de ellas.
+
+    Se mira sentencia a sentencia y con los comentarios borrados: un 'MD' dentro de un '--', o un
+    'AS MD' que es el alias de salida, no son referencias a la columna. Y solo se juzga la
+    sentencia que nombra UNA sola vista, que es donde la atribucion es inequivoca.
+    """
+    if not VALID.exists():
+        return []
+    existentes = {n for n, _ in vistas(texto)} | EXTERNAS
+    con_md = {n for n, c in vistas(texto) if re.search(r"AS MD\b", c)} | EXTERNAS
+    limpio = _borra_comentarios(VALID.read_text(encoding="utf-8"))
+    fallos = set()
+
+    for m in re.finditer(r"\[dbo\]\.\[(vw_\w+)\]", limpio):
+        if m.group(1) not in existentes:
+            fallos.add((limpio.count("\n", 0, m.start()) + 1,
+                        f"[{m.group(1)}] no existe en el DDL ni es una vista externa conocida"))
+
+    pos = 0
+    for sent in limpio.split(";"):
+        ini, pos = pos, pos + len(sent) + 1
+        refs = set(re.findall(r"\[dbo\]\.\[(vw_\w+)\]", sent))
+        if len(refs) != 1:
+            continue
+        vista = refs.pop()
+        if vista in con_md or vista not in existentes:
+            continue
+        # Si la sentencia se define su PROPIO alias MD -- tipico: una subconsulta que arma el
+        # MD a partir de HeaderMD + Fila y la de fuera lo mide -- el MD que usa es ese, no el
+        # de la vista. Delatarlo es un falso positivo: me paso con el BLOQUE 152.1, que es
+        # correcto, y al 'corregirlo' rompi una consulta que funcionaba.
+        if re.search(r"\bAS\s+MD\b", sent):
+            continue
+        if re.search(r"\bMD\b", sent):
+            fallos.add((limpio.count("\n", 0, ini) + 1,
+                        f"[{vista}] existe pero NO proyecta columna MD (Msg 207)"))
+
+    return [f"linea ~{n}: {m}" for n, m in sorted(fallos)]
+
+
+
 def main():
     if not DDL.exists():
         print(f"no encuentro {DDL}")
@@ -122,6 +188,13 @@ def main():
         print("\nCTE leidos mas de una vez (informativo -- mirar aqui si una vista va lenta):")
         for vista, cte, n in sorted(multiples, key=lambda x: -x[2]):
             print(f"   {vista}.{cte}  x{n}")
+
+    malas = validacion_vs_ddl(texto)
+    if malas:
+        con_fallo += 1
+        print("\nVALIDACION_SSMS.sql nombra vistas que no cuadran con el DDL:")
+        for m in malas:
+            print(f"   {m}")
 
     print(f"\n{total} vistas revisadas, {con_fallo} con problemas")
     return 1 if con_fallo else 0

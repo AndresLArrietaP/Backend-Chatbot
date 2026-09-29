@@ -6458,7 +6458,7 @@ SELECT TOP 1 'DiagnosticoMD'  AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_Diagnost
 --    SE CORTO: las dos lineas de abajo nunca corrieron. Smoke test completo en el 160.5.
 SELECT TOP 1 'CondicionMT_MD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK);
 SELECT TOP 1 'UltimoAnalisisMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK);
-SELECT TOP 1 'BarridoMD'      AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_BarridoMD]      WITH (NOLOCK);
+SELECT TOP 1 'ObservadosBarridoMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK);
 GO
 
 /* ⚠ LO QUE G0 NO ARREGLA, Y NO DEBE PARECER QUE ARREGLA:
@@ -6577,10 +6577,11 @@ SELECT TOP 1 'DiagnosticoMD'    AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_Diag
 SELECT TOP 1 'CondicionMT_MD'   AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_CondicionMT_MD]   WITH (NOLOCK);
 SELECT TOP 1 'CondicionCompMD'  AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_CondicionCompMD]  WITH (NOLOCK);
 SELECT TOP 1 'UltimoAnalisisMD' AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_UltimoAnalisisMD] WITH (NOLOCK);
-SELECT TOP 1 'BarridoMD'        AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_BarridoMD]        WITH (NOLOCK);
+SELECT TOP 1 'ObservadosBarridoMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK);
+SELECT TOP 1 'ObservadosResumenMD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK);
 SELECT TOP 1 'TendenciaMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_TendenciaMD]      WITH (NOLOCK);
 SELECT TOP 1 'HistorialMD'      AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_HistorialMD]      WITH (NOLOCK);
-SELECT TOP 1 'RankingMD'        AS Vista, LEFT(MD,60)   AS x FROM [dbo].[vw_RankingMD]        WITH (NOLOCK);
+SELECT TOP 1 'RankingMD'        AS Vista, LEFT(HeaderMD,60) AS x FROM [dbo].[vw_RankingMD]   WITH (NOLOCK);  -- contrato *FilasMD: HeaderMD, no MD
 GO
 
 -- 160.6 NO REGRESION DEL TRIAGE. Estado_General sigue sin mirar ninguno de estos parametros:
@@ -6589,6 +6590,47 @@ SELECT LEFT(MD, 120) AS Cabecera
 FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
 WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
 GO
+
+-- RESULTADOS BLOQUE 160 (29/09) -- G1 CONFIRMADO en los cuatro controles. Y el 160.1 muestra que
+-- el mecanismo era todavia mas tonto de lo que supuse.
+--
+-- 160.1 ⭐⭐ LA EVIDENCIA. Como viene el par LP/LC del Ca en RUEDA:
+--   Proyecto     Comp   Ca_LP     Ca_LC    Par_invertido   Formato_Inv
+--   Antamina     RUEDA  NULL      2250.00        0              1      ⛔
+--   Antapaccay   RUEDA  2080.00   1560.00        1              1
+--   Cerro Verde  RUEDA  2486.00   1864.00        1              1
+--   Toromocho    RUEDA  2294.40   1720.80        1              1
+--   ⛔ EL Ca_LP DE ANTAMINA ES NULL. No era un typo ni una inversion artificial: era un LP que no
+--      se cargo. Y 'NULL > 2250' no da falso, da NULL -> el CASE cae al ELSE y el aditivo se
+--      juzga como contaminante. Deducir la direccion del dato no sobrevive a un NULL, y eso es
+--      exactamente por lo que el formato manda deducirla del GRUPO.
+--
+-- 160.2 ✅ EL EFECTO, CLAVADO. Antamina 980E: 164/166/166 -> 1/1/0. Antapaccay 980E se queda en
+--   54/48/41, que es lo correcto: ese SI es real, es el Shell Spirax del 158.4. Ningun otro
+--   proyecto tiene criticos de aditivo. 164 falsos criticos eliminados de un parametro.
+--
+-- 160.3 ✅ LA OTRA DIRECCION AGUANTA. CA3165 (Zn 194,8 contra LP 18 / LC 25) sigue CRITICO, y los
+--   930E con limites NULL siguen OK. G1 no invirtio el error: en MT el Ca/Zn/Mg siguen siendo
+--   contaminantes y alertan por arriba.
+--
+-- 160.4 ✅ CERO FILAS. Ningun CompTipo se queda sin fila en vw_InvPorComponente, asi que no hay
+--   ningun aditivo juzgandose como contaminante en silencio.
+--
+-- 160.6 ✅ SIN REGRESION. "6 de 54 observados (3 criticos)".
+--
+-- 160.5 🔴 Y OTRA VEZ EL SMOKE TEST, CON DOS ERRORES MIOS MAS:
+--   * 'vw_BarridoMD' NO EXISTE. Las vistas de barrido son vw_ObservadosBarridoMD y
+--     vw_ObservadosResumenMD. Me lo invente por segunda vez.
+--   * 'LEFT(MD,60) FROM vw_RankingMD' -> Msg 207: vw_RankingMD sigue el contrato *FilasMD y
+--     expone HeaderMD + Fila, NO una columna MD.
+--   ⇒ Van DOS RONDAS seguidas escribiendo mal los nombres, asi que la cura no es volver a
+--     escribirlos con mas cuidado: es que el verificador los compruebe. tools/check_ddl.py ahora
+--     lee VALIDACION_SSMS.sql y delata (a) toda vista que no exista en el DDL y (b) toda peticion
+--     de la columna MD a una vista que no la proyecta. Probado en negativo: muerde con los dos.
+--   ⚠ Afinado para NO gritar en falso: ignora los comentarios, y si la sentencia se define su
+--     propio 'AS MD' (una subconsulta que arma el MD y la de fuera lo mide) no la delata. Ese
+--     falso positivo me hizo "corregir" el BLOQUE 152.1, que era correcto, y romperlo. Revertido.
+--     Un control que grita en falso se termina ignorando, y entonces no sirve para nada.
 
 /* ⚑ SI EL 160.2 NO BAJA ANTAMINA A CERO, G1 NO ES LA CAUSA Y HAY QUE REVERTIRLO (git), no
    insistir. La hipotesis es fuerte pero es una hipotesis: 102 ruedas entre 3 006 y 4 264 contra

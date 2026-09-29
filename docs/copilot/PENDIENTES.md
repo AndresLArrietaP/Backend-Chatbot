@@ -90,7 +90,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
 | **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **escrito** — falta ver | **159** | determinista |
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
-| **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **escrito** — falta ver | **160** | determinista |
+| **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **CERRADO** (160, 4/4 verde) | **160** | determinista |
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
@@ -553,6 +553,42 @@ sin tocar; `G0` se mantiene.
 **160.3** cuida la dirección contraria: en MT el `Ca`/`Zn` son contaminantes y el `CA3165` con `Zn 194,8`
 tiene que **seguir** saliendo crítico. El **160.4** comprueba que ningún `CompTipo` se quede sin fila en el
 JOIN — si se queda, el aditivo se juzgaría como contaminante **en silencio**.
+
+### ✅ Resultado del BLOQUE 160 — G1 confirmado, 4 de 4
+
+**160.1 — y el mecanismo era más tonto de lo que supuse:**
+
+| Proyecto | `Ca_LP` | `Ca_LC` | Par invertido | Formato dice |
+|---|---|---|---|---|
+| **Antamina** | **NULL** | 2250 | **0** | **1** |
+| Antapaccay | 2080 | 1560 | 1 | 1 |
+| Cerro Verde | 2486 | 1864 | 1 | 1 |
+| Toromocho | 2294 | 1721 | 1 | 1 |
+
+**El `Ca_LP` de Antamina es NULL.** No era un typo ni una inversión artificial: era un `LP` que no se
+cargó. Y `NULL > 2250` **no da falso, da NULL** → el `CASE` cae al `ELSE` y el aditivo se juzga como
+contaminante. **Deducir la dirección del dato no sobrevive a un NULL** — que es exactamente por lo que el
+formato manda deducirla del grupo.
+
+**160.2** Antamina **164/166/166 → 1/1/0**. Antapaccay se queda en 54/48/41, que es lo correcto: ese sí es
+real (el Shell Spirax). **164 falsos críticos eliminados de un solo parámetro.**
+**160.3** `CA3165` con `Zn 194,8` **sigue crítico** — no invertí el error.
+**160.4** cero filas. **160.6** «6 de 54 (3 críticos)», sin regresión.
+
+### 🔴 Y el smoke test otra vez — dos errores míos más
+
+`vw_BarridoMD` **no existe** (son `vw_ObservadosBarridoMD` y `vw_ObservadosResumenMD`), y
+`LEFT(MD,60) FROM vw_RankingMD` da **Msg 207**: esa vista sigue el contrato `*FilasMD` y expone
+`HeaderMD` + `Fila`, no `MD`.
+
+⇒ **Van dos rondas escribiendo mal los nombres, así que la cura no es escribirlos con más cuidado.**
+`tools/check_ddl.py` ahora lee `VALIDACION_SSMS.sql` y delata (a) toda vista que no exista en el DDL y
+(b) toda petición de `MD` a una vista que no la proyecta. **Probado en negativo: muerde con los dos.**
+
+⚠ Y afinado para **no gritar en falso**: ignora comentarios, y si la sentencia se define su propio
+`AS MD` —una subconsulta que arma el MD y la de fuera lo mide— no la delata. Ese falso positivo me hizo
+«corregir» el **BLOQUE 152.1**, que era correcto, y romperlo. Revertido. *Un control que grita en falso se
+termina ignorando, y entonces no sirve para nada.*
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo
