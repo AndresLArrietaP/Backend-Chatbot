@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   158 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   159 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -178,6 +178,7 @@
      BLOQUE 155  PASO 5 (J): el triage pasa a 5 COLUMNAS por familia
      BLOQUE 156  DECISION: 'fuera de limite = observado' para TODO parametro
      BLOQUE 157  La bandera 'Inf' YA existe + dos bloques que huelen a limite
+     BLOQUE 158  El cero bajo limite invertido, y el ISO6 de Antapaccay MT
    ============================================================================ */
 
 /* ============================================================================
@@ -6202,4 +6203,128 @@ GO
    ⛔ NO tocar Estado_General todavia. Mientras el limite de RUEDA este mal, ampliarlo convertiria
    un error de carga en 122 equipos "observados" en Antamina, y eso llega a gerencia como si
    fuera una crisis de flota.
+*/
+-- RESULTADOS BLOQUE 157 (29/09) -- 'Inf' ayuda menos de lo que esperaba, pero el 157.2 es
+-- concluyente y CORRIGE una afirmacion mia sobre los ISO.
+--
+-- 157.1 'Inf' SOLO NO ALCANZA. Nuevo_crudo -> Nuevo_con_Inf:
+--   Antamina TRACCION   131 -> 94 (24,2%)   ⭐ la mejora grande
+--   Antamina MOTOR       19 -> 16           Toromocho MOTOR   4 -> 0
+--   Antapaccay TRACCION  50 -> 48 (66,7%)   Antapaccay MOTOR 17 -> 15
+--   Antapaccay RUEDA     54 -> 54  (SIN CAMBIO: ahi Ca/Zn/Mg son aditivos con Inf=0)
+--   Antamina RUEDA      122 -> 122 (94,6%)  Toromocho RUEDA/TRACCION 18/20 -> 18/20 (100%)
+--   ⇒ Inf limpia el ruido del Zn/Ca en MT (era real: -37 en Antamina) pero NO toca los dos
+--     bloques grandes. Sigue siendo necesario, no suficiente.
+--
+-- 157.2 ⭐⭐ LA PRUEBA. RUEDA, Ca/Zn/Mg contra su LC, por proyecto y modelo:
+--   Proyecto    Modelo  Ruedas  Ca_LC   Ca_min  Ca_max | Zn_LC  Zn_min Zn_max | crit
+--   Antapaccay  980E      54    1560.0   154.2   228.7 | 720.0    0.0   15.2  | 54/54/54  ⛔
+--   Cerro Verde 980E      16    1864.0  3496.0  3951.0 | 682.0 1080.0 1246.0  |  0/ 0/ 0
+--   Toromocho   980E      18    1720.8  2470.0  3224.0 | 757.2   NULL   NULL  |  0/ 0/ 0
+--   Toquepala   980E      22     NULL   2189.0  2752.0 |  NULL  1016.0 1244.0 |  0/ 0/ 0
+--   Antamina    980E     128    2250.0     0.0  4264.2 | 661.0    0.0 1328.6  | 104/104/104 ⚠
+--   ⛔ ANTAPACCAY: el MAXIMO de la flota entera (Ca 228,7) esta 6,8x POR DEBAJO del piso critico
+--      (1560). En Zn: maximo 15,2 contra un piso de 720 -> 47x. Un limite que reprueba al 100% de
+--      la flota, con el mejor equipo a un orden de magnitud del umbral, NO SEPARA NADA: no
+--      distingue una rueda sana de una gastada porque las reprueba a todas.
+--      Y el resto de proyectos corre Ca 2000-4000 en la misma posicion. Antapaccay reporta ~200.
+--      Eso no es un aditivo agotado: es OTRO ACEITE, u otra base de reporte. El limite (1560) es
+--      coherente con el aceite de los OTROS proyectos, no con el de Antapaccay.
+--      ⇒ PREGUNTA PARA CARLOS: que aceite llevan las ruedas de Antapaccay. No se parchea en SQL:
+--        el SQL esta leyendo bien un limite que no corresponde a ese aceite.
+--   ⚠ ANTAMINA es OTRO problema, no el mismo: Ca_min = 0.0 y Ca_max = 4264 (mezcla). Ahi el
+--      culpable son los CEROS -> ver 158.1.
+--
+-- 157.3 🔴 CORRECCION MIA. Dije que el ISO4 sin limite era "carga incompleta de lc". ES FALSO, y
+--   el dato estaba en NUESTRO archivo: el BLOQUE 138.1 ya registro que en Antapaccay / MT / 980E
+--   el Excel trae ISO 6um LP 19 / LC 20 e ISO 14um LP 16 / LC 19, y el ISO 4um viene NULL A
+--   PROPOSITO, junto con Boro, Molibdeno, TAN, VISC40, H2O, Hollin y TBN. Asi define el area el MT.
+--   ⇒ El 48 de 72 del ISO6 en Antapaccay MT es REAL, medido contra el limite del area.
+--   ⚠ Y explica el reparto 38 criticos / 10 precauciones: con LP 19 y LC 20 la banda de
+--     precaucion es de UN SOLO PUNTO, y en la escala ISO 4406 cada punto es el DOBLE de
+--     particulas. No hay banda intermedia donde caer: o estas dentro, o estas critico.
+--   ⚠ PERO queda una rareza que si hay que mirar: Antapaccay MT observa 48 de 54 con limite (89%)
+--     mientras Cerro Verde MT observa 0 de 16 y Toromocho 0 de 20. O Antapaccay corre mucho mas
+--     sucio, o sus limites son mas estrictos que los de los demas. Ver 158.3.
+--
+-- 157.4 'Disponible' ESTA DESFASADO EN LOS 12. Sobre 1 687 componentes recientes:
+--   V40 1238 · TAN 184 · Oxidacion 1371 · Sulfatacion 1249 · Nitracion 1244 · Mo 1598
+--   Agua 1364 · Hollin 1252 · Diesel 905 · ISO4 1177 · ISO6 1186 · ISO14 1187
+--   Los doce tienen dato. Pero ⛔ NO basta con ponerlos en 1: el BLOQUE 142.2 ya concluyo que
+--   'Disponible' NO PUEDE SER UNA CONSTANTE POR CompTipo porque DEPENDE DE LA MINA (Antapaccay
+--   no mide V40 y si TAN; Antamina al reves). La bandera esta mal planteada, no solo desactualizada.
+--   ⇒ Como NADIE la consume hoy (grep: solo se declara y se proyecta), la decision correcta es
+--     dejarla documentada como NO USABLE y decidir por fila con la regla D5 (sin valor y sin
+--     limite -> no sale), que es lo que el 142.2 ya habia resuelto. No inventar un tercer criterio.
+
+
+-- ==== BLOQUE 158 - El cero bajo limite invertido, y por que Antapaccay MT sale tan sucio ====
+-- 158.1 ⭐ EL BUG QUE INTRODUJE EN EL BLOQUE D. Estado_TBN lleva la guarda 'TBN > 0' en tres
+--   sitios del DDL (lineas 713, 851, 881): un TBN de 0 significa NO MEDIDO, no 'base agotada'.
+--   Los aditivos que agregue el 28/09 (Ca, Zn, Mg, P, B, Mo) NO llevan esa guarda. Bajo un limite
+--   INVERTIDO un 0 es indistinguible de una catastrofe: 0 < LC siempre.
+--   Esto cuenta cuantos criticos de RUEDA son exactamente eso.
+SELECT Proyecto, Modelo, COUNT(*) AS Ruedas,
+       SUM(CASE WHEN Ca_ppm = 0 THEN 1 ELSE 0 END) AS Ca_cero,
+       SUM(CASE WHEN Zn_ppm = 0 THEN 1 ELSE 0 END) AS Zn_cero,
+       SUM(CASE WHEN Mg_ppm = 0 THEN 1 ELSE 0 END) AS Mg_cero,
+       SUM(CASE WHEN Estado_Ca = 'CRITICO' THEN 1 ELSE 0 END)                  AS Ca_crit_hoy,
+       SUM(CASE WHEN Estado_Ca = 'CRITICO' AND Ca_ppm > 0 THEN 1 ELSE 0 END)   AS Ca_crit_con_guarda,
+       SUM(CASE WHEN Estado_Zn = 'CRITICO' THEN 1 ELSE 0 END)                  AS Zn_crit_hoy,
+       SUM(CASE WHEN Estado_Zn = 'CRITICO' AND Zn_ppm > 0 THEN 1 ELSE 0 END)   AS Zn_crit_con_guarda
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo IN ('RUEDA','HIDRAULICO','MOTOR','MANDO','TRANSMISION')
+GROUP BY Proyecto, Modelo
+HAVING SUM(CASE WHEN Estado_Ca = 'CRITICO' THEN 1 ELSE 0 END) > 0
+    OR SUM(CASE WHEN Estado_Zn = 'CRITICO' THEN 1 ELSE 0 END) > 0
+ORDER BY Proyecto, Modelo;
+GO
+
+-- 158.2 EL CERO, VISTO DE CERCA. Si un mismo equipo trae Ca = 0 y a la vez Fe y Si con valores
+--   normales, el 0 no es quimica: es una columna que el laboratorio no reporto en esa muestra.
+SELECT TOP 30 Equipo, Compartimiento, Modelo, FechaMuestreo,
+       CAST(Ca_ppm AS decimal(18,1)) AS Ca, CAST(Zn_ppm AS decimal(18,1)) AS Zn,
+       CAST(Mg_ppm AS decimal(18,1)) AS Mg, CAST(Fe_ppm AS decimal(18,1)) AS Fe,
+       CAST(Si_ppm AS decimal(18,1)) AS Si, Grado
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'RUEDA' AND Proyecto LIKE '%Antamina%'
+  AND Ca_ppm = 0
+ORDER BY Fe_ppm DESC;
+GO
+
+-- 158.3 ⭐ POR QUE ANTAPACCAY MT SALE AL 89% Y CERRO VERDE AL 0%. Los limites de ISO6 lado a
+--   lado. Si los LP/LC son iguales entre proyectos, Antapaccay corre de verdad mas sucio y la
+--   cifra es una noticia, no un defecto. Si son distintos, es la carga.
+SELECT Proyecto, Modelo, CompTipo, COUNT(*) AS Componentes,
+       MIN(ISO6_LP) AS ISO6_LP, MIN(ISO6_LC) AS ISO6_LC,
+       MIN(ISO6) AS ISO6_min, MAX(ISO6) AS ISO6_max,
+       CAST(AVG(ISO6) AS decimal(18,1)) AS ISO6_prom,
+       SUM(CASE WHEN Estado_ISO6 IN ('CRITICO','PRECAUCION') THEN 1 ELSE 0 END) AS Obs
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'TRACCION' AND ISO6 IS NOT NULL
+GROUP BY Proyecto, Modelo, CompTipo
+ORDER BY Proyecto, Modelo;
+GO
+
+-- 158.4 ⭐ LA PREGUNTA DE LAS RUEDAS DE ANTAPACCAY, EN UNA TABLA. Si el Grado del aceite es
+--   distinto al de los otros proyectos, el misterio del 157.2 se resuelve solo: no es el aditivo
+--   el que se agoto, es otro aceite con otro paquete.
+SELECT Proyecto, Modelo, Grado, COUNT(*) AS Ruedas,
+       CAST(AVG(Ca_ppm) AS decimal(18,1)) AS Ca_prom,
+       CAST(AVG(Zn_ppm) AS decimal(18,1)) AS Zn_prom,
+       CAST(AVG(Mg_ppm) AS decimal(18,1)) AS Mg_prom,
+       MIN(Ca_LC) AS Ca_LC
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE rn_recencia = 1 AND CompTipo = 'RUEDA'
+GROUP BY Proyecto, Modelo, Grado
+ORDER BY Proyecto, Modelo, Grado;
+GO
+
+/* LO QUE SALE DE AQUI:
+   - 158.1/158.2 -> si los ceros explican Antamina, la cura es NUESTRA y es una linea por
+     aditivo: la misma guarda '> 0' que Estado_TBN ya tiene. No es una decision del area.
+   - 158.3 -> si los limites de ISO6 son iguales entre proyectos, el 89% de Antapaccay es un
+     HALLAZGO que el area querra ver, no un defecto que tapar.
+   - 158.4 -> si el Grado de las ruedas de Antapaccay es otro, el 157.2 queda explicado y la
+     correccion va al archivo de limites, con nombre y apellido.
 */

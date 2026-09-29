@@ -88,7 +88,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
 | **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | 🔑 **medido (156): la decisión ya estaba en el código** | **156** · **157** | decisión |
 | **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
-| **5d** | **O** · dos bloques de límites para **Carlos** (RUEDA · ISO) | ⏸ **no es SQL** — es carga de `lc` | **157.2** · **157.3** | dato |
+| **5d** | **O** · el `0` bajo límite invertido — **bug mío del bloque D** | ✍ **escribir** — guarda `> 0` | **158.1** | determinista |
+| **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ⏸ **no es SQL** — el límite no es de ese aceite | **157.2** · **158.4** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -379,6 +380,76 @@ Sí, el formato respeta la variación por componente, y su memoria resultó **m�
 > Aditivos en las otras tres.»*
 
 Los cuatro que nombró, **`Mo` incluido**. `CLAUDE.md` solo listaba `Ca`/`Zn`/`Mg` — corregido el 29/09.
+
+---
+
+## ⛔ REGLA PERMANENTE — `Inf` nunca se escribe al lado del dato
+
+Andrés lo reiteró el 29/09, justo antes de que implementara `Inf`: *«en el pasado ponías visualmente al
+lado del metal la etiqueta `(inf)` y quedamos que no vuelva a pasar JAMÁS»*.
+
+**`Inf` es un criterio de conteo, no una etiqueta visible.** Un parámetro con `Inf = 1` se muestra
+**exactamente igual** que los demás —su nombre y su valor— y lo único que cambia es que **no entra al
+contador**. Nunca `(inf)`, `inf` ni `(informativo)` pegado al parámetro. Si hay que explicar por qué el
+contador no cuadra con lo que se ve, va en el **pie** de la tabla, una vez, en prosa.
+
+Escrita en el DDL en **dos sitios**: la cabecera de `vw_FormatoParametro` y el `OUTER APPLY` del triage,
+que es donde se va a implementar.
+
+## Resultado del BLOQUE 157 (29/09)
+
+### `Inf` es necesario pero **no suficiente**
+
+`Nuevo_crudo → Nuevo_con_Inf`: Antamina TRACCION **131 → 94** (la mejora grande, era ruido real de
+`Zn`/`Ca`); Antapaccay TRACCION 50 → **48**; Antapaccay RUEDA 54 → **54** *sin cambio* (ahí `Ca`/`Zn`/`Mg`
+son aditivos con `Inf=0`). Limpia el ruido de MT y **no toca los dos bloques grandes**.
+
+### 🔴 Me corrijo: el `ISO4` **no** era carga incompleta
+
+Dije que lo era. **El dato estaba en nuestro propio archivo**: el BLOQUE 138.1 ya registró que en
+Antapaccay / MT / 980E el Excel trae `ISO 6um LP 19 / LC 20` e `ISO 14um LP 16 / LC 19`, y el **`ISO 4um`
+viene NULL a propósito**, junto con Boro, Molibdeno, TAN, VISC40, H2O, Hollín y TBN. Así define el área el
+MT. ⇒ **El 48 de 72 del `ISO6` es real.**
+
+Y explica el reparto 38 críticos / 10 precauciones: con `LP 19` y `LC 20` la banda de precaución es de
+**un solo punto**, y en la escala ISO 4406 cada punto es **el doble** de partículas. No hay banda
+intermedia donde caer. Queda una rareza que sí hay que mirar (**158.3**): Antapaccay MT observa 48 de 54
+(89 %) mientras Cerro Verde observa 0 de 16 y Toromocho 0 de 20.
+
+### ⭐⭐ 157.2 — la prueba, y es concluyente
+
+| Proyecto | Modelo | Ruedas | `Ca_LC` | `Ca` de la flota | críticos |
+|---|---|---|---|---|---|
+| **Antapaccay** | 980E | 54 | **1560** | **154 – 228** | **54 / 54** |
+| Cerro Verde | 980E | 16 | 1864 | 3496 – 3951 | 0 |
+| Toromocho | 980E | 18 | 1721 | 2470 – 3224 | 0 |
+| Toquepala | 980E | 22 | — | 2189 – 2752 | 0 |
+| Antamina | 980E | 128 | 2250 | **0** – 4264 | 104 |
+
+**El mejor equipo de Antapaccay está 6,8× por debajo del piso crítico** (en `Zn`: máximo 15,2 contra un
+piso de 720, **47×**). Un límite que reprueba al 100 % de la flota con el mejor equipo a un orden de
+magnitud del umbral **no separa nada**. Y los demás proyectos corren `Ca` 2000-4000 en la misma posición;
+Antapaccay reporta ~200. **Eso no es un aditivo agotado: es otro aceite, u otra base de reporte.**
+
+⇒ **P · pregunta para Carlos:** qué aceite llevan las ruedas de Antapaccay. **No se parchea en SQL** — el
+SQL está leyendo bien un límite que no corresponde a ese aceite. El **158.4** le pone el `Grado` al lado.
+
+### 🔴 O · Antamina es **otro** problema, y es un bug mío del bloque D
+
+`Ca_min = 0.0` con `Ca_max = 4264`. **Bajo un límite invertido, un `0` es indistinguible de una
+catástrofe** — `0 < LC` siempre. Y `Estado_TBN` **ya lleva** la guarda `TBN > 0` en tres sitios del DDL
+(713, 851, 881): un TBN de 0 significa *no medido*, no *base agotada*. Los aditivos que agregué el 28/09
+(`Ca`, `Zn`, `Mg`, `P`, `B`, `Mo`) **no la llevan**. Es una línea por aditivo, la cura es nuestra y no
+necesita a nadie. **BLOQUE 158.1** lo mide antes de tocarlo.
+
+### 🧹 `Disponible`: mal planteado, no solo desactualizado
+
+Los doce parámetros tienen dato (sobre 1 687 componentes: `Mo` 1598, `Oxidacion` 1371, `Agua` 1364,
+`ISO14` 1187…). Pero ⛔ **no basta con ponerlos en 1**: el BLOQUE 142.2 ya concluyó que `Disponible` **no
+puede ser una constante por `CompTipo` porque depende de la MINA** — Antapaccay no mide `V40` y sí `TAN`;
+Antamina al revés. Como **nadie la consume** (solo se declara y se proyecta), lo correcto es documentarla
+como **no usable** y decidir por fila con la regla D5 (*sin valor y sin límite → no sale*), que es lo que
+el 142.2 ya había resuelto. **No inventar un tercer criterio.**
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

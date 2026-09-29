@@ -56,6 +56,15 @@ GO
    (K, Na, B, y Ca/Zn/Mg cuando son CONTAMINANTES, o sea en TRACCION). Los mismos Ca/Zn/Mg cuando son
    ADITIVOS (RUEDA/HIDRAULICO/MOTOR/...) pasan a juzgarse con Inv=1: ese es el arreglo del bloque C2.
 
+   ⛔⛔ REGLA PERMANENTE DE 'Inf' -- NO SE NEGOCIA, la fijo el usuario y la reitero el 29/09:
+       'Inf' ES UN CRITERIO DE CONTEO, NO UNA ETIQUETA VISIBLE.
+       Un parametro con Inf = 1 se muestra EXACTAMENTE IGUAL que los demas -- su nombre y su valor --
+       y lo unico que cambia es que NO entra al contador de observados.
+       JAMAS escribir '(inf)', 'inf', '(informativo)' ni ninguna marca al lado del parametro en una
+       salida que lea una persona. Ya paso una vez, se quito, y quedo que no vuelve a pasar.
+       Si hace falta explicar por que el contador no cuadra con lo que se ve, va en el PIE de la
+       tabla, una sola vez, en prosa -- nunca pegado al dato.
+
    CompTipo '(CRUZADO)' = la UNION de los 4 formatos (31 filas), para la tabla de /diagcompleto, que es
    parametros x COMPONENTES y no puede seguir el formato de uno solo. Solo 4 parametros cambian de grupo
    entre hojas -- Ca, Mg, Mo y Zn: Contaminacion en MT y Aditivos en las otras tres -- y aqui van como
@@ -3159,6 +3168,9 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
        en el formato: MANDO y TRANSMISION no estan, y sin el fallback sus parametros
        desapareceran de la tabla sin ruido.
        GrupoOrden del formato: 1 Salud · 2 Aditivos · 3 Contaminacion · 4 Desgaste · 5 Cod.Limpieza.
+       ⛔ Cuando se enchufe 'Inf' aqui (paso 5c): filtra el CONTADOR, no la celda. El parametro
+          Inf=1 se sigue imprimiendo con su valor y sin ninguna marca que lo distinga. Ver la
+          REGLA PERMANENTE DE 'Inf' en la cabecera de vw_FormatoParametro.
        Cada parametro sale con su VALOR (antes la columna Salud mostraba 'V100' a secas, sin
        numero) y con 🟥 si es critico. */
     OUTER APPLY (
