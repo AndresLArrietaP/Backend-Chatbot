@@ -82,7 +82,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 |---|---|---|---|---|
 | **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
-| **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **escrito** — falta medir | **151** | determinista |
+| **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✍ escribir | **152** nuevo | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
@@ -501,6 +501,19 @@ restrictivos con el resto de flotas»*. No restringimos: **avisamos**.
 
 📌 El `NOT EXISTS` se evalúa **una vez por fila del resultado** (una por proyecto+modelo+componente), no
 por equipo. Verificado en el 151.4.
+
+### ⏳ L6 · `/barrido` con un modelo sin observados dirá «no encontré datos»
+
+Lo destapó el 151.3: `/barrido antapaccay 930E` **no devuelve ninguna fila**, porque esa vista solo lista
+equipos **observados** y el 930E no tiene ninguno. El tema mostrará «no encontré datos», cuando la verdad
+es **«ese modelo no tiene equipos observados, y además no tiene límites con que evaluarlos»**.
+
+Es el **modo B** de fallo silencioso (0 filas por `INNER JOIN`/`GROUP BY`): `ISNULL` no sirve, hay que
+**emitir** la fila.
+
+⛔ **No se toca en SQL ahora.** Cambiar la cardinalidad de `vw_ObservadosResumenMD` afecta a **todos** los
+proyectos sin observados — y ahí «ninguno observado» es una **buena noticia legítima**, no un error. Se
+resuelve mejor en el **tema**, con un mensaje sin-data que distinga los dos casos. Va a la Fase 2 (C5).
 
 ### L1 · Lo que hay que arreglar, y es en Copilot Studio
 

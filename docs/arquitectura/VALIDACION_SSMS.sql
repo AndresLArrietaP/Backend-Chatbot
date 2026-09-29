@@ -5467,3 +5467,24 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRA
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
 GO
+
+-- RESULTADOS BLOQUE 151 (29/09) -- L5 correcto y sin coste.
+--   151.1 ✅ "ok: avisa". MD de 1 198 chars (antes 1 095: el aviso son ~103). Se ve asi:
+--         **Triage Motores de Traccion - Antapaccay · 930E** · 0 de 18 observados (0 criticos)
+--         ⚠ **930E no tiene limites cargados** para este proyecto: los equipos salen **sin
+--           evaluar**, no sanos.
+--   151.2 ✅ 980E "ok: sin aviso" y (todos) "ok: sin aviso". No avisa de mas.
+--   151.3 ⚠ Solo devolvio 1 fila: conteo "ok: avisa". barrido y barridodet NO devolvieron fila.
+--         Es EXACTAMENTE lo anticipado en la nota del bloque: esas vistas solo listan equipos
+--         OBSERVADOS y el 930E no tiene ninguno. No es que no avisen: es que no hay fila.
+--   151.4 ✅ Coste CERO: LaboratoryData 1 scan · 1 365 lecturas · 1 224 ms (antes 1 373 ms).
+--         lc en 2 scans / 337. El NOT EXISTS se evalua una vez por fila del resultado.
+--
+-- ⚑ PERO EL 151.3 DEJA UN PENDIENTE ACOTADO (modo B de fallo silencioso):
+--   '/barrido antapaccay 930E' no devolvera NINGUNA fila -> el tema mostrara "no encontre
+--   datos", cuando la verdad es "ese modelo no tiene equipos observados, y ademas no tiene
+--   limites con que evaluarlos". ISNULL no sirve aqui: hay que EMITIR la fila.
+--   ⛔ No se toca ahora: cambiar la cardinalidad de vw_ObservadosResumenMD afecta a todos los
+--   proyectos sin observados, y ahi "ninguno observado" es una BUENA noticia legitima. Se
+--   resuelve mejor en el tema (mensaje sin-data que distinga los dos casos). Anotado en
+--   PENDIENTES como L6.
