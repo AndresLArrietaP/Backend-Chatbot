@@ -1784,7 +1784,7 @@ WITH base AS (   /* UNICA lectura de la fundacion. Antes se leia 4 veces (base, 
 ),
 unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 parametros): esta tabla es
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
-    SELECT b.Equipo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
+    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
            v.cell
     /* ⚡ PERF (28/09) — antes esto era:
@@ -1835,16 +1835,28 @@ unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 par
     INNER JOIN [dbo].[vw_FormatoParametro] f
         ON f.CompTipo = '(CRUZADO)' AND f.Parametro = v.Parametro
 ),
+comp AS (   /* 1 fila por equipo+componente, DERIVADA de unpv.
+               Antes hdr_all, hdr_obs y g leian 'base' por su cuenta (3 lecturas de una cadena de
+               4 vistas). unpv ya trae cada componente 31 veces: agrupar aqui sale gratis. */
+    SELECT Equipo, Compartimiento,
+           MAX(Proyecto)    AS Proyecto,
+           MAX(Modelo)      AS Modelo,
+           MAX(compOrd)     AS compOrd,
+           MAX(compAbbr)    AS compAbbr,
+           MAX(CompMarcado) AS CompMarcado
+    FROM unpv
+    GROUP BY Equipo, Compartimiento
+),
 /* CABECERAS de columnas (dinámicas) por variante */
 hdr_all AS (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
         STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
-    FROM (SELECT DISTINCT Equipo, Compartimiento, compOrd, compAbbr FROM base) z GROUP BY Equipo
+    FROM comp GROUP BY Equipo
 ),
 hdr_obs AS (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
         STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
-    FROM (SELECT DISTINCT Equipo, Compartimiento, compOrd, compAbbr FROM base WHERE CompMarcado = 1) z GROUP BY Equipo
+    FROM comp WHERE CompMarcado = 1 GROUP BY Equipo
 ),
 /* FILAS de parámetros (celdas en orden de componente) por variante */
 row_all AS (
@@ -1873,62 +1885,36 @@ body_obs AS (
 ),
 g AS (
     SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
-        COUNT(DISTINCT CASE WHEN CompMarcado = 1 THEN Compartimiento END) AS NumCompObs,
-        COUNT(DISTINCT Compartimiento) AS NumCompTotal
-    FROM base GROUP BY Equipo
+        SUM(CASE WHEN CompMarcado = 1 THEN 1 ELSE 0 END) AS NumCompObs,
+        COUNT(*) AS NumCompTotal
+    FROM comp GROUP BY Equipo
 ),
-obsmetals AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN Compartimiento LIKE '%HIDRAUL%' THEN 6 WHEN Compartimiento='MOTOR' THEN 5 ELSE 9 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE Compartimiento END AS compAbbr,
-        STUFF(CONCAT(
-            CASE WHEN Fe LIKE '%:C%' OR Fe LIKE '%:P%' THEN N', Fe' ELSE N'' END,
-            CASE WHEN PQ LIKE '%:C%' OR PQ LIKE '%:P%' THEN N', PQ' ELSE N'' END,
-            CASE WHEN Cr LIKE '%:C%' OR Cr LIKE '%:P%' THEN N', Cr' ELSE N'' END,
-            CASE WHEN Ni LIKE '%:C%' OR Ni LIKE '%:P%' THEN N', Ni' ELSE N'' END,
-            CASE WHEN Cu LIKE '%:C%' OR Cu LIKE '%:P%' THEN N', Cu' ELSE N'' END,
-            CASE WHEN Pb LIKE '%:C%' OR Pb LIKE '%:P%' THEN N', Pb' ELSE N'' END,
-            CASE WHEN Sn LIKE '%:C%' OR Sn LIKE '%:P%' THEN N', Sn' ELSE N'' END,
-            CASE WHEN Al LIKE '%:C%' OR Al LIKE '%:P%' THEN N', Al' ELSE N'' END,
-            CASE WHEN Si LIKE '%:C%' OR Si LIKE '%:P%' THEN N', Si' ELSE N'' END,
-            CASE WHEN Ca LIKE '%:C%' OR Ca LIKE '%:P%' THEN N', Ca' ELSE N'' END,
-            CASE WHEN Zn LIKE '%:C%' OR Zn LIKE '%:P%' THEN N', Zn' ELSE N'' END,
-            CASE WHEN K LIKE '%:C%' OR K LIKE '%:P%' THEN N', K' ELSE N'' END,
-            CASE WHEN Na LIKE '%:C%' OR Na LIKE '%:P%' THEN N', Na' ELSE N'' END,
-            CASE WHEN Mg LIKE '%:C%' OR Mg LIKE '%:P%' THEN N', Mg' ELSE N'' END,
-            CASE WHEN B LIKE '%:C%' OR B LIKE '%:P%' THEN N', B' ELSE N'' END,
-            CASE WHEN P LIKE '%:C%' OR P LIKE '%:P%' THEN N', P' ELSE N'' END,
-            CASE WHEN V100 LIKE '%:C%' OR V100 LIKE '%:P%' THEN N', V100' ELSE N'' END,
-            CASE WHEN TBN LIKE '%:C%' OR TBN LIKE '%:P%' THEN N', TBN' ELSE N'' END
-        ), 1, 2, N'') AS metals
-    FROM base
-    WHERE CompMarcado = 1
+obsmetals AS (   /* Metales marcados por componente, DERIVADO de unpv.
+                    ⚑ Antes leia 'base' y volvia a decidir la marca por su cuenta, con un CONCAT de 18
+                    CASE ... LIKE '%:C%'. Eran DOS problemas: una lectura mas de la cadena, y un TERCER
+                    mecanismo de marcado que solo miraba 18 de los 31 parametros -- un observado nuevo
+                    (Mo, ISO, TAN...) nunca habria aparecido en 'Observados'.
+                    Ahora la marca se lee de la CELDA que se imprime: una sola fuente de verdad, que es
+                    la leccion del bloque E3 de la ronda anterior. */
+    SELECT Equipo, Compartimiento,
+           MAX(compOrd)  AS compOrd,
+           MAX(compAbbr) AS compAbbr,
+           STRING_AGG(CONVERT(nvarchar(max), nombre), N', ') WITHIN GROUP (ORDER BY ord) AS metals
+    FROM unpv
+    WHERE CompMarcado = 1 AND (cell LIKE N'%🟥%' OR cell LIKE N'%🟨%')
+    GROUP BY Equipo, Compartimiento
 ),
 obsagg AS (
     SELECT Equipo, STRING_AGG(compAbbr + N': ' + metals, N' · ') WITHIN GROUP (ORDER BY compOrd) AS Observados
     FROM obsmetals WHERE NULLIF(metals, N'') IS NOT NULL
     GROUP BY Equipo
 ),
-obsmet AS (
-    SELECT DISTINCT Equipo, mm.metal
-    FROM base
-    CROSS APPLY (VALUES
-            (N'Fe', Fe),
-            (N'PQ', PQ),
-            (N'Cr', Cr),
-            (N'Ni', Ni),
-            (N'Cu', Cu),
-            (N'Pb', Pb),
-            (N'Sn', Sn),
-            (N'Al', Al),
-            (N'Si', Si),
-            (N'Ca', Ca),
-            (N'Zn', Zn),
-            (N'P', P),
-            (N'Mo', Mo), (N'TAN', TAN), (N'Oxidacion', Oxidacion), (N'Sulfatacion', Sulfatacion),
-            (N'Nitracion', Nitracion), (N'Hollin', Hollin), (N'Diesel', Diesel), (N'Agua', Agua),
-            (N'ISO>4', ISO4), (N'ISO>6', ISO6), (N'ISO>14', ISO14), (N'V40', V40),
-            (N'V100', V100)
-    ) mm(metal, val)
-    WHERE (mm.val LIKE '%:C%' OR mm.val LIKE '%:P%') AND Compartimiento LIKE '%TRACCION%'
+obsmet AS (   /* Metales marcados de MT, para enganchar las recomendaciones.
+                 Misma cura que obsmetals: sale de unpv y la marca se lee de la celda. */
+    SELECT DISTINCT Equipo, nombre AS metal
+    FROM unpv
+    WHERE (cell LIKE N'%🟥%' OR cell LIKE N'%🟨%')
+      AND Compartimiento LIKE '%TRACCION%'
 ),
 recos AS (
     SELECT DISTINCT om.Equipo, r.ord, r.label, r.indicio

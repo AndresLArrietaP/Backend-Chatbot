@@ -48,6 +48,29 @@ def revisar(nombre, cuerpo):
     return fallos
 
 
+def cte_multiples_lecturas(texto, umbral=2):
+    """Cuenta cuantas veces se referencia cada CTE dentro de su propia vista.
+
+    Los CTE de SQL Server NO se materializan: cada referencia se RE-EJECUTA, y con ella
+    toda la cadena de vistas de la que cuelga. Es el anti-patron nº1 del proyecto: es lo
+    que llevo vw_TriageMD a 113 780 ms y vw_DiagnosticoMD a 348 s (6 lecturas de 'base' =
+    7 scans de LaboratoryData).
+
+    ⚠ No es un error por si mismo -- a veces el optimizador hace spool y no cuesta nada --
+    pero es SIEMPRE el primer sitio donde mirar cuando una vista va lenta. Por eso esto
+    informa, no falla: la decision necesita una medicion, no una regla.
+    """
+    aviso = []
+    for nombre, cuerpo in vistas(texto):
+        limpio = re.sub(r"/\*.*?\*/", " ", cuerpo, flags=re.S)
+        limpio = "\n".join(l for l in limpio.split("\n") if not l.strip().startswith("--"))
+        for cte in re.findall(r"^(\w+) AS \(", limpio, re.M):
+            n = len(re.findall(rf"\b(?:FROM|JOIN)\s+{cte}\b", limpio))
+            if n >= umbral:
+                aviso.append((nombre, cte, n))
+    return aviso
+
+
 def catalogo_vs_celdas(texto):
     """El unpivot de vw_DiagnosticoMD une el catalogo por Parametro con INNER JOIN.
 
@@ -93,6 +116,12 @@ def main():
             print(f"   {h}")
     else:
         print(f"\ncatalogo (CRUZADO) {n_cat} parametros = celdas de vw_DiagnosticoMD {n_cel}  OK")
+
+    multiples = cte_multiples_lecturas(texto)
+    if multiples:
+        print("\nCTE leidos mas de una vez (informativo -- mirar aqui si una vista va lenta):")
+        for vista, cte, n in sorted(multiples, key=lambda x: -x[2]):
+            print(f"   {vista}.{cte}  x{n}")
 
     print(f"\n{total} vistas revisadas, {con_fallo} con problemas")
     return 1 if con_fallo else 0

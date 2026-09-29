@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   148 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   149 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -168,6 +168,7 @@
      BLOQUE 145  REGRESION 6 MIN en /diagcompleto tras D3 -- aislar capa por capa
      BLOQUE 146  CURA de la regresion: unpv de vw_DiagnosticoMD reestructurado
      BLOQUE 147  BLOQUE L: donde se pierde el filtro de <modelo>
+     BLOQUE 148  PASO 1: vw_DiagnosticoMD consolidada -- MEDIR los scans
    ============================================================================ */
 
 /* ============================================================================
@@ -5231,3 +5232,39 @@ GO
 --   147.5 vw_ModeloConLimites: 10 pares. ANTAMINA 1 · ANTAPACCAY 3 · CERRO VERDE 2 ·
 --     QUELLAVECO 3 · TOROMOCHO 1. ⚠ Quellaveco esta FUERA del alcance de KomfIA (ver
 --     LIMITES_FALLBACK.md): inofensivo mientras nadie lo consulte, pero anotado.
+
+
+-- ==== BLOQUE 148 - PASO 1: vw_DiagnosticoMD consolidada. LO QUE SE MIDE ES EL SCAN COUNT ====
+-- QUE CAMBIO: 'base' pasa de 6 referencias a 1 (solo unpv la lee). hdr_all, hdr_obs y g ahora
+--   salen de un CTE nuevo 'comp' derivado de unpv; obsmetals y obsmet tambien salen de unpv.
+-- ⚠ NO ES AUTOMATICO QUE MEJORE, y hay que decirlo: los CTE de SQL Server no se materializan.
+--   'unpv' queda referenciado 5 veces, y si el optimizador NO hace spool, cada referencia
+--   re-deriva unpv -> vuelve a leer base -> podriamos seguir en ~5 scans. Por eso esto se mide
+--   ANTES de seguir reestructurando: si ya bajo, cualquier cambio extra es churn.
+-- REFERENCIAS: antes del paso 1 -> 12 152 ms · LaboratoryData 7 scans · 76 928 lecturas.
+--              objetivo de la ronda -> 2 418 ms (lo que costaba antes del bloque D).
+-- ⛔ Con LIKE, como el flujo (ley 3). Correr DOS veces y usar la 2a (warm).
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+-- 148.2 QUE NO CAMBIO NADA DE LO QUE SE VE. Mismo equipo, las 31 filas y los mismos valores.
+SELECT MD FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+-- 148.3 ⚑ EL EFECTO SECUNDARIO QUE HAY QUE MIRAR CON LUPA: 'Observados'.
+--   obsmetals ya no decide la marca por su cuenta (un CONCAT de 18 CASE ... LIKE '%:C%'): ahora
+--   la lee de la CELDA que se imprime. Son dos cambios en uno:
+--     (a) una sola fuente de verdad -- la leccion del bloque E3;
+--     (b) pasa de mirar 18 parametros a mirar los 31, asi que AHORA SI pueden aparecer
+--         observados nuevos (Mo, ISO>4/6/14, TAN, Hollin...) que antes nunca salian.
+--   => Si esta columna trae MAS metales que antes, NO es un bug: es el arreglo.
+SELECT Equipo, Observados FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%3195%';
+GO
+-- 148.4 Y que el encabezado siga cuadrando con la tabla ("X de N componentes observados").
+--   g ahora cuenta sobre 'comp' (1 fila por componente) en vez de COUNT(DISTINCT) sobre base.
+--   Tiene que dar lo MISMO: 4 de 6 para el CA3195.
+SELECT Equipo, NumCompObs, NumCompTotal FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK)
+WHERE Equipo LIKE '%3195%';
+GO
