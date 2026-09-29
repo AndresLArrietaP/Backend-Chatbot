@@ -87,7 +87,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **CERRADO** (154) | **154** | determinista + rendimiento |
 | **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
 | **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | 🔑 **medido (156): la decisión ya estaba en el código** | **156** · **157** | decisión |
-| **5c** | **N** · enchufar `Inf` en el triage | ✅ **escrito** — falta ver | **162** | determinista |
+| **5c** | **N** · enchufar `Inf` en el triage | ✅ **CERRADO** (162, E0 verificado) | **162** | determinista |
+| **5j** | **T** · ¿el **código de limpieza** cuenta? → **Carlos** | ⏳ **un valor** en el formato | **162.2b** | decisión |
 | **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **CERRADO** (159, clavado a la predicción) | **159** | determinista |
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
 | **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **CERRADO** (160, 4/4 verde) | **160** | determinista |
@@ -675,6 +676,47 @@ Ahora que el contador **lee** `Inf`, cambiar **qué** cuenta es editar **un valo
 — no reescribir una vista. Si Carlos ve el 162.1 y decide que el código de limpieza no debe disparar el
 triage, es poner `ISO>4/6/14` en `Inf = 1` y redesplegar. La conversación pasa de *«hay que rehacer el
 triage»* a *«qué cuenta y qué no»*, que es la que el área sabe contestar.
+
+### ✅ Resultado del BLOQUE 162 — E0 cerrado y verificado
+
+El encabezado dice **«48 de 54 observados (41 críticos)»** y la cuenta independiente sobre la fundación da
+**exactamente** 54 / 48 / 41. El contador y la tabla ya no pueden discrepar porque **leen lo mismo**.
+
+Los informativos se ven con su valor y **sin etiqueta**: `CA3165` muestra `Zn(194.8) 🟥` en Contaminación y
+la fila sale **🟨, no 🟥**, porque el `Zn` no cuenta. Ni un `(inf)` a la vista.
+
+Coste: 3 056 ms (antes 2 387), **Scan count 1**, sin scans nuevos.
+
+### ⭐⭐ 162.2b — el salto es **un solo parámetro**
+
+| Parámetro | `Inf` | Críticos | Precauciones |
+|---|---|---|---|
+| **`ISO>6`** | **0** | **38** | **10** |
+| `Zn` | 1 | 15 | 2 |
+| `Ca` | 1 | 4 | 0 |
+| `Fe` · `V100` · `P` · `ISO>14` · `PQ` · `Pb` · `Cr` | 0 | 5 | 9 |
+
+**Sin el `ISO>6` el triage marcaría ~9 de 54. Con él, 48.** La decisión ya no es «cómo rehacemos el
+triage»: es **«¿el código de limpieza cuenta o no?»** — y desde 5c eso es **un valor** en
+`vw_FormatoParametro`.
+
+**Mi recomendación: `ISO>4/6/14` → `Inf = 1`** (se siguen viendo con su valor, dejan de contar). Tres
+razones, y la tercera decide:
+
+1. El código de limpieza es una **causa**, no un **daño**. Un aceite sucio anticipa desgaste; no es desgaste.
+2. **La banda no tiene resolución**: `LP 19 / LC 20` es **un punto**, y en la escala ISO 4406 cada punto
+   **duplica** las partículas. Un parámetro que solo sabe decir «bien» o «crítico» no puede ordenar una cola.
+3. **Marca 48 de 54.** Una señal que se enciende en el 89 % de la flota no lleva información.
+
+### 🔴 162.4 — un aviso que me debo a mí mismo
+
+En el BLOQUE 159 escribí *«no tocar `Estado_General` todavía: convertiría 54 falsos críticos en 54
+observados»*. **5c no tocó `Estado_General`, pero sí cambió el contador del triage** — y en
+`/triage` de ruedas de Antapaccay eso es exactamente lo que pasa: **4 → 54**, y ~50 son el límite de
+Mobiltrans aplicado a un Shell Spirax.
+
+Antes estaban **ocultos**; ahora se **ven**. Es más honesto, pero el viernes alguien puede leerlo como 54
+ruedas rotas. ⇒ **El límite de las ruedas pasa de «hay que corregirlo» a urgente.**
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

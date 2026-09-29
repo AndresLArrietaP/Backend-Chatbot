@@ -6884,6 +6884,56 @@ SELECT TOP 1 'TriageMD'       AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_TriageMD
 SELECT TOP 1 'CondicionMT_MD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK);
 GO
 
+-- RESULTADOS BLOQUE 162 (29/09) -- 5c FUNCIONA, y el 162.2b deja la decision en UN parametro.
+--
+-- 162.1 / 162.2 ✅ E0 CERRADO Y VERIFICADO. El encabezado dice "48 de 54 observados (41 criticos)"
+--   y la cuenta independiente sobre la fundacion da EXACTAMENTE 54 componentes / 48 observados /
+--   41 criticos en 980E (y 18/0/0 en 930E, que no tiene limites). El contador y la tabla ya no
+--   pueden discrepar porque leen lo mismo.
+--
+-- 162.2b ⭐⭐ EL SALTO ES UN SOLO PARAMETRO. Marcas en Antapaccay MT:
+--   Parametro  Inf  Criticos  Precauciones
+--   ISO>6       0      38         10        <- 48. ES EL TRIAGE ENTERO.
+--   Zn          1      15          2        <- no cuenta (informativo), y se ve igual
+--   Ca          1       4          0        <- no cuenta
+--   Fe          0       2          1     V100 0  2  0     PQ 0  1  0
+--   P           0       0          3     ISO>14 0  0  3   Pb/Cr 0  0  1
+--   ⇒ Sin el ISO>6 el triage marcaria ~9 de 54. CON el, 48 de 54. El 89% de la flota.
+--   ⇒ La decision ya no es "como rehacemos el triage": es "el codigo de limpieza cuenta o no".
+--     Y desde 5c eso es UN VALOR en vw_FormatoParametro (ISO>4/6/14 -> Inf = 1), no una vista.
+--
+-- 162.3 ✅ LOS INFORMATIVOS SE VEN, CON SU VALOR Y SIN ETIQUETA. CA3165: 'Zn(194.8) 🟥' en la
+--   columna Contaminacion, y la fila sale 🟨 (no 🟥) porque el Zn no cuenta. Ni un '(inf)' a la
+--   vista. El pie de la tabla lo explica una vez, en prosa.
+--
+-- 162.4 ⚠⚠ EL DESFASE ENTRE MODULOS, MEDIDO. Estado_General -> triage nuevo:
+--   Antapaccay RUEDA     4 ->  54  ⛔ (los 50 nuevos son los falsos criticos del Shell Spirax)
+--   Antapaccay TRACCION  6 ->  48     Antapaccay MOTOR    6 -> 15
+--   Antamina   RUEDA   103 -> 121     Antamina TRACCION  77 -> 88   Antamina MOTOR 4 -> 16
+--   Antamina   HIDRAULICO 50 -> 58    Cerro Verde y Toromocho: sin cambio o +1
+--   🔴 AVISO QUE ME DEBO A MI MISMO: en el BLOQUE 159 escribi "no tocar Estado_General todavia,
+--      convertiria 54 falsos criticos en 54 observados". 5c no toco Estado_General, pero SI
+--      cambio el contador del triage -- y en /triage de ruedas de Antapaccay eso es exactamente
+--      lo que pasa: 4 -> 54, y ~50 son el limite de Mobiltrans aplicado a un Shell Spirax.
+--      Antes estaban OCULTOS; ahora se ven. Es mas honesto, pero el viernes alguien puede leerlo
+--      como 54 ruedas rotas. ⇒ El limite de las ruedas pasa de "hay que corregirlo" a URGENTE.
+--
+-- 162.5 COSTE. Elapsed 3 056 ms (antes 2 387). Scan count 1 sobre LaboratoryData, sin scans
+--   nuevos: el MIN(...) entra en el agregado que ya existia. Worktable 1 537, igual que antes.
+--
+-- 162.6 ✅ SMOKE. TriageMD ("Sistemas Hidraulicos - Antamina · 58 de 66") y CondicionMT_MD, bien.
+
+/* ⇒ RECOMENDACION, Y EL PORQUE. Poner ISO>4/6/14 en Inf = 1 (se siguen VIENDO con su valor, dejan
+   de contar). No es por comodidad; son tres razones, y la tercera es la que decide:
+     1. El codigo de limpieza es una CAUSA, no un DANO. Un aceite sucio anticipa desgaste; no es
+        desgaste. El triage contesta "que se esta danando".
+     2. La banda no tiene resolucion: LP 19 / LC 20 es UN punto, y en la escala ISO 4406 cada
+        punto DUPLICA las particulas. Un parametro que solo sabe decir "bien" o "critico", sin
+        nada en medio, no puede ordenar una cola de atencion.
+     3. Marca 48 de 54. Una senal que se enciende en el 89% de la flota no lleva informacion: no
+        distingue a quien atender primero, que es lo unico que el triage tiene que hacer.
+   Es decision del area, no nuestra -- pero ahora cuesta un valor y se revierte igual de barato. */
+
 /* ⭐ LO QUE ESTE PASO DESBLOQUEA, Y ES LO MEJOR QUE TIENE:
    Ahora que el contador LEE la bandera Inf, cambiar QUE cuenta es editar UN VALOR en
    vw_FormatoParametro -- no reescribir una vista. Si Carlos ve el 162.1 y decide que el codigo de
