@@ -88,7 +88,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
 | **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | 🔑 **medido (156): la decisión ya estaba en el código** | **156** · **157** | decisión |
 | **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
-| **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **escrito** — falta ver | **159** | determinista |
+| **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **CERRADO** (159, clavado a la predicción) | **159** | determinista |
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
 | **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **CERRADO** (160, 4/4 verde) | **160** | determinista |
 | **5g** | **R** · 347 componentes con `ISO` sin medir → **Carlos** | ⏸ **no es SQL** — es medición que falta | **159.2** | dato |
