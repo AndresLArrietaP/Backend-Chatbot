@@ -5529,3 +5529,13 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
   AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%TRACCION%' AND Metal LIKE '%Fe%'
 GROUP BY Proyecto, Modelo, CompTipo, Metal;
 GO
+
+-- RESULTADOS BLOQUE 152 (29/09) -- L4 cerrado en SQL y H3 cerrado DE REBOTE.
+--   152.1 ✅ "ok: sin equipos 930E". El ranking de PQ en MT de Antapaccay ahora sale limpio:
+--         1 CA3195 233.2 (130/150) 🟥 · 2 CA3178 120.4 · 3 CA3165 94.8 · 4 CA3161 94.6 · 5 CA3179 90.8
+--         Todos CA#### y todos CON limites. Comparar con la marcha del 28/09, donde salian
+--         3117 163.8 (—/—), 3114 145.0 (—/—), 3116 118.4 (—/—), 3115 76.6, 3118 71.6.
+--         => H3 se cerro sin tocar el ranking: fue consecuencia de L3.
+--   152.2 ✅ Pedir un modelo concreto funciona, incluso uno SIN limites: 980E -> 27 filas,
+--         930E -> 9 filas. Confirma que no restringimos nada.
+--   152.3 ✅ El tope silencioso ya no corta: PosMax 27 / 27 filas (antes la vista cortaba en 20).

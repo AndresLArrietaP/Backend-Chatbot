@@ -83,7 +83,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **1** | ~~Consolidar `base` en `vw_DiagnosticoMD`~~ | ⏸ **APARCADO** — corrección ✅, rendimiento ✗ | **148** · **149** | rendimiento |
 | **2** | **L3** · `(todos)` = modelos con límites (9 sitios) | ✅ **CERRADO** (150, todo verde) | **150** | determinista + rendimiento |
 | **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
-| **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL listo** — el resto es Copilot | **152** | determinista |
+| **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL CERRADO** (152) — el resto es Copilot | **152** | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | 📋 fórmula validada | **137** (ya da 3 718,6) | determinista + rendimiento |
 | **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
@@ -934,7 +934,7 @@ vicio que hace que el análisis redibuje la tabla del barrido.
 |---|---|---|
 | **H1** | `/ranking` a secas respondió «Tas a una» | Sin parámetros debe pedirlos o mandar a `/comandos` |
 | **H2** | `/ayuda` respondió dos cosas distintas seguidas | La aleatoriedad del 17/09 sigue abierta |
-| **H3** | `/ranking antapaccay mtlh PQ 20` mezcló `3114`…`3118` | **Doble causa:** falta `‹modelo›` en la firma (→ **L4**) **y** los equipos sin límites de `930E` |
+| **H3** | `/ranking antapaccay mtlh PQ 20` mezcló `3114`…`3118` | ✅ **CERRADO (29/09)** por **L3**, sin tocar el ranking: esos equipos son `930E` y el `(todos)` nuevo ya no los incluye. Verificado en el 152.1 |
 | **H4** | «`Hollín` no existe» | ❌ **Falso, y fabricado.** `HOLLIN - LP/LC` está en `lc` y el bloque D ya lo lee |
 | **H5** | `/conteo` lista un componente `nan` | Vivo — `Compartimiento` nulo. Se ve en `/conteo antapaccay d475` (determinista) |
 | **H6** | `/triage mtrh antapaccay 980` con columnas descuadradas | Vivo, solo en la variante `mtrh` |
