@@ -956,7 +956,7 @@ alguien pregunta por un modelo sin límites hay que **decírselo**, no devolver 
 
 | | Qué | Estado |
 |---|---|---|
-| **1** | ~~El universo del `Σvida`~~ | ✅ **RESUELTO** por el bloque **C**: Carlos dio el método (En Uso + `CM` por componente) |
+| **1** | ~~El universo del `Σvida`~~ — **el 6 785,39** | ✅ **CERRADO (29/09)**. Apareció en el BLOQUE 153.5: es el `Fe_Acum` del **CA3160 · Motor de Tracción** con `ComponentStatus='En uso'` + `CM IN ('ADI','C')` sobre **toda** la historia. Llevaba bloqueado desde el 25/09 |
 | **2** | **Optimizar el resto de flujos** como se hizo con `/triage` | 🟡 no urgente. `vw_TendenciaMD` **~35 s** y `vw_TendenciaMetalMD` **~30 s** con el operador real. Las dos palancas ya probadas: quitar el CTE referenciado 2× con `JOIN` entre ramas, y traducir en el flujo y no en el `WHERE` |
 | **3** | **3 de las 4 fórmulas** de componente (`comp1`, `comp2`, `comp3`) sin confirmar | ❓ nada roto, pero el sistema depende de una sola red |
 | **4** | **C4** — el desajuste `730E-` vs `730E` en `lc` (BLOQUE 103) | ⏳ Cerro Verde 730E se queda sin límites aunque el dato existe |

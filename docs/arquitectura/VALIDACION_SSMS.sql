@@ -5648,3 +5648,54 @@ JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentI
 WHERE LD.[ComponentStatus] = N'En uso' AND LD.[CM] IN ('ADI','C')
 GROUP BY ME.[Code], LD.[Compartimiento];
 GO
+
+-- RESULTADOS BLOQUE 153 (29/09) -- reveladores. Cambian el diseno del Acum y cierran el
+-- bloque B de la ronda 23/09, que llevaba bloqueado desde el 25/09.
+--
+-- 153.1 ✅ LOS COMPONENTES SON SIMETRICOS POR TIPO DE MAQUINA. Confirma la intuicion de Andres:
+--       CAMIONES (930E, 980E)          -> TRACCION · RUEDA · MOTOR · HIDRAULICO
+--       TRACTOR / EXCAVADORA / CARGADOR
+--       (D475A, HD1500, PC1250, WA900) -> MANDO · TRANSMISION · MOTOR · HIDRAULICO
+--       MANDO y TRANSMISION NO EXISTEN en 930E ni 980E. TRACCION y RUEDA no existen en los otros.
+--       Motor e hidraulico los comparten todos. (PC1250 no tiene TRANSMISION: es excavadora.)
+--
+-- 153.2 🔴 EL HALLAZGO QUE CAMBIA EL DISENO: solo devolvio DOS filas.
+--       CompTipo    EnUso_Todas  Regla_AdiC  Regla_SoloC  Series
+--       MOTOR            2 272         515         515        27
+--       TRACCION         2 906       1 390         265        53
+--       => 'ComponentStatus = En uso' SOLO EXISTE PARA MOTOR Y MOTOR DE TRACCION.
+--          Para RUEDA, HIDRAULICO, MANDO y TRANSMISION no hay NI UNA fila con ese estado.
+--       ⇒ NO HAY QUE INVENTAR NINGUNA REGLA para mando/transmision/caja giro/damper/PTO:
+--         el problema no era que faltara la regla, es que no hay componente instalado que
+--         seguir. La pregunta a Carlos se desvanece sola.
+--       ⇒ En MOTOR, AdiC == SoloC == 515: no hay muestras 'ADI' en el motor (no se dializa).
+--         Y Carlos dijo "en el motor sumas TODO" -> ahi la regla es 2 272, no 515.
+--
+-- 153.3 ✅ LA FORMULA DE MT, CONFIRMADA POR SEGUNDA VEZ:
+--       CA3195 MT LH · 62 muestras 'En uso' · Todas 6 941,3 · AdiC 3 718,6 · SoloC 805,5
+--       CA3175 MT LH · 39 muestras          · Todas 3 497,6 · AdiC 1 877,9 · SoloC 568,8
+--       3 718,6 = la cifra de Carlos, al decimal.
+--       Y NO devolvio filas de RUEDA ni HIDRAULICO para esos equipos: confirma el 153.2.
+--
+-- 153.4 ⚠ COBERTURA: 306 componentes con muestra · 80 con acumulado · 226 SIN.
+--       Solo el 26% puede tener Acum, y son exactamente los 27 motores + 53 MT del 153.2.
+--       Los 226 restantes van con '—'. NO es una limitacion nuestra: no hay dato de que
+--       componente esta instalado. Y '—' NO es cero: hay que decirlo en el pie.
+--
+-- 153.5 ⭐⭐ AQUI ESTABA EL BLOQUE B DE LA RONDA 23/09:
+--       CA3160 · MOTOR DE TRACCION · Fe_Acum = 6 785,4
+--       La cifra de Carlos era 6 785,39. Llevaba BLOQUEADA desde el 25/09: se probaron
+--       ventanas de 12 a 60 meses, todos los tipos de muestra y los 18 parametros, y el
+--       veredicto fue "no se reproduce con ningun criterio, hay que preguntar".
+--       Era ComponentStatus='En uso' + CM IN ('ADI','C') sobre TODA la historia.
+--       => BLOQUE B: CERRADO.
+--       La consulta global devolvio 80 filas (27 MOTOR + 53 MT) sin coste aparente.
+--
+-- DISENO QUE SALE DE AQUI (bloque C):
+--   1. vw_AcumuladoVida lee [Oil].[LaboratoryData] directo, sin la fundacion y sin la ventana
+--      de 12 meses, y SOLO para los dos componentes que tienen ComponentStatus:
+--          MOTOR DE TRACCION -> CM IN ('ADI','C')      MOTOR -> todos los CM
+--   2. Solo se calculan los 8 metales de DESGASTE (Fe, PQ, Cr, Ni, Cu, Pb, Sn, Al), que son
+--      los unicos que el display muestra hoy. Calcular los 18 seria pagar de mas.
+--   3. vw_TendenciaElemento la consume con LEFT JOIN y el resto sale '—'.
+--   4. Renombre 'Σvida' -> 'Acum' y fuera el '(nº de muestras)'.
