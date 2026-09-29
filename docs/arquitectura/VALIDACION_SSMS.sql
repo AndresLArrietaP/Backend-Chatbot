@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   147 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   148 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -167,6 +167,7 @@
      BLOQUE 144  D3 desplegada: la fundacion con los 13 valores nuevos (+ MEDIR)
      BLOQUE 145  REGRESION 6 MIN en /diagcompleto tras D3 -- aislar capa por capa
      BLOQUE 146  CURA de la regresion: unpv de vw_DiagnosticoMD reestructurado
+     BLOQUE 147  BLOQUE L: donde se pierde el filtro de <modelo>
    ============================================================================ */
 
 /* ============================================================================
@@ -5131,3 +5132,71 @@ GO
 --   window functions / OUTER APPLY en vez de en CTEs paralelos. Es la misma cura que llevo
 --   vw_TriageMD de 113 780 ms a 860 ms. Es una reestructuracion de verdad: se mide antes,
 --   se hace de una y se vuelve a medir. -> BLOQUE 147 cuando se ataque.
+
+
+-- ==== BLOQUE 147 - BLOQUE L: donde se pierde el filtro de <modelo> ====
+-- EL SINTOMA (marcha 28/09): '/barrido antapaccay d475' y '/barrido antapaccay 980' devolvieron
+--   EXACTAMENTE la misma tabla, los mismos 18 equipos. Y en '/barridodet antapaccay 980' la tabla
+--   verbatim traia todos los equipos y DEBAJO el nodo de analisis la volvia a dibujar "filtrada".
+-- ⛔ ANTES DE TOCAR 7 VISTAS hay que saber si el SQL filtra o no. Son dos bugs distintos con la
+--   misma cara, y la cura no se parece en nada:
+--     (a) el SQL no filtra            -> se arregla en las vistas / el predicado
+--     (b) el SQL filtra y no le llega -> se arregla en Copilot (dispatcher -> tema -> flujo)
+-- El flujo compara con LIKE, asi que aqui se mide igual (ley 3).
+
+-- 147.1 EL MISMO PREDICADO DEL FLUJO, con tres modelos distintos. Si las tres filas de abajo
+--   traen un MD de LARGO DISTINTO, el SQL SI filtra -> el bug es (b), esta en Copilot.
+SELECT '1-d475' AS Caso, LEN(MD) AS LargoMD, LEFT(MD, 90) AS Inicio
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%d475%'
+UNION ALL
+SELECT '2-980', LEN(MD), LEFT(MD, 90)
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980%'
+UNION ALL
+SELECT '3-(todos)', LEN(MD), LEFT(MD, 90)
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- 147.2 Lo mismo en el DETALLE, que es donde se vio la tabla duplicada.
+SELECT '1-d475' AS Caso, LEN(MD) AS LargoMD
+FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%d475%'
+UNION ALL
+SELECT '2-980', LEN(MD)
+FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980%';
+GO
+-- 147.3 QUE VALORES DE Modelo EXPONE la vista para Antapaccay. Si '(todos)' esta ahi como una
+--   fila mas, el predicado LIKE '%980%' NO puede traerla: '(todos)' no contiene '980'.
+--   Si alguna fila trae un modelo que contiene el texto de otro, ahi hay colision.
+SELECT DISTINCT Modelo FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' ORDER BY Modelo;
+GO
+-- 147.4 EL INSUMO DEL REDISENO DE '(todos)': que modelos tiene el proyecto en la FLOTA y
+--   cuales tienen limites cargados. Los que salgan con TieneLimites=0 son los que Carlos NO
+--   quiere ver en el '(todos)' por defecto (D11T y 797F, segun la marcha).
+SELECT DISTINCT
+       EF.[Model] AS Modelo,
+       CASE WHEN EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                         WHERE ml.ProyKey = UPPER(LTRIM(RTRIM(MP.[Name])))
+                           AND ml.ModeloKey = UPPER(LTRIM(RTRIM(EF.[Model]))))
+            THEN 1 ELSE 0 END AS TieneLimites,
+       COUNT(DISTINCT ME.[Code]) AS Equipos
+FROM [Mine].[MiningEquipment] ME WITH (NOLOCK)
+JOIN [Mine].[MiningProject]  MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+JOIN [Mine].[EquipmentFleet] EF WITH (NOLOCK) ON EF.[Id] = ME.[EquipmentFleetId]
+WHERE MP.[Name] LIKE '%Antapaccay%'
+GROUP BY EF.[Model], MP.[Name]
+ORDER BY TieneLimites DESC, Equipos DESC;
+GO
+-- 147.5 Smoke de la vista nueva.
+SELECT ProyKey, ModeloKey FROM [dbo].[vw_ModeloConLimites] ORDER BY ProyKey, ModeloKey;
+GO
+/* COMO LEER EL RESULTADO
+   - 147.1/147.2 dan LARGOS DISTINTOS -> el SQL filtra bien. El bug es de Copilot: o el
+     dispatcher no parsea p2, o el tema no mapea 'modelo' al flujo, o el flujo no lo usa.
+     Se comprueba en el tema 16/17: 'modelo' tiene que ser ENTRADA mapeada, no un valor fijo.
+   - 147.1/147.2 dan el MISMO largo -> el SQL no filtra, y ahi si hay que tocar las vistas.
+   - 147.4 dice que modelos se quedan fuera del '(todos)' nuevo. Si un modelo con muchos
+     equipos sale con TieneLimites=0, conviene avisarlo en la respuesta en vez de esconderlo. */

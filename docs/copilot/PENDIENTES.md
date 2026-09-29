@@ -59,6 +59,31 @@ tabla) y explica por qué el modelo «filtra raro»: a veces filtra, a veces no,
 `/barrido antapaccay d475` y `/barrido antapaccay 980` devolvieron **exactamente la misma tabla**, los
 mismos 18 equipos — ahí el parámetro se acepta y **se ignora**. → **Bloque L**.
 
+## 🔴 PENDIENTE PUNTUAL — `vw_DiagnosticoMD` lee `base` 7 veces
+
+> **Recordarlo en cada ronda hasta que se haga.** No bloquea, pero es deuda medida y con nombre.
+
+`/diagcompleto` está hoy en **12,1 s** contra los **2 418 ms** de referencia. La causa está medida
+(bloques 145 y 146, 28/09) y es una sola:
+
+> **`base` se referencia SIETE veces** en `vw_DiagnosticoMD` — líneas 21, 31, 72, 77, 108, 132, 142 —
+> y `[Oil].[LaboratoryData]` tiene **exactamente 7 scans**. Uno por referencia. Cada CTE que lee `base`
+> re-deriva la cadena de 4 vistas entera. Los **2 185 scans** de `[Eqpcare].[lc]` son consecuencia de lo
+> mismo (7 × ~312).
+
+⚠ **No lo introdujo el bloque D.** El 25/09 ya se midieron **4 scans** y quedó anotado como «queda
+margen». D solo lo hizo visible al pasar de 18 a 31 parámetros: de 4 referencias a 7, y de 2,4 s a 12.
+
+**La cura:** consolidar las 7 lecturas en **1**, agregando sobre la misma fila con window functions /
+`OUTER APPLY` en vez de en CTEs paralelos. Es exactamente la que llevó `vw_TriageMD` de **113 780 ms a
+860 ms** (ley 2).
+
+**Cómo se hace, cuando se haga:** es una reestructuración de verdad — se mide antes, se hace de una, se
+vuelve a medir. La métrica de éxito **no es el tiempo, es el `Scan count`**: tiene que bajar de 7 a 1 o 2.
+Bloque de validación **147** cuando se ataque.
+
+---
+
 ## 📋 Los pasos, en orden
 
 | Orden | Bloque | Qué | Por qué ahí | Tamaño |
@@ -240,6 +265,30 @@ parámetros esté unificado**, o se paga cuatro veces.
 ---
 
 ## 🅻 Bloque L — el parámetro `‹modelo›`  ⭐ TRANSVERSAL Y HOY ROTO
+
+### Paso 0 (28/09) — **probar dónde se pierde el filtro, antes de tocar nada**
+
+El síntoma tiene **dos causas posibles con la misma cara**, y la cura no se parece en nada:
+
+| | Qué pasaría | Dónde se arregla |
+|---|---|---|
+| **(a)** | el SQL no filtra por modelo | en las vistas / el predicado |
+| **(b)** | el SQL filtra, pero el modelo **no le llega** | en Copilot: dispatcher → tema → flujo |
+
+El **BLOQUE 147** lo decide en una corrida: pide el mismo `MD` con `d475`, con `980` y con `(todos)` y
+compara **el largo**. Largos distintos ⇒ el SQL filtra ⇒ es **(b)**.
+
+⚠ **Mi apuesta es (b)**, y por una razón concreta: el rollup `(todos)` es una **fila más** de la vista, y
+`LIKE '%980%'` **no puede** traerla — `(todos)` no contiene `980`. Así que si el SQL recibiera el modelo,
+filtrar sería automático. Que `d475` y `980` devuelvan lo mismo huele a que **llega `(todos)` siempre**:
+en el tema 16/17 `modelo` tendría que ser **Entrada mapeada** y podría estar fijo en la Acción.
+⛔ Si es (b), **tocar las 7 vistas no arregla nada** — por eso el bloque 147 va primero.
+
+**Ya desplegado como cimiento (sin riesgo, aditivo):** `vw_ModeloConLimites` — qué modelos de cada
+proyecto tienen límites en `lc`. Es el insumo del `(todos)` nuevo y es **data-driven**: ninguna lista de
+modelos escrita a mano, así que el día que el área cargue otro proyecto se entera solo.
+
+---
 
 **L1 · Hoy no filtra en el SQL — filtra el LLM.** Ver el hallazgo de arriba. Mientras siga así no hay
 determinismo posible: es la ley 1. La cura es que el predicado de modelo viva en el `WHERE` de la vista/flujo

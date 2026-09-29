@@ -375,6 +375,20 @@ GROUP BY src.ProyKey, src.ModeloKey, src.CompTipo;
 GO
 
 
+/* ==== vw_ModeloConLimites (bloque L, 28/09) ====
+   Que modelos de cada proyecto tienen limites cargados en [Eqpcare].[lc].
+   PARA QUE: hoy el rollup '(todos)' de las vistas de flota significa "todos los modelos".
+   Carlos pidio que signifique "los modelos que el area tiene aterrizados": en Antapaccay eso
+   es 980E, D475A y PC1250, y deja fuera D11T y 797F, que aparecen en la tabla sin un solo
+   limite y no se pueden evaluar.
+   Es DATA-DRIVEN a proposito: no hay una lista de modelos escrita en ningun sitio, asi que
+   el dia que el area cargue otro proyecto o retire un modelo, esto se entera solo.
+   Tabla diminuta (lc tiene 64 filas -> ~15 pares distintos): un EXISTS contra esto es gratis. */
+CREATE OR ALTER VIEW [dbo].[vw_ModeloConLimites] AS
+SELECT DISTINCT ProyKey, ModeloKey FROM [dbo].[vw_LimitesPorComponente];
+GO
+
+
 /* ----------------------------------------------------------------------------
    2) vw_MuestrasEstado (FUNDACIÓN) — + Ca, Zn (con Estado informativo) + HorasA/HorasB
    ---------------------------------------------------------------------------- */
