@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   144 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   145 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -164,6 +164,7 @@
      BLOQUE 141  las columnas *_Acum de la tabla: atajo para el bloque C?
      BLOQUE 142  D7.3: de los 13 valores "nuevos", cuales traen dato de verdad
      BLOQUE 143  D2 desplegada: vw_LimitesPorComponente con los 31 parametros
+     BLOQUE 144  D3 desplegada: la fundacion con los 13 valores nuevos (+ MEDIR)
    ============================================================================ */
 
 /* ============================================================================
@@ -4967,3 +4968,54 @@ SELECT TOP (3) Equipo, Compartimiento, Fe_ppm, Fe_LP, Fe_LC, Estado_General
 FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
 WHERE Equipo = 'CA3195' AND Compartimiento LIKE '%TRACCION%LH';
 GO
+
+
+-- ==== BLOQUE 144 - D3 desplegada: la fundacion con los 13 valores nuevos ====
+-- ⛔ DESPLIEGUE: correr DDL_vistas.sql ENTERO y de corrido. vw_MuestrasRankeadas y
+--    vw_MuestrasHistorial hacen 'SELECT me.*' y SQL Server CONGELA la lista de columnas al
+--    crear la vista: si no se re-crean, las 13 columnas nuevas no llegan a ningun modulo.
+-- 144.1 SMOKE (ley 5: un CREATE VIEW se guarda aunque su cuerpo sea invalido).
+SELECT TOP (3) Equipo, Compartimiento, FechaMuestreo,
+       P_ppm, P_LP, P_LC, Estado_P,
+       ISO4, ISO6, ISO14, ISO6_LP, ISO6_LC, Estado_ISO6,
+       V100, V100_LPI, V100_LCI, V100_LPS, V100_LCS, Estado_V100,
+       V40, TAN, Mo_ppm, Agua, Hollin, TBN, TBN_LP, TBN_LC, Estado_TBN
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE Equipo = 'CA3195' AND Compartimiento LIKE '%TRACCION%LH'
+ORDER BY FechaMuestreo DESC;
+GO
+-- 144.2 QUE LAS COLUMNAS NUEVAS LLEGARON a las derivadas (si esto falla, no se re-crearon).
+SELECT TOP (1) Equipo, Estado_P, Estado_ISO6, Estado_V40, HorasComponente
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK) WHERE Equipo = 'CA3195';
+GO
+-- 144.3 NO REGRESION del semaforo. Estado_General NO se toco en D3 (los parametros nuevos
+--   todavia NO disparan el estado general; encenderlos es un paso aparte y medido, como se
+--   hizo con V100 el 07/08). Estos conteos deben dar LO MISMO que antes del despliegue.
+SELECT Estado_General, COUNT(*) AS Componentes
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND rn_recencia = 1
+GROUP BY Estado_General ORDER BY Componentes DESC;
+GO
+-- 144.4 EL CASO DE UN SOLO EXTREMO no debe disparar nada. ANTAMINA HIDRAULICO trae
+--   P_LP NULL / P_LC 600 (bloque 143.1): sin los dos extremos no se puede saber la direccion,
+--   asi que Estado_P tiene que salir 'OK' en TODAS. Si aparece un CRITICO aqui, la regla fallo.
+SELECT Estado_P, COUNT(*) AS Filas, MIN(P_ppm) AS MinP, MAX(P_ppm) AS MaxP
+FROM [dbo].[vw_MuestrasRankeadas] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antamina%' AND Compartimiento LIKE '%HIDRAUL%' AND rn_recencia = 1
+GROUP BY Estado_P;
+GO
+-- 144.5 ⚠ MEDIR. La fundacion paso de ~18 a 31 parametros y la lee TODO el sistema.
+--   Con el operador de PRODUCCION (LIKE), nunca con '=' (ley 3: 5x de diferencia).
+--   Referencias de la ronda anterior: vw_TriageMD 860 ms · vw_DiagnosticoMD 2 418 ms.
+--   Correr 2 veces y usar la 2a (warm).
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT MD FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SELECT MD FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3195%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+-- CRITERIO: si el triage se va por encima de ~2 s, D3 hay que replantearlo -- los 13
+-- parametros nuevos se proyectan en una vista aparte que solo consuman las 4 vistas de
+-- formato, y la fundacion se queda como estaba.

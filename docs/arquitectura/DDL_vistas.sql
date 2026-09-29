@@ -399,7 +399,15 @@ WITH muestras AS (
         LD.[CM], LD.[Grado],
         LD.[Fe_ppm], LD.[Cr_ppm], LD.[Ni_ppm], LD.[Cu_ppm], LD.[Pb_ppm], LD.[Sn_ppm],
         LD.[Si_ppm], LD.[Al_ppm], LD.[Ca_ppm], LD.[Zn_ppm], LD.[Na_ppm], LD.[K_ppm], LD.[Mg_ppm], LD.[B_ppm], LD.[P_ppm],
-        LD.[Indice_PQ], LD.[TBN], LD.[V100], LD.[LaboratoryDataId]
+        LD.[Indice_PQ], LD.[TBN], LD.[V100],
+        /* D3 (28/09) — los 13 parametros del formato que SIEMPRE estuvieron en la tabla y no se
+           leian. FORMATO_POR_COMPONENTE los daba por inexistentes porque se llaman distinto.
+           Se renombran aqui al simbolo del formato para no arrastrar dos vocabularios. */
+        LD.[Viscosidad40] AS V40,
+        LD.[TAN], LD.[Oxidacion], LD.[Sulfatacion], LD.[Nitracion],
+        LD.[Mo_ppm], LD.[Agua], LD.[Hollin], LD.[Diesel], LD.[Refrigerante],
+        LD.[Iso4406_4] AS ISO4, LD.[Iso4406_6] AS ISO6, LD.[Iso4406_14] AS ISO14,
+        LD.[LaboratoryDataId]
     FROM [Oil].[LaboratoryData] LD
     INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
     INNER JOIN [Mine].[MiningProject]   MP ON MP.[Id] = ME.[MiningProjectId]
@@ -511,15 +519,143 @@ SELECT
          WHEN m.Indice_PQ > ISNULL(lim.PQ_LC,9999) THEN 'CRITICO'
          WHEN m.Indice_PQ > ISNULL(lim.PQ_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_PQ,
 
-    m.TBN, lim.TBN_LP,
-    CASE WHEN m.TBN IS NULL THEN 'SIN DATO'
-         WHEN m.TBN < ISNULL(lim.TBN_LP,0) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_TBN,
+    /* TBN: aditivo del motor, la alerta es por DEBAJO. Hasta el 28/09 solo se leia su LP,
+       asi que nunca podia decir CRITICO. El LC existe en lc pero SOLO para MOTOR (5 de las
+       64 filas): «el TBN mayormente es el motor nada mas». Con el LC ya distingue.
+       ⛔ Un solo Estado_TBN, no dos: dos mecanismos de marcado para el mismo valor fue
+       exactamente el bug E3 de la ronda anterior. */
+    m.TBN, lim.TBN_LP, lim.TBN_LC,
+    CASE WHEN m.TBN IS NULL OR m.TBN = 0 THEN 'SIN DATO'
+         WHEN lim.TBN_LC IS NOT NULL AND m.TBN < lim.TBN_LC THEN 'CRITICO'
+         WHEN lim.TBN_LP IS NOT NULL AND m.TBN < lim.TBN_LP THEN 'PRECAUCION'
+         ELSE 'OK' END AS Estado_TBN,
 
-    m.B_ppm, m.P_ppm, m.V100, lim.V100_LCI, lim.V100_LCS,
+    /* ================= D3 (28/09) — ADITIVOS con limite =================
+       B y P se exponian como VALOR SUELTO, sin LP/LC ni estado: por eso /ultimo los
+       pintaba «— —». El limite estaba en lc desde siempre (FOSFORO 280/240 invertido).
+
+       ⚠ REGLA NUEVA — cuando solo hay UN extremo cargado NO se calcula estado.
+       La fundacion deduce la direccion con «LP > LC -> invertido». Con un solo
+       extremo esa comparacion da NULL y el parametro se cae por la rama de
+       contaminante. Medido el 28/09 (bloque 143.1): ANTAMINA HIDRAULICO tiene
+       P_LP NULL / P_LC 600 y RUEDA P_LP NULL / P_LC 636. Tratarlo como contaminante
+       diria «P alto» de un aditivo, y tratarlo como aditivo marcaria CRITICA a toda
+       la flota (los valores rondan 300). No se puede saber cual es: se MUESTRA el
+       limite y NO se dispara. Preguntar al area. */
+    m.B_ppm, lim.B_LP, lim.B_LC,
+    CASE WHEN m.B_ppm IS NULL THEN 'SIN DATO'
+         WHEN lim.B_LP IS NULL OR lim.B_LC IS NULL THEN 'OK'
+         WHEN lim.B_LP > lim.B_LC THEN
+              CASE WHEN m.B_ppm < lim.B_LC THEN 'CRITICO'
+                   WHEN m.B_ppm < lim.B_LP THEN 'PRECAUCION' ELSE 'OK' END
+         WHEN m.B_ppm > lim.B_LC THEN 'CRITICO'
+         WHEN m.B_ppm > lim.B_LP THEN 'PRECAUCION' ELSE 'OK' END AS Estado_B,
+
+    m.P_ppm, lim.P_LP, lim.P_LC,
+    CASE WHEN m.P_ppm IS NULL THEN 'SIN DATO'
+         WHEN lim.P_LP IS NULL OR lim.P_LC IS NULL THEN 'OK'
+         WHEN lim.P_LP > lim.P_LC THEN
+              CASE WHEN m.P_ppm < lim.P_LC THEN 'CRITICO'
+                   WHEN m.P_ppm < lim.P_LP THEN 'PRECAUCION' ELSE 'OK' END
+         WHEN m.P_ppm > lim.P_LC THEN 'CRITICO'
+         WHEN m.P_ppm > lim.P_LP THEN 'PRECAUCION' ELSE 'OK' END AS Estado_P,
+
+    m.Mo_ppm, lim.Mo_LP, lim.Mo_LC,
+    CASE WHEN m.Mo_ppm IS NULL THEN 'SIN DATO'
+         WHEN lim.Mo_LP IS NULL OR lim.Mo_LC IS NULL THEN 'OK'
+         WHEN lim.Mo_LP > lim.Mo_LC THEN
+              CASE WHEN m.Mo_ppm < lim.Mo_LC THEN 'CRITICO'
+                   WHEN m.Mo_ppm < lim.Mo_LP THEN 'PRECAUCION' ELSE 'OK' END
+         WHEN m.Mo_ppm > lim.Mo_LC THEN 'CRITICO'
+         WHEN m.Mo_ppm > lim.Mo_LP THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Mo,
+
+    /* ================= D3 — SALUD y CONTAMINACION nuevas =================
+       Direccion normal (la alerta es por ARRIBA) en todas estas. */
+    m.TAN, lim.TAN_LP, lim.TAN_LC,
+    CASE WHEN m.TAN IS NULL THEN 'SIN DATO'
+         WHEN m.TAN > ISNULL(lim.TAN_LC,9999) THEN 'CRITICO'
+         WHEN m.TAN > ISNULL(lim.TAN_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_TAN,
+
+    m.Oxidacion, lim.Oxi_LP, lim.Oxi_LC,
+    CASE WHEN m.Oxidacion IS NULL THEN 'SIN DATO'
+         WHEN m.Oxidacion > ISNULL(lim.Oxi_LC,9999) THEN 'CRITICO'
+         WHEN m.Oxidacion > ISNULL(lim.Oxi_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Oxi,
+
+    m.Sulfatacion, lim.Sulf_LP, lim.Sulf_LC,
+    CASE WHEN m.Sulfatacion IS NULL THEN 'SIN DATO'
+         WHEN m.Sulfatacion > ISNULL(lim.Sulf_LC,9999) THEN 'CRITICO'
+         WHEN m.Sulfatacion > ISNULL(lim.Sulf_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Sulf,
+
+    m.Nitracion, lim.Nit_LP, lim.Nit_LC,
+    CASE WHEN m.Nitracion IS NULL THEN 'SIN DATO'
+         WHEN m.Nitracion > ISNULL(lim.Nit_LC,9999) THEN 'CRITICO'
+         WHEN m.Nitracion > ISNULL(lim.Nit_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Nit,
+
+    m.Hollin, lim.Hollin_LP, lim.Hollin_LC,
+    CASE WHEN m.Hollin IS NULL THEN 'SIN DATO'
+         WHEN m.Hollin > ISNULL(lim.Hollin_LC,9999) THEN 'CRITICO'
+         WHEN m.Hollin > ISNULL(lim.Hollin_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Hollin,
+
+    m.Agua, lim.Agua_LP, lim.Agua_LC,
+    CASE WHEN m.Agua IS NULL THEN 'SIN DATO'
+         WHEN m.Agua > ISNULL(lim.Agua_LC,9999) THEN 'CRITICO'
+         WHEN m.Agua > ISNULL(lim.Agua_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Agua,
+
+    m.Diesel, lim.Diesel_LP, lim.Diesel_LC,
+    CASE WHEN m.Diesel IS NULL THEN 'SIN DATO'
+         WHEN m.Diesel > ISNULL(lim.Diesel_LC,9999) THEN 'CRITICO'
+         WHEN m.Diesel > ISNULL(lim.Diesel_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_Diesel,
+
+    /* Refrigerante: el formato lo pide en MODI, la columna existe, pero el bloque 142.3
+       midio 0 filas con dato en toda la base y lc no trae su limite (el candidato era
+       'Glycol', tambien vacio). Se proyecta el valor y nada mas: si algun dia lo cargan,
+       la fila aparece sola. */
+    m.Refrigerante,
+
+    /* ================= D3 — CODIGO DE LIMPIEZA ISO =================
+       Contador de particulas por tamano (4, 6 y 14 micras). El numero es ADIMENSIONAL y
+       LOGARITMICO: cada punto que sube DUPLICA las particulas (20 ~ 40 000 -> 21 ~ 80 000).
+       Direccion normal. En Antapaccay el MOTOR no lo mide (bloque 142.1: 13% de las
+       muestras) y lc no le carga limite -> la fila se cae sola por la regla D5. */
+    m.ISO4, lim.ISO4_LP, lim.ISO4_LC,
+    CASE WHEN m.ISO4 IS NULL THEN 'SIN DATO'
+         WHEN m.ISO4 > ISNULL(lim.ISO4_LC,9999) THEN 'CRITICO'
+         WHEN m.ISO4 > ISNULL(lim.ISO4_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_ISO4,
+
+    m.ISO6, lim.ISO6_LP, lim.ISO6_LC,
+    CASE WHEN m.ISO6 IS NULL THEN 'SIN DATO'
+         WHEN m.ISO6 > ISNULL(lim.ISO6_LC,9999) THEN 'CRITICO'
+         WHEN m.ISO6 > ISNULL(lim.ISO6_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_ISO6,
+
+    m.ISO14, lim.ISO14_LP, lim.ISO14_LC,
+    CASE WHEN m.ISO14 IS NULL THEN 'SIN DATO'
+         WHEN m.ISO14 > ISNULL(lim.ISO14_LC,9999) THEN 'CRITICO'
+         WHEN m.ISO14 > ISNULL(lim.ISO14_LP,9999) THEN 'PRECAUCION' ELSE 'OK' END AS Estado_ISO14,
+
+    /* ================= D3 — VISCOSIDAD: es una BANDA, no un limite =================
+       El aceite PARTE con un valor y puede irse para arriba o para abajo; se vigila que
+       se mantenga entre los precautorios. Cuatro niveles: LCI < LPI <= valor <= LPS < LCS.
+       ⚠ En un PISO el precautorio va POR ENCIMA del critico (avisa antes de llegar
+       bajando): medido en MOTOR 980E -> LPI 13.50 > LCI 13.00. No es un typo.
+       ⚠ Que niveles existen lo dice el dato, no una lista: MT trae solo LCI/LCS
+       («para el MT solo el critico, no trabaja con el precautorio») y MOTOR 980E trae
+       los cuatro. Un nivel NULL simplemente no se evalua.
+       V100 = 0 se trata como SIN DATO: el 07/08 generaba 196 falsos positivos. */
+    m.V100, lim.V100_LPI, lim.V100_LCI, lim.V100_LPS, lim.V100_LCS,
     CASE WHEN m.V100 IS NULL OR m.V100 = 0 THEN 'SIN DATO'
          WHEN (lim.V100_LCI IS NOT NULL AND m.V100 < lim.V100_LCI) OR (lim.V100_LCS IS NOT NULL AND m.V100 > lim.V100_LCS) THEN 'CRITICO'
          WHEN (lim.V100_LPI IS NOT NULL AND m.V100 < lim.V100_LPI) OR (lim.V100_LPS IS NOT NULL AND m.V100 > lim.V100_LPS) THEN 'PRECAUCION'
          ELSE 'OK' END AS Estado_V100,
+
+    /* V40: misma mecanica. Antapaccay NO la mide (0 muestras) y Antamina SI (15 834):
+       «va a depender de la mina». La fila se cae sola donde no hay dato. */
+    m.V40, lim.V40_LPI, lim.V40_LCI, lim.V40_LPS, lim.V40_LCS,
+    CASE WHEN m.V40 IS NULL OR m.V40 = 0 THEN 'SIN DATO'
+         WHEN (lim.V40_LCI IS NOT NULL AND m.V40 < lim.V40_LCI) OR (lim.V40_LCS IS NOT NULL AND m.V40 > lim.V40_LCS) THEN 'CRITICO'
+         WHEN (lim.V40_LPI IS NOT NULL AND m.V40 < lim.V40_LPI) OR (lim.V40_LPS IS NOT NULL AND m.V40 > lim.V40_LPS) THEN 'PRECAUCION'
+         ELSE 'OK' END AS Estado_V40,
+
+
 
     /* Estado_General: SIN CAMBIOS respecto a v3 (Ca/Zn/B/P informativos; el triage no se altera) */
     CASE
