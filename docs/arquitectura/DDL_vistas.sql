@@ -3138,21 +3138,47 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(m.HorasComponente AS decimal(18,0))),N'—')
            + N' | ' + ISNULL(FORMAT(m.FechaMuestreo,'dd-MMM-yy'),N'—') + N' |' AS nvarchar(max)) AS rowMD
     FROM mg m
+    /* J (29/09): los metales observados salen AGRUPADOS POR FAMILIA, como pidio Carlos:
+           Desgaste: Fe(232.6), PQ(233.2) · Contaminacion: Si(8.1)
+       El grupo NO se escribe a mano: sale de vw_FormatoParametro, que es donde vive el formato
+       oficial del area. Importa porque el grupo DEPENDE DEL COMPONENTE (el Ca es contaminante
+       en Motor de Traccion y aditivo en el resto), y una lista fija se equivocaria.
+       El CROSS APPLY con TOP 1 busca primero la fila del CompTipo propio y cae a '(CRUZADO)'
+       si ese componente no esta en el formato -- MANDO y TRANSMISION no lo estan, y sin ese
+       fallback sus metales desaparecerian de la celda sin ruido.
+       ⛔ SIGUEN SIENDO LOS MISMOS 9 PARAMETROS, a proposito: son exactamente los que decide
+       Estado_General, asi que el chip y la celda no pueden contradecirse. Ampliar el triage a
+       aditivos e ISO (que ya tienen limite y estado tras el bloque D) exige ANTES decidir si
+       esos disparan Estado_General; si no, una fila saldria verde y a la vez listaria un
+       aditivo fuera de limite -- que es el bug E0 de la ronda anterior. */
     OUTER APPLY (
-        SELECT STRING_AGG(CONVERT(nvarchar(max), v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'), N' · ')
-                   WITHIN GROUP (ORDER BY v.ord) AS metals
-        FROM (VALUES
-            (N'Fe',1,m.Fe_ppm,m.Estado_Fe),
-            (N'PQ',2,m.Indice_PQ,m.Estado_PQ),
-            (N'Cr',3,m.Cr_ppm,m.Estado_Cr),
-            (N'Ni',4,m.Ni_ppm,m.Estado_Ni),
-            (N'Cu',5,m.Cu_ppm,m.Estado_Cu),
-            (N'Pb',6,m.Pb_ppm,m.Estado_Pb),
-            (N'Sn',7,m.Sn_ppm,m.Estado_Sn),
-            (N'Al',8,m.Al_ppm,m.Estado_Al),
-            (N'Si',9,m.Si_ppm,m.Estado_Si)
-        ) v(metal, ord, val, est)
-        WHERE v.est IN ('CRITICO','PRECAUCION')
+        SELECT STRING_AGG(CONVERT(nvarchar(max), g.txt), N' · ')
+                   WITHIN GROUP (ORDER BY g.GrupoOrden) AS metals
+        FROM (
+            SELECT ff.Grupo, ff.GrupoOrden,
+                   ff.Grupo + N': '
+                 + STRING_AGG(CONVERT(nvarchar(max), v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'), N', ')
+                       WITHIN GROUP (ORDER BY ff.Orden) AS txt
+            FROM (VALUES
+                (N'Fe',m.Fe_ppm,m.Estado_Fe),
+                (N'PQ',m.Indice_PQ,m.Estado_PQ),
+                (N'Cr',m.Cr_ppm,m.Estado_Cr),
+                (N'Ni',m.Ni_ppm,m.Estado_Ni),
+                (N'Cu',m.Cu_ppm,m.Estado_Cu),
+                (N'Pb',m.Pb_ppm,m.Estado_Pb),
+                (N'Sn',m.Sn_ppm,m.Estado_Sn),
+                (N'Al',m.Al_ppm,m.Estado_Al),
+                (N'Si',m.Si_ppm,m.Estado_Si)
+            ) v(metal, val, est)
+            CROSS APPLY (
+                SELECT TOP 1 f.Grupo, f.GrupoOrden, f.Orden
+                FROM [dbo].[vw_FormatoParametro] f
+                WHERE f.Parametro = v.metal AND f.CompTipo IN (m.CompTipo, N'(CRUZADO)')
+                ORDER BY CASE WHEN f.CompTipo = m.CompTipo THEN 0 ELSE 1 END
+            ) ff
+            WHERE v.est IN ('CRITICO','PRECAUCION')
+            GROUP BY ff.Grupo, ff.GrupoOrden
+        ) g
     ) mm
 ),
 sec AS (   -- una seccion por (Proyecto, ModeloG, CompTipo, modelo real): sub-titulo (solo en '(todos)') + tabla

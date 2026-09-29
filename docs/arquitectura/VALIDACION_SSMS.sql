@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   155 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   156 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -175,6 +175,7 @@
      BLOQUE 152  PASO 3 (L4): el ranking y el <modelo> -- H3 y el tope silencioso
      BLOQUE 153  PASO 4 (C): reconocimiento ANTES de escribir el Acum
      BLOQUE 154  PASO 4 (C): el Acum desplegado
+     BLOQUE 155  PASO 5 (J): el triage agrupa los metales por familia
    ============================================================================ */
 
 /* ============================================================================
@@ -5813,3 +5814,55 @@ GO
 --         y la vista nueva por si sola cuesta 852 ms. La deuda es otra y esta identificada por
 --         el radar de check_ddl: vw_TendenciaMD.rowcte x2 · limcte x2 · obslast x2.
 --         Va al mismo saco que vw_DiagnosticoMD, despues de la presentacion del 02/10.
+
+
+-- ==== BLOQUE 155 - PASO 5 (J): el triage agrupa los metales por familia ====
+-- QUE CAMBIO: la celda 'Metales Obs.' pasa de una lista plana  Fe(232.6) · Ca(76.0)
+--   a una agrupada por familia:  Desgaste: Fe(232.6), PQ(233.2) · Contaminacion: Si(8.1)
+--   El grupo sale de vw_FormatoParametro (el formato oficial del area), NO de una lista fija:
+--   importa porque el grupo DEPENDE DEL COMPONENTE (el Ca es contaminante en MT y aditivo en
+--   el resto). Con fallback a '(CRUZADO)' para MANDO y TRANSMISION, que no estan en el formato.
+-- ⛔ SIGUEN SIENDO LOS MISMOS 9 PARAMETROS, a proposito: ver la nota del bloque 155.4.
+
+-- 155.1 ⭐ COMO SE VE AHORA. Triage MT de Antapaccay: los observados deben salir agrupados.
+SELECT LEFT(MD, 1400) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+-- 155.2 ⭐ EL CASO CON DOS FAMILIAS. En MODI de Antapaccay el CA3196 tenia Al(2.1) y Si(6.8):
+--   Al es Desgaste y Si es Contaminacion, asi que la celda debe partirse en dos grupos.
+SELECT LEFT(MD, 1200) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'MOTOR';
+GO
+-- 155.3 ⚠ EL FALLBACK. Un componente que NO esta en el formato por-componente (MANDO,
+--   TRANSMISION) debe seguir mostrando sus metales, tomando el grupo de '(CRUZADO)'.
+--   Si la celda sale vacia donde antes habia metales, el fallback no funciono.
+SELECT CompTipo, LEFT(MD, 700) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo IN ('MANDO','TRANSMISION');
+GO
+-- 155.4 NO REGRESION DEL CONTEO. El chip (Estado_General) y la celda miran los MISMOS 9
+--   parametros, asi que el "X de N observados" no puede haberse movido.
+--   Referencia del 28/09: Antapaccay TRACCION -> 6 de 54 observados (3 criticos).
+SELECT LEFT(MD, 120) AS Cabecera
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+-- 155.5 COSTE. El CROSS APPLY con TOP 1 se evalua por (fila x metal observado), y
+--   vw_FormatoParametro es una lista de VALUES, no una tabla. Referencia: 1 scan · 1 365
+--   lecturas · ~1 200 ms.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+/* ⛔ LO QUE NO SE HIZO Y POR QUE. Carlos nombro tambien aditivos y codigo de limpieza. Ampliar
+   el triage a esos parametros es facil -- el bloque D ya les dio limite y Estado_* -- pero
+   Estado_General NO los mira. Si entran a la celda sin entrar al contador, una fila puede salir
+   VERDE y a la vez listar "Aditivos: Ca(54.0)". Eso es exactamente el bug E0 de la ronda
+   anterior: el contador dice una cosa y la tabla otra.
+   => Ampliar el triage queda ATADO a decidir si los parametros nuevos disparan Estado_General,
+   que es la misma decision que quedo abierta en el bloque D. Se decide con el area, no se
+   improvisa. */

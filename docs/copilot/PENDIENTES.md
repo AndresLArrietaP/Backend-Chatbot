@@ -85,7 +85,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **2b** | **L5** · avisar cuando el modelo **no tiene límites** | ✅ **CERRADO** (151, coste cero) | **151** | determinista |
 | **3** | **L4** · `/ranking` gana `‹modelo›` | ✅ **SQL CERRADO** (152) — el resto es Copilot | **152** | determinista |
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **CERRADO** (154) | **154** | determinista + rendimiento |
-| **5** | **J** · triage: agrupar metales por familia | ✍ escribir | visual | determinista |
+| **5** | **J** · triage: agrupar metales por familia | ✅ **escrito** — falta ver | **155** | determinista |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✍ escribir | visual | determinista |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -242,8 +242,22 @@ el `Acum` **no lo empeoró**. La deuda está identificada por el radar:
 
 ---
 
-**5 · J** — Prefijar la familia dentro de la celda: `Desgaste: Fe(231.8) · Aditivos: Ca(54.0)`, en el
-orden del formato. No ensancha la tabla.
+**5 · J** — ✅ **escrito el 29/09 (BLOQUE 155).** La celda `Metales Obs.` pasa de lista plana a
+agrupada: `Desgaste: Fe(232.6), PQ(233.2) · Contaminacion: Si(8.1)`. No ensancha la tabla.
+
+📌 **El grupo no se escribe a mano: sale de `vw_FormatoParametro`.** Importa, porque el grupo **depende
+del componente** — el `Ca` es contaminante en Motor de Tracción y aditivo en el resto — y una lista fija
+se equivocaría. Con fallback a `(CRUZADO)` para `MANDO` y `TRANSMISION`, que no están en el formato
+por-componente: sin ese fallback sus metales desaparecerían de la celda **sin ruido**.
+
+⛔ **Lo que NO se hizo, y por qué.** Carlos nombró también **aditivos** y **código de limpieza**. Ampliar
+el triage a esos es fácil —el bloque D ya les dio límite y `Estado_*`— pero **`Estado_General` no los
+mira**. Si entran a la celda sin entrar al contador, una fila puede salir **verde** y a la vez listar
+`Aditivos: Ca(54.0)`. **Eso es exactamente el bug E0** de la ronda anterior: el contador dice una cosa y
+la tabla otra.
+
+⇒ Ampliar el triage queda **atado** a decidir si los parámetros nuevos disparan `Estado_General` — la
+misma decisión que quedó abierta en **D**. Se decide con el área, no se improvisa.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo
