@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   149 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   151 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -169,6 +169,8 @@
      BLOQUE 146  CURA de la regresion: unpv de vw_DiagnosticoMD reestructurado
      BLOQUE 147  BLOQUE L: donde se pierde el filtro de <modelo>
      BLOQUE 148  PASO 1: vw_DiagnosticoMD consolidada -- MEDIR los scans
+     BLOQUE 149  PASO 1: re-medicion tras el fix del raw
+     BLOQUE 150  PASO 2 (L3): '(todos)' = los modelos con limites cargados
    ============================================================================ */
 
 /* ============================================================================
@@ -5331,3 +5333,58 @@ GO
 --   se re-deriva igual. La unica cura real seria reescribir la vista anidando derived tables.
 --   ⏸ APARCADO a proposito hasta despues de la presentacion del 02/10: 12-20 s no bloquea (el
 --   conector muere a los 120 s) y los pasos 2-8 son los que se VEN. Deuda medida y con cura escrita.
+
+
+-- ==== BLOQUE 150 - PASO 2 (L3): '(todos)' = los modelos CON LIMITES ====
+-- QUE CAMBIO: los 9 sitios que expandian con CROSS APPLY (VALUES (Modelo),(N'(todos)')) ahora
+--   solo emiten la fila '(todos)' si ese proyecto+modelo tiene fila en [Eqpcare].[lc].
+--   La fila POR-MODELO no se toca: si el usuario nombra un modelo, sale igual aunque no tenga
+--   limites. Solo cambia el DEFAULT.
+-- POR QUE (bloque 147.4): Antapaccay tiene 6 modelos y solo 3 con limites. Los otros 12 equipos
+--   (930E, HD1500, WA900) salen TODOS en verde porque no hay con que evaluarlos.
+
+-- 150.1 SMOKE de la vista de apoyo. Ahora lee lc DIRECTO (64 filas, sin agregados).
+SELECT ProyKey, ModeloKey FROM [dbo].[vw_ModeloConLimites] ORDER BY ProyKey, ModeloKey;
+GO
+-- 150.2 ⭐ LA PRUEBA QUE IMPORTA: el triage por defecto ya NO debe traer la seccion del 930E.
+--   ANTES el MD incluia "### 930E · 18 equipos (0 obs)". Ahora no deberia aparecer.
+SELECT CASE WHEN MD LIKE '%930E%'   THEN 'SIGUE SALIENDO 930E'   ELSE 'ok: sin 930E'   END AS Chk930,
+       CASE WHEN MD LIKE '%HD1500%' THEN 'SIGUE SALIENDO HD1500' ELSE 'ok: sin HD1500' END AS ChkHD,
+       CASE WHEN MD LIKE '%WA900%'  THEN 'SIGUE SALIENDO WA900'  ELSE 'ok: sin WA900'  END AS ChkWA,
+       LEN(MD) AS LargoMD
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+-- 150.3 ⭐ Y QUE NOMBRAR UN MODELO SIN LIMITES SIGA FUNCIONANDO. Esto es lo que NO se puede
+--   romper: la fila por-modelo nunca se quita. Debe devolver el 930E, con sus equipos.
+SELECT LEN(MD) AS LargoMD, LEFT(MD, 120) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%930E%' AND CompTipo = 'TRACCION';
+GO
+-- 150.4 NO REGRESION del barrido. El resumen contaba 18 equipos observados con '(todos)'.
+--   Los 12 equipos sin limites no tenian ningun observado, asi que deberia seguir en 18.
+--   Si baja, hay que entender por que antes de darlo por bueno.
+SELECT '(todos)' AS Caso, LEN(MD) AS LargoMD, LEFT(MD, 100) AS Inicio
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%'
+UNION ALL
+SELECT '980', LEN(MD), LEFT(MD, 100)
+FROM [dbo].[vw_ObservadosResumenMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%980%';
+GO
+-- 150.5 EL CONTEO tambien cambia de universo por defecto: antes sumaba los 6 modelos.
+SELECT LEFT(MD, 150) FROM [dbo].[vw_ConteoFlotaMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+-- 150.6 ⚠ MEDIR. El EXISTS se evalua POR FILA en vistas de flota. La vista de apoyo son 64
+--   filas sin agregados, deberia ser gratis -- pero esta ronda ya pago 6 minutos por dar algo
+--   por gratis. Referencia del triage: 860 ms / 1 scan (antes de esta ronda), 1 091 ms el 28/09.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SELECT LEFT(MD, 80) FROM [dbo].[vw_ObservadosBarridoMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO

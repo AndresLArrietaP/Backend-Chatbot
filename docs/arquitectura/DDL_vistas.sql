@@ -384,8 +384,22 @@ GO
    Es DATA-DRIVEN a proposito: no hay una lista de modelos escrita en ningun sitio, asi que
    el dia que el area cargue otro proyecto o retire un modelo, esto se entera solo.
    Tabla diminuta (lc tiene 64 filas -> ~15 pares distintos): un EXISTS contra esto es gratis. */
+/* ⚑ EL ROLLUP '(todos)' YA NO ES "TODOS LOS MODELOS" (L3, 29/09).
+   Pasa a ser "los modelos que el area tiene aterrizados", es decir los que tienen fila en
+   [Eqpcare].[lc]. Las 9 vistas de flota que expanden con CROSS APPLY consultan esta vista.
+   POR QUE: medido en el bloque 147.4, Antapaccay tiene 6 modelos y solo 3 con limites:
+       980E (27 eq.) · D475A (5) · PC1250 (4)   |   930E (9) · HD1500 (2) · WA900 (1)
+   Los 12 sin limites salen TODOS en verde porque no hay con que evaluarlos -- se ven hoy
+   como "### 930E · 18 equipos (0 obs)" en el triage. Es ruido, no salud. Y suelen ser
+   equipos que KMMP no gestiona: la mina carga su flota entera, Komatsu o CAT.
+   ⛔ Si el usuario NOMBRA un modelo, sale igual aunque no tenga limites: el filtro del flujo
+   compara contra la fila por-modelo, que nunca se quita. Solo cambia el DEFAULT.
+   Lee [Eqpcare].[lc] DIRECTO (64 filas, sin agregados) y no vw_LimitesPorComponente, que es
+   un GROUP BY de 60+ agregados: esto se evalua por fila en vistas de flota. */
 CREATE OR ALTER VIEW [dbo].[vw_ModeloConLimites] AS
-SELECT DISTINCT ProyKey, ModeloKey FROM [dbo].[vw_LimitesPorComponente];
+SELECT DISTINCT UPPER(LTRIM(RTRIM([Proyecto]))) AS ProyKey,
+                UPPER(LTRIM(RTRIM([MODELO])))   AS ModeloKey
+FROM [Eqpcare].[lc];
 GO
 
 
@@ -1469,7 +1483,12 @@ WITH obsf AS (   -- PERF: 1 sola lectura de vw_ObservadosFlota (f + obsf2/metrow
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
         o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
-    FROM [dbo].[vw_ObservadosFlota] o CROSS APPLY (VALUES (o.Modelo),(N'(todos)')) mg(ModeloG)
+    FROM [dbo].[vw_ObservadosFlota] o CROSS APPLY (SELECT o.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(o.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(o.Modelo))))) mg
     WHERE o.Estado_General <> 'OK'
 ),
 f AS (
@@ -1612,7 +1631,12 @@ cnt AS (
         COUNT(*) AS NumEquipos,
         SUM(CASE WHEN NumCrit > 0 THEN 1 ELSE 0 END) AS NumEquiposCriticos,
         SUM(CASE WHEN NumCrit = 0 AND NumPrec > 0 THEN 1 ELSE 0 END) AS NumEquiposSoloPrecau
-    FROM [dbo].[vw_ObservadosResumen] CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG) GROUP BY Proyecto, mg.ModeloG
+    FROM [dbo].[vw_ObservadosResumen] CROSS APPLY (SELECT Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(Modelo))))) mg GROUP BY Proyecto, mg.ModeloG
 )
 SELECT
     ta.Proyecto, ta.Modelo,
@@ -1669,7 +1693,12 @@ WITH r AS (
           + N' |'
         AS nvarchar(max)) AS filaMD
     FROM [dbo].[vw_ObservadosResumen]
-    CROSS APPLY (VALUES (Modelo),(N'(todos)')) mg(ModeloG)
+    CROSS APPLY (SELECT Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(Modelo))))) mg
 ),
 tabla AS (
     SELECT Proyecto, Modelo,
@@ -1688,7 +1717,12 @@ obsf AS (   -- PERF: 1 sola lectura de vw_ObservadosFlota (obsf2/metrows derivan
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
         o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
-    FROM [dbo].[vw_ObservadosFlota] o CROSS APPLY (VALUES (o.Modelo),(N'(todos)')) mg(ModeloG)
+    FROM [dbo].[vw_ObservadosFlota] o CROSS APPLY (SELECT o.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(o.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(o.Modelo))))) mg
     WHERE o.Estado_General <> 'OK'
 ),
 obsf2 AS (   /* PERF 2026-09-19: 'sev' por FUNCION DE VENTANA. Reemplaza al CTE compsev y a su JOIN contra
@@ -3023,7 +3057,12 @@ WITH base AS (   -- BASE LIGERA: rankeadas rn=1 (1 pasada de la fundacion); TODO
     WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
 ),
 mg AS (   -- expandir a (modelo real) + (todos)
-    SELECT b.*, g.ModeloG FROM base b CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) g(ModeloG)
+    SELECT b.*, g.ModeloG FROM base b CROSS APPLY (SELECT b.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(b.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(b.Modelo))))) g
 ),
 rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SOBRE LA MISMA FILA
              -- (OUTER APPLY), no en un CTE aparte al que luego haya que volver con un JOIN.
@@ -3232,7 +3271,12 @@ WITH base AS (   -- ultima muestra por equipo+comp (sin DDI), duplicada por mode
         CASE WHEN b.Estado_General LIKE '%PRECAUC%' THEN 1 ELSE 0 END AS esPrec,
         CASE WHEN b.Estado_General NOT LIKE '%OK%' AND b.Estado_General NOT LIKE '%NORMAL%' THEN 1 ELSE 0 END AS esObs
     FROM [dbo].[vw_MuestrasRankeadas] b
-    CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) mg(ModeloG)
+    CROSS APPLY (SELECT b.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(b.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(b.Modelo))))) mg
     WHERE b.rn_recencia = 1
 ),
 comprow AS (   -- por componente (data-driven)
@@ -3281,7 +3325,12 @@ WITH s AS (   -- ultima muestra por equipo+comp (sin DDI), metales normalizados,
     SELECT b.Proyecto, mg.ModeloG AS Modelo, b.Equipo, b.CompTipo,
         p.metal, p.Orden, CAST(p.val AS decimal(18,2)) AS val, CAST(p.lp AS decimal(18,2)) AS lp, CAST(p.lc AS decimal(18,2)) AS lc
     FROM [dbo].[vw_MuestrasRankeadas] b
-    CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) mg(ModeloG)
+    CROSS APPLY (SELECT b.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(b.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(b.Modelo))))) mg
     CROSS APPLY (VALUES
             (N'Fe',1,Fe_ppm,Fe_LP,Fe_LC),
             (N'PQ',2,Indice_PQ,PQ_LP,PQ_LC),
@@ -3360,7 +3409,12 @@ WITH base AS (
         b.FechaMuestreo, b.HorasComponente, b.CM, b.Estado_General, b.Mets_Obs, b.Infs_Obs,
         CASE WHEN b.Estado_General='CRITICO' THEN 1 ELSE 2 END AS sev
     FROM [dbo].[vw_ObservadosFlota] b
-    CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) mg(ModeloG)
+    CROSS APPLY (SELECT b.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(b.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(b.Modelo))))) mg
     WHERE b.Estado_General <> 'OK'
 ),
 rows_ AS (
@@ -3432,7 +3486,12 @@ WITH base AS (
     WHERE u.Compartimiento IS NOT NULL AND LTRIM(RTRIM(u.Compartimiento)) <> '' AND p.Valor IS NOT NULL
 ),
 mg AS (
-    SELECT b.*, g.ModeloG FROM base b CROSS APPLY (VALUES (b.Modelo),(N'(todos)')) g(ModeloG)
+    SELECT b.*, g.ModeloG FROM base b CROSS APPLY (SELECT b.Modelo AS ModeloG
+             UNION ALL
+             SELECT N'(todos)' WHERE EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(b.Proyecto)))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(b.Modelo))))) g
 ),
 mr AS (   -- limite de REFERENCIA del grupo (para juzgar filas cuyo LP/LC propio viene NULL).
           -- SOLO dentro de UN modelo (mismo limite); en '(todos)' NO se cruza (modelos distintos = limites distintos,
