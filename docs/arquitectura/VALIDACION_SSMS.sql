@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   141 bloques · índice regenerado el 25/09/2026; bloques 136-140 añadidos el 28/09.
+   143 bloques · índice regenerado el 25/09/2026; bloques 136-142 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -161,6 +161,8 @@
      BLOQUE 138  los 22 limites que lc SI tiene y la fundacion NO lee
      BLOQUE 139  COBERTURA de limites por proyecto/componente/modelo
      BLOQUE 140  H3/H4: el scope del ranking y el parametro Hollin
+     BLOQUE 141  las columnas *_Acum de la tabla: atajo para el bloque C?
+     BLOQUE 142  D7.3: de los 13 valores "nuevos", cuales traen dato de verdad
    ============================================================================ */
 
 /* ============================================================================
@@ -4746,4 +4748,104 @@ WHERE c.object_id = OBJECT_ID('[Oil].[LaboratoryData]')
        OR c.name LIKE '%ISO%' OR c.name LIKE '%V40%' OR c.name LIKE '%Agua%'
        OR c.name LIKE '%H2%' OR c.name LIKE '%Mo[_]%')
 ORDER BY c.name;
+GO
+
+
+-- ==== BLOQUE 141 - Las columnas *_Acum de la tabla: atajo para el bloque C? ====
+-- POR QUE: [Oil].[LaboratoryData] trae Fe_Acum, Cr_Acum, Pb_Acum, Cu_Acum, Sn_Acum, Al_Acum y Si_Acum
+--   -- acumulados YA CALCULADOS que nunca miramos. Carlos dijo "el campo esta calculado en el BI y no
+--   esta en la base de datos"; puede que sea esto, o su origen.
+-- SI Fe_Acum de la ultima muestra En Uso del CA3195 MT LH da 3718.6 -> el bloque C se reduce a LEER UNA
+--   COLUMNA en vez de sumar 9 anos de historia, y desaparece el riesgo de rendimiento de 137.3.
+-- CORRER ESTO ANTES QUE EL BLOQUE C.
+SELECT TOP (20) LD.[FechaMuestreo], LD.[CM], LD.[ComponentStatus],
+       LD.[Fe_ppm], LD.[Fe_Acum], LD.[Cr_Acum], LD.[Pb_Acum], LD.[Cu_Acum],
+       LD.[Sn_Acum], LD.[Al_Acum], LD.[Si_Acum],
+       LD.[HorasComponenteParcial], LD.[HorasComponenteAcumulado], LD.[ComponentSerialNumber]
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] = 'CA3195' AND LD.[Compartimiento] LIKE '%TRACCION%LH'
+ORDER BY LD.[FechaMuestreo] DESC;
+GO
+-- 141.2 Que tan poblada esta la columna? Si viene NULL en la mayoria, no sirve de atajo.
+SELECT COUNT(*) AS Filas,
+       SUM(CASE WHEN LD.[Fe_Acum]      IS NULL THEN 0 ELSE 1 END) AS ConFeAcum,
+       SUM(CASE WHEN LD.[ComponentStatus] IS NULL THEN 0 ELSE 1 END) AS ConStatus,
+       SUM(CASE WHEN LD.[ComponentSerialNumber] IS NULL THEN 0 ELSE 1 END) AS ConSerie,
+       SUM(CASE WHEN LD.[HorasComponenteAcumulado] IS NULL THEN 0 ELSE 1 END) AS ConHrsAcum
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+WHERE MP.[Name] LIKE '%Antapaccay%';
+GO
+-- 141.3 Si Fe_Acum sirve: cuadra con la suma manual del BLOQUE 137? Los dos numeros, lado a lado.
+SELECT ult.[Fe_Acum] AS AcumDeLaColumna,
+       (SELECT CAST(SUM(x.[Fe_ppm]) AS decimal(18,1))
+        FROM [Oil].[LaboratoryData] x WITH (NOLOCK)
+        WHERE x.[MiningEquipmentId] = ult.[MiningEquipmentId]
+          AND x.[Compartimiento] = ult.[Compartimiento]
+          AND x.[ComponentStatus] = ult.[ComponentStatus]
+          AND x.[CM] IN ('ADI','C')) AS SumaManual
+FROM (SELECT TOP (1) LD.*
+      FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+      JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+      WHERE ME.[Code] = 'CA3195' AND LD.[Compartimiento] LIKE '%TRACCION%LH'
+      ORDER BY LD.[FechaMuestreo] DESC) ult;
+GO
+
+
+-- ==== BLOQUE 142 - D7.3: de los 13 valores "nuevos", cuales traen dato de verdad ====
+-- POR QUE: FORMATO_POR_COMPONENTE decia que estos 13 no estaban en la BD. Si estan (columnas con otro
+--   nombre). Pero "existe la columna" no es "hay dato": antes de agregar 13 filas al formato hay que
+--   saber cuales vienen siempre vacias, para no llenar la tabla de guiones.
+-- Se mide por COMPONENTE, porque la respuesta cambia (ISO no se mide en el motor de Antapaccay; el TAN
+--   no se mide en MT; el PQ no se mide en hidraulico...).
+SELECT CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%' THEN 'TRACCION'
+            WHEN LD.[Compartimiento] LIKE '%RUEDA%'    THEN 'RUEDA'
+            WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'  THEN 'HIDRAULICO'
+            WHEN LD.[Compartimiento] LIKE 'MOTOR%'     THEN 'MOTOR'
+            ELSE 'OTRO' END AS CompTipo,
+       COUNT(*) AS Muestras,
+       SUM(CASE WHEN LD.[Viscosidad40] IS NULL THEN 0 ELSE 1 END) AS V40,
+       SUM(CASE WHEN LD.[TAN]          IS NULL THEN 0 ELSE 1 END) AS TAN,
+       SUM(CASE WHEN LD.[Oxidacion]    IS NULL THEN 0 ELSE 1 END) AS Oxi,
+       SUM(CASE WHEN LD.[Sulfatacion]  IS NULL THEN 0 ELSE 1 END) AS Sulf,
+       SUM(CASE WHEN LD.[Nitracion]    IS NULL THEN 0 ELSE 1 END) AS Nit,
+       SUM(CASE WHEN LD.[Mo_ppm]       IS NULL THEN 0 ELSE 1 END) AS Mo,
+       SUM(CASE WHEN LD.[Agua]         IS NULL THEN 0 ELSE 1 END) AS Agua,
+       SUM(CASE WHEN LD.[Hollin]       IS NULL THEN 0 ELSE 1 END) AS Hollin,
+       SUM(CASE WHEN LD.[Diesel]       IS NULL THEN 0 ELSE 1 END) AS Diesel,
+       SUM(CASE WHEN LD.[Refrigerante] IS NULL THEN 0 ELSE 1 END) AS Refrig,
+       SUM(CASE WHEN LD.[Iso4406_4]    IS NULL THEN 0 ELSE 1 END) AS ISO4,
+       SUM(CASE WHEN LD.[Iso4406_6]    IS NULL THEN 0 ELSE 1 END) AS ISO6,
+       SUM(CASE WHEN LD.[Iso4406_14]   IS NULL THEN 0 ELSE 1 END) AS ISO14
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+WHERE MP.[Name] LIKE '%Antapaccay%'
+  AND LD.[FechaMuestreo] >= DATEADD(MONTH, -12, GETDATE())   -- misma ventana que la fundacion
+GROUP BY CASE WHEN LD.[Compartimiento] LIKE '%TRACCION%' THEN 'TRACCION'
+              WHEN LD.[Compartimiento] LIKE '%RUEDA%'    THEN 'RUEDA'
+              WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'  THEN 'HIDRAULICO'
+              WHEN LD.[Compartimiento] LIKE 'MOTOR%'     THEN 'MOTOR'
+              ELSE 'OTRO' END
+ORDER BY CompTipo;
+GO
+-- 142.2 Lo mismo para Antamina, que mide cosas distintas (las dos viscosidades, por ejemplo).
+--       Confirma la regla de Carlos: "va a depender de la mina".
+SELECT COUNT(*) AS Muestras,
+       SUM(CASE WHEN LD.[V100]         IS NULL THEN 0 ELSE 1 END) AS V100,
+       SUM(CASE WHEN LD.[Viscosidad40] IS NULL THEN 0 ELSE 1 END) AS V40,
+       SUM(CASE WHEN LD.[TAN]          IS NULL THEN 0 ELSE 1 END) AS TAN,
+       SUM(CASE WHEN LD.[Iso4406_4]    IS NULL THEN 0 ELSE 1 END) AS ISO4
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+JOIN [Mine].[MiningEquipment] ME WITH (NOLOCK) ON ME.[Id] = LD.[MiningEquipmentId]
+JOIN [Mine].[MiningProject]   MP WITH (NOLOCK) ON MP.[Id] = ME.[MiningProjectId]
+WHERE MP.[Name] LIKE '%Antamina%'
+  AND LD.[FechaMuestreo] >= DATEADD(MONTH, -12, GETDATE());
+GO
+-- 142.3 El Refrigerante: se mapea a 'Glycol - LP/LC' de lc? Ver si alguno de los dos trae algo.
+SELECT TOP (20) LD.[Refrigerante], LD.[GLYCOL], LD.[PorcentajeGlicol_cinta], LD.[Compartimiento]
+FROM [Oil].[LaboratoryData] LD WITH (NOLOCK)
+WHERE LD.[Refrigerante] IS NOT NULL OR LD.[GLYCOL] IS NOT NULL;
 GO

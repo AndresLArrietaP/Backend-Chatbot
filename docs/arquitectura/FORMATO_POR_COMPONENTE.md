@@ -136,8 +136,38 @@
 | 26 | Desgaste | Plomo (Pb) | `Pb` |
 | 27 | Desgaste | Estaño (Sn) | `Sn` |
 
-## Parámetros que el formato pide y **no tenemos** en la BD
-`V40` (viscosidad 40°C) · `TAN` · `Oxidacion` · `Sulfatacion` · `Nitracion` · `Mo` · `Agua` ·
-`Hollin` · `Diesel` · `Refrigerante` · `ISO4`/`ISO6`/`ISO14`.
-→ Decisión pendiente: **ocultar la fila** (coherente con «parámetros con nulos, cortar fila») o
-mostrarla con `—`. ⛔ No inventar el dato.
+## 🔴 CORREGIDO (28/09) — los 13 parámetros «que faltaban» SÍ están en la BD
+
+> La versión del 23/09 de este documento decía que estos 13 parámetros del formato «no los tenemos en la
+> BD». **Es falso**: nunca se cruzaron contra `ESQUEMA_BD.xlsx`. Los 13 existen en
+> `[Oil].[LaboratoryData]`, solo que con otro nombre de columna — y **todos tienen además su límite** en
+> `[Eqpcare].[lc]`.
+
+| El formato pide | Columna real en `[Oil].[LaboratoryData]` | Límite en `[Eqpcare].[lc]` |
+|---|---|---|
+| `V40` | `Viscosidad40` | `VISC40 - LPI/LCI/LPS/LCS` |
+| `TAN` | `TAN` | `TAN - LP/LC` |
+| `Oxidacion` | `Oxidacion` | `OXI - LP/LC` |
+| `Sulfatacion` | `Sulfatacion` | `SULF - LP/LC` |
+| `Nitracion` | `Nitracion` | `NIT - LP/LC` |
+| `Mo` | `Mo_ppm` | `MOLIBDENO - LP/LC` |
+| `Agua` | `Agua` | `H20 - LP/LC` |
+| `Hollin` | `Hollin` | `HOLLIN - LP/LC` |
+| `Diesel` | `Diesel` | `Diesel - LP/LC` |
+| `Refrigerante` | `Refrigerante` | `Glycol - LP/LC` (a confirmar) |
+| `ISO4` · `ISO6` · `ISO14` | `Iso4406_4` · `Iso4406_6` · `Iso4406_14` | `ISO 4um/6um/14um - LP/LC` |
+
+⇒ **Ningún parámetro del formato se queda sin dato ni sin límite.** Lo que había era un mapeo a medias en
+las dos puntas: la fundación proyecta **18 de los 31** parámetros del formato, y `vw_LimitesPorComponente`
+lee **16 de los 38** que trae `lc`. Se arregla en el **bloque D** de
+[PENDIENTES](../copilot/PENDIENTES.md).
+
+**Qué hacer con una fila sin dato** (decisión del 28/09 — son tres casos, no dos):
+
+| Caso | Valor | Límite | Se muestra |
+|---|---|---|---|
+| El parámetro **no se mide** en ese componente | ∅ | ∅ | la fila **no sale** |
+| Hay valor pero **no hay límite cargado** | hay | ∅ | el valor, y en el límite `s/l` |
+| Hay límite pero **esta muestra no lo trae** | ∅ | hay | `·` en el valor y **el límite visible** |
+
+⛔ No inventar el dato.

@@ -83,48 +83,159 @@ mismos 18 equipos — ahí el parámetro se acepta y **se ignora**. → **Bloque
 
 # Los bloques
 
-## 🅳 Bloque D — los 22 parámetros de límite que nunca se leyeron  ⭐ RAÍZ
+## 🅳 Bloque D — los límites que faltan  ⭐ RAÍZ · **ABIERTO 28/09**
 
-**Qué hacer:** ampliar `vw_LimitesPorComponente` con los 22 pares que faltan y propagarlos a la tabla de
-parámetros de cada vista. Aditivo, SQL puro.
+### En una frase
 
-**Lo que Carlos precisó de cada uno (audio 09.14):**
+**El dato está. No lo leemos.** Ni los límites ni, resulta, la mitad de los valores.
 
-- **Fósforo (`P`) es INVERSO** — `LP 280 / LC 240`. Parte de un número y se vigila que **no caiga**. Ya
-  está en la lista `Inv`, pero sin límite mapeado nunca se evaluó.
-- **Viscosidad: cuatro niveles, no dos** — `LC inferior · LP inferior · LP superior · LC superior`. Parte
-  con un valor y puede irse para arriba o para abajo; se vigila que se mantenga **en la banda entre los
-  precautorios**.
-  ⚠ **No es igual por componente:** en **MT solo existe el crítico** (así está en el manual); en **motor
-  diésel van los cuatro**. Personalizar por componente, no aplicar los 4 a todo.
-- **V100 vs V40** — la misma medida a 100 °C y a 40 °C. 100 °C para motores, 40 °C para aceites
-  industriales. **Antapaccay solo mide V100; Antamina mide las dos.** Depende de la mina → mostrar la que
-  tenga dato, nunca asumir.
-- **Código de limpieza ISO 4/6/14** — contador de partículas por tamaño (4, 6, 14 micras). El número es
-  **adimensional y logarítmico**: cada punto **duplica** las partículas (20 ≈ 40 000 → 21 ≈ 80 000). En
-  Antapaccay **el motor no lo mide**; el resto sí.
-- **TAN vs TBN** — el TBN mide reserva alcalina (**solo motor**); el TAN mide acidificación. En Antapaccay
-  el TAN sale en **ruedas e hidráulico**, no en MT. En otras minas puede medirse en todo.
-- **PQ** — en hidráulico y transmisión normalmente **no se mide**; lo sacan esporádicamente cuando la
-  muestra viene con particulado concentrado. Que no salga no es un hueco.
+### El mapa completo, tras auditar la BD
 
-**La regla que ordena todo esto:** un parámetro puede **no medirse** en un componente, y eso es distinto de
-**no tener límite cargado**. Hoy los dos se pintan `—` y se confunden. Hay que distinguirlos.
+| | Qué hay | Qué usamos |
+|---|---|---|
+| **Límites** — `[Eqpcare].[lc]` | **38 parámetros** con su par LP/LC | **16** |
+| **Valores** — `[Oil].[LaboratoryData]` | **107 columnas** | 18 parámetros |
+| **Formato** — `Requerimientos Analisis Aceite 1.xlsx` | **31 parámetros** distintos entre los 4 componentes | 18 |
 
-### ✅ Quién arregla qué (aclarado el 28/09)
+🔴 **Y una corrección a nuestra propia documentación.**
+[FORMATO_POR_COMPONENTE.md](../arquitectura/FORMATO_POR_COMPONENTE.md) cierra diciendo: *«Parámetros que el
+formato pide y **no tenemos** en la BD: V40 · TAN · Oxidacion · Sulfatacion · Nitracion · Mo · Agua ·
+Hollin · Diesel · Refrigerante · ISO4/6/14»*. **Los 13 existen.** Nunca se cruzaron contra el esquema:
+
+| El formato pide | Columna real |  | El formato pide | Columna real |
+|---|---|---|---|---|
+| `V40` | `Viscosidad40` | | `Agua` | `Agua` |
+| `TAN` | `TAN` | | `Hollin` | `Hollin` |
+| `Oxidacion` | `Oxidacion` | | `Diesel` | `Diesel` |
+| `Sulfatacion` | `Sulfatacion` | | `Refrigerante` | `Refrigerante` |
+| `Nitracion` | `Nitracion` | | `ISO4` · `ISO6` · `ISO14` | `Iso4406_4` · `_6` · `_14` |
+| `Mo` | `Mo_ppm` | | | |
+
+⇒ **No hay ningún parámetro del formato sin dato ni sin límite.** Lo que hay es un mapeo a medias, en las
+dos puntas. Esto no cambia el plan, lo **amplía**: D deja de ser «poner los límites» y pasa a ser
+**completar las 31 filas del formato, con su valor y su límite**.
+
+📌 **Y un hallazgo lateral que puede simplificar el bloque C:** la tabla trae
+`Fe_Acum · Cr_Acum · Pb_Acum · Cu_Acum · Sn_Acum · Al_Acum · Si_Acum` — **columnas de acumulado ya
+calculadas**. Carlos dijo «el campo está calculado en el BI y no está en la base de datos»; puede que sea
+justo esto, o su origen. Si `Fe_Acum` de la última muestra en uso del `CA3195 MT LH` da **3 718,6**, el
+bloque C se reduce a **leer una columna** en vez de sumar 9 años. → **BLOQUE 141**, correr antes que C.
+
+### ✅ Quién arregla qué
 
 **Lo nuestro es leer y mostrar.** Lo que falte o esté mal *dentro* de `lc` lo regula **Carlos**, y ya dijo
-que lo hace — p.ej. va a **eliminar los límites de aditivos en las ruedas** («no tiene mucho sentido»),
-recargando desde el externo. **No es nuestra tarea ni nos bloquea.**
+que lo hace — p.ej. va a **eliminar los límites de aditivos en las ruedas** («no tiene mucho sentido»).
+**No es nuestra tarea ni nos bloquea.** Dos consecuencias:
 
-⇒ Dos consecuencias prácticas:
-- El mapeo debe ser **data-driven**: sin fila en `lc`, no hay límite. Nunca una lista fija de parámetros,
-  porque `lc` va a cambiar bajo nuestros pies y no queremos enterarnos por un `NULL` silencioso.
-- Si en el camino **notamos** algo raro del dato, se **reporta**, no se corrige por cuenta propia. Lo que
-  hay hoy en esa lista: el `Pb LP=2 LC=1` de **Cerro Verde MT LH** (invertido y no es aditivo → parece
-  typo), el desajuste **`730E-` vs `730E`** (heredado nº4) y los aditivos de rueda que él ya va a quitar.
+- El mapeo es **data-driven**: sin fila en `lc`, no hay límite. Nunca una lista fija.
+- Lo que **notemos** se **reporta**, no se corrige por cuenta propia. Hoy en esa lista: el `Pb LP=2 LC=1`
+  de **Cerro Verde MT LH** (invertido sin ser aditivo → parece typo), el desajuste **`730E-` vs `730E`** y
+  los aditivos de rueda que él ya va a quitar.
 
-**Verificación:** BLOQUES **138** y **139**.
+---
+
+## El paso a paso
+
+### D1 · Corregir el inventario  ·  *20 min · sin riesgo*
+
+Reescribir el cierre de `FORMATO_POR_COMPONENTE.md` con la tabla de arriba: los 13 existen y estos son sus
+nombres reales. **Es el mapa del que salen todos los pasos siguientes**; si queda mal, todo lo demás
+hereda el error.
+
+### D2 · Ampliar `vw_LimitesPorComponente`  ·  *la pieza clave*
+
+Hoy mapea 16 parámetros de `lc`. Pasa a mapear los **31 del formato**.
+
+⚠ **Y hay una trampa en cómo agrega.** La vista hace `GROUP BY ProyKey, ModeloKey, CompTipo`, o sea que
+colapsa `MOTOR DE TRACCION LH` y `RH` en un solo `TRACCION`, y resuelve el choque con **`MIN()`**. Para un
+límite normal, `MIN` = el más estricto: correcto. **Para un límite invertido, el más estricto es `MAX`** —
+por eso `TBN_LP` ya usa `MAX`.
+
+🔴 **Pero `Ca_LP`, `Zn_LP` y `Mg_LP` usan `MIN` y son invertidos** en Rueda, Hidráulico y Motor Diésel. Es
+un bug latente que nadie había mirado. La regla queda:
+
+> **invertido → `MAX` · normal → `MIN`**, y la dirección se decide **por parámetro y por componente**
+> (`Ca`/`Zn`/`Mg` son aditivos en RD/SH/MODI pero contaminantes en MT).
+
+### D3 · Llevar los 13 valores que faltan a la fundación  ·  ⚠ *el paso de riesgo*
+
+`vw_MuestrasEstado` hoy proyecta 18 parámetros. Hay que sumarle los 13: `Viscosidad40`, `TAN`,
+`Oxidacion`, `Sulfatacion`, `Nitracion`, `Mo_ppm`, `Agua`, `Hollin`, `Diesel`, `Refrigerante`,
+`Iso4406_4/_6/_14` — más sus LP/LC y su `Estado_*`.
+
+⚠ **Es la vista más caliente del sistema: la lee todo.** Pasa de ~18 a ~31 parámetros, y cada uno suma su
+valor, dos límites y un estado. **Medir antes y después, con el operador de producción** (ley 3). Si el
+coste sube, la salida es proyectar los 13 nuevos en una vista aparte que solo consuman las 4 vistas de
+formato, no la fundación entera.
+
+### D4 · La viscosidad, que es el caso raro  ·  *nada de esto existe hoy*
+
+Carlos fue explícito: la viscosidad **no tiene 2 límites, tiene 4** — `LC inferior · LP inferior ·
+LP superior · LC superior`. Parte de un valor y puede irse para arriba **o** para abajo; se vigila que se
+mantenga **dentro de la banda**. `lc` ya los trae: `VISC - LPI/LCI/LPS/LCS` y `VISC40 - LPI/LCI/LPS/LCS`.
+
+```
+valor < LCI  → 🟥 crítico (bajo)      LCI ≤ valor < LPI → 🟨 precaución (bajo)
+LPI ≤ valor ≤ LPS → OK
+LPS < valor ≤ LCS → 🟨 precaución (alto)   valor > LCS → 🟥 crítico (alto)
+```
+
+⚠ **Y no aplica igual a todos:** en **MT solo existe el crítico** («así está establecido en el manual»);
+en **motor diésel van los cuatro**. Se resuelve solo si el mapeo es data-driven: si `lc` no trae `LPI`
+para ese componente, ese nivel no se evalúa. **No hardcodear la excepción.**
+
+📌 Hoy `V100` es **display-only** y no dispara `Estado_General` (se apagó el 07/08 porque los límites solo
+estaban aterrizados en Antapaccay). Con D4 ya hay límites de verdad → **volver a encenderlo**, pero
+después de medir cuántas alertas nuevas aparecen (el 07/08, `V100=0` generó 196 falsos positivos; hay que
+comprobar que `V100=0` siga tratándose como SIN DATO).
+
+### D5 · Distinguir «no se mide» de «sin límite»  ·  *lo que hoy confunde*
+
+Hoy los dos casos se pintan `—` y no se distinguen. Carlos señaló los dos en la misma pantalla. Tres
+estados, tres símbolos:
+
+| Caso | Valor | Límite | Se muestra |
+|---|---|---|---|
+| **No se mide** en ese componente (`PQ` en hidráulico, `ISO` en motor de Antapaccay) | ∅ | ∅ | la fila **no sale** |
+| **Sin límite cargado** (`D11T`, `797F`, Cuajone) | hay | ∅ | el valor, y en el límite `s/l` |
+| **Sin dato en esta muestra** | ∅ | hay | `·` en el valor, **el límite visible** |
+
+⚑ La regla de Carlos: *«si bien el valor del análisis puede dar 0 o null, **el límite ha de estar ahí
+visible**»* → el tercer caso es el que hoy falla y el que más se nota.
+
+### D6 · Propagar a las 4 vistas de formato  ·  *mecánico*
+
+`vw_UltimoAnalisisMD` · `vw_CondicionMT_MD` · `vw_DiagnosticoMD` · `vw_TendenciaMD`. Las filas ya están
+definidas por el formato; lo que cambia es que ahora **tienen valor y límite**.
+
+⚠ De la ronda anterior: el mapa de parámetros está **duplicado en 4 sitios**, y el peor es
+`vw_UltimoAnalisisMD`, que lo tiene **fila por fila, hardcodeado** en la concatenación. Tocar 31
+parámetros ahí a mano es pedir un `Msg 207`. **Antes de D6, unificar el mapa en una sola tabla de
+parámetros** (`vw_FormatoParametro` ya existe y es el sitio). Sale más barato que hacerlo cuatro veces.
+
+### D7 · Validar y desplegar
+
+1. **BLOQUE 138** — el dato está en `lc` para MT y para MOTOR de Antapaccay.
+2. **BLOQUE 139** — cobertura por proyecto/componente/modelo: qué trae cada uno y qué viene `NULL`.
+3. **BLOQUE 142** (nuevo) — de los 13 valores «nuevos», cuáles tienen dato real y cuáles vienen vacíos
+   siempre. Decide qué filas se muestran y cuáles no existen en la práctica.
+4. **Medir** la fundación antes/después (ley 3, `LIKE`).
+5. **BLOQUE 89** — smoke test: un `CREATE VIEW` se guarda aunque su cuerpo sea inválido (ley 5).
+6. Probar en Teams: `/ultimo 3195 mtlh` debe mostrar límite en `P`, `B`, `Mo`, `Agua`, `ISO>4/6/14`, `V40`.
+
+### Criterio de terminado
+
+`/ultimo 3195 mtlh` sin un solo `—` en la columna de límite **salvo** donde el parámetro genuinamente no se
+mide en ese componente — y en ese caso la fila no aparece. Y las 4 vistas de formato diciendo lo mismo.
+
+### Orden y dependencias
+
+```
+D1 ─→ D2 ─→ D3 ─→ D4 ─→ D6 ─→ D7
+        └─→ D5 ──────────┘
+```
+D1 es requisito de todo. D5 se puede hacer en paralelo a D3/D4. **D6 no empieza hasta que el mapa de
+parámetros esté unificado**, o se paga cuatro veces.
 
 ---
 
