@@ -87,7 +87,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **4** | **C** · `Acum` con «En uso» + `CM` por componente | ✅ **CERRADO** (154) | **154** | determinista + rendimiento |
 | **5** | **J** · triage: 5 columnas por familia | ✅ **CERRADO** (155, todo verde) | **155** | determinista |
 | **5b** | **M** · ¿«fuera de límite = observado» para **todo** parámetro? | 🔑 **medido (156): la decisión ya estaba en el código** | **156** · **157** | decisión |
-| **5c** | **N** · enchufar `Inf` en el triage | ✍ **escribir** — cierra E0 de raíz | **157.1** | determinista |
+| **5c** | **N** · enchufar `Inf` en el triage | ✅ **escrito** — falta ver | **162** | determinista |
 | **5d** | **G0** · el `0` no es una medición — 9 guardas | ✅ **CERRADO** (159, clavado a la predicción) | **159** | determinista |
 | **5e** | **P** · las ruedas de Antapaccay → **Carlos** | ✅ **RESUELTO en diagnóstico** (158.4): es otro aceite | **158.4** | dato |
 | **5f** | **G1** · la inversión sale del **grupo**, no del dato — **bug mío del bloque D** | ✅ **CERRADO** (160, 4/4 verde) | **160** | determinista |
@@ -643,6 +643,38 @@ equipos— y filtra después. **Es la ley 3 otra vez**, ahora en una consulta de
 real** (`Equipo`, `Proyecto`, `Compartimiento`, `CompTipo`). Nunca por `compAbbr`. El 161.4, que hace
 `TOP 1` sobre las mismas vistas, tarda **2 s**: el `TOP` corta el render. Bloque reescrito filtrando por
 `Equipo`.
+
+---
+
+## ✅ Paso 5c (N) escrito — BLOQUE 162
+
+El chip y el «X de N observados» del triage **ya no salen de `Estado_General`**: salen de **las mismas
+celdas que se imprimen**, contando solo los parámetros con `Inf = 0`. Mismo arreglo que `vw_CondicionMT_MD`
+lleva desde el BLOQUE 118. ⇒ **E0 cerrado de raíz**: el contador y la tabla leen lo mismo, no pueden
+contradecirse. El pie sigue, pero ya no justifica una contradicción — nombra en prosa los informativos.
+
+⛔ Los `Inf = 1` se imprimen **exactamente igual**, con su valor y **sin ninguna marca**. `Estado_General`
+no se tocó: sigue igual para `/barrido`, `/ranking` y el resto.
+
+### ⚠ Dos cosas que hay que mirar, no dar por buenas
+
+**1 · El número va a subir, y mucho.** El 157.1 midió **48 de 72** con `Inf` respetado, y el 156.2 dice de
+dónde sale: **`ISO>6` marca 48 de los 54** componentes con límite. No es un error — es lo que el área
+configuró (`ISO>6` tiene `Inf=0` en TRACCION) contra el límite que el área cargó (`LP 19 / LC 20`). Pero
+hay que verlo **antes** de que lo vea Carlos. El **162.2b** dice si un solo parámetro explica el salto.
+
+**2 · Rompe la coherencia entre módulos, a propósito.** El triage ya cuenta con las celdas; `/barrido`,
+`/barridodet` y `/ranking` **siguen contando con `Estado_General`**. Van a dar números distintos para la
+misma flota — el síntoma del BLOQUE 122. **No se arregla hoy**: tocar `Estado_General` mientras el límite
+de las ruedas de Antapaccay siga mal convertiría 54 falsos críticos en 54 equipos «observados» en **todos**
+los módulos a la vez. El **162.4** mide el desfase para tenerlo cuantificado.
+
+### ⭐ Y lo mejor que deja este paso
+
+Ahora que el contador **lee** `Inf`, cambiar **qué** cuenta es editar **un valor** en `vw_FormatoParametro`
+— no reescribir una vista. Si Carlos ve el 162.1 y decide que el código de limpieza no debe disparar el
+triage, es poner `ISO>4/6/14` en `Inf = 1` y redesplegar. La conversación pasa de *«hay que rehacer el
+triage»* a *«qué cuenta y qué no»*, que es la que el área sabe contestar.
 
 **6 · B** — En `vw_TendenciaMD` hay que quitar `limcte`, `limbody` y `limbody_rel`.
 ⚠ **Lo que NO se puede perder:** el aviso de «sin límites cargados» (45 combinaciones proyecto+modelo lo

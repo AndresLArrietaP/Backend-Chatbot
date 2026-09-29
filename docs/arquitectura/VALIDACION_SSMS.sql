@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   162 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   163 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -182,6 +182,7 @@
      BLOQUE 159  G0 desplegado: el 0 no es una medicion (9 guardas)
      BLOQUE 160  G1: la inversion se deduce del GRUPO, no del dato
      BLOQUE 161  G2: compAbbr nunca puede salir NULL (el MD venia vacio)
+     BLOQUE 162  PASO 5c (N): el contador del triage sale de las celdas
    ============================================================================ */
 
 /* ============================================================================
@@ -6737,3 +6738,155 @@ GO
    no la solucion: significa que hay muestras cargadas sin componente y eso es un dato para
    Carlos, del mismo saco que los 347 ISO sin medir del 159.2. El SQL deja de mentir; la carga
    sigue incompleta. */
+
+
+-- ==== BLOQUE 162 - PASO 5c (N): el contador del triage sale de las celdas ====
+-- QUE CAMBIO en vw_TriageMD (y SOLO ahi):
+--   El chip 🟥/🟨/🟢 y el "X de N observados" YA NO salen de Estado_General. Salen de las MISMAS
+--   celdas que se imprimen, contando solo los parametros con Inf = 0. Es el mismo arreglo que
+--   vw_CondicionMT_MD lleva desde el BLOQUE 118.
+--   ⇒ E0 CERRADO DE RAIZ: el contador y la tabla leen lo mismo, no pueden contradecirse. El pie
+--     sigue existiendo, pero ya no justifica una contradiccion -- nombra en prosa los parametros
+--     que el area declaro INFORMATIVOS y que se ven sin contar.
+--   ⛔ Los Inf=1 se imprimen EXACTAMENTE IGUAL, con su valor y sin ninguna marca. La regla esta en
+--     la cabecera de vw_FormatoParametro y no se negocia.
+-- Estado_General NO se toco: sigue igual para /barrido, /ranking y todo lo demas. Ver 162.4.
+
+-- 162.1 ⭐ EL NUMERO NUEVO. Antes: "6 de 54 observados (3 criticos)".
+--   ⚠ VA A SUBIR, y mucho. El 157.1 midio 48 de 72 con Inf respetado, y el 156.2 dice de donde
+--   sale: ISO>6 marca 48 de los 54 componentes que tienen limite. Eso NO es un error -- es lo que
+--   el area configuro (ISO>6 tiene Inf=0 en TRACCION) contra el limite que el area cargo
+--   (LP 19 / LC 20, BLOQUE 138.1). Pero hay que verlo antes de que lo vea Carlos.
+SELECT LEFT(MD, 130) AS Cabecera
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+
+-- 162.2 ⭐⭐ QUE EL CONTADOR DIGA LA VERDAD. Se cuenta sobre la FUNDACION cuantos componentes
+--   tienen al menos un parametro que CUENTA (Inf = 0) fuera de limite, y ese numero tiene que ser
+--   EXACTAMENTE el que imprime el encabezado del 162.1. Si no coinciden, el contador sigue
+--   mirando otra cosa que la tabla y E0 no se cerro.
+--   (Contar aqui y no sobre el MD es a proposito: filtrar una vista *MD por columna calculada
+--    cuesta 11 minutos -- corolario de la ley 3, aprendido en el BLOQUE 161.3.)
+SELECT b.Modelo,
+       COUNT(*)                                    AS Componentes,
+       SUM(CASE WHEN k.peor < 3 THEN 1 ELSE 0 END) AS Observados,
+       SUM(CASE WHEN k.peor = 1 THEN 1 ELSE 0 END) AS Criticos
+FROM [dbo].[vw_MuestrasRankeadas] b WITH (NOLOCK)
+CROSS APPLY (
+    SELECT MIN(CASE WHEN ff.Inf = 0 AND v.est = 'CRITICO' THEN 1
+                    WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2 ELSE 3 END) AS peor
+    FROM (VALUES
+        (N'Fe',b.Estado_Fe),(N'PQ',b.Estado_PQ),(N'Cr',b.Estado_Cr),(N'Ni',b.Estado_Ni),
+        (N'Cu',b.Estado_Cu),(N'Pb',b.Estado_Pb),(N'Sn',b.Estado_Sn),(N'Al',b.Estado_Al),
+        (N'Si',b.Estado_Si),(N'Ca',b.Estado_Ca),(N'Zn',b.Estado_Zn),(N'Mg',b.Estado_Mg),
+        (N'K',b.Estado_K),(N'Na',b.Estado_Na),(N'B',b.Estado_B),(N'P',b.Estado_P),(N'Mo',b.Estado_Mo),
+        (N'V100',b.Estado_V100),(N'V40',b.Estado_V40),(N'TAN',b.Estado_TAN),(N'TBN',b.Estado_TBN),
+        (N'Oxidacion',b.Estado_Oxi),(N'Sulfatacion',b.Estado_Sulf),(N'Nitracion',b.Estado_Nit),
+        (N'Agua',b.Estado_Agua),(N'Hollin',b.Estado_Hollin),(N'Diesel',b.Estado_Diesel),
+        (N'ISO>4',b.Estado_ISO4),(N'ISO>6',b.Estado_ISO6),(N'ISO>14',b.Estado_ISO14)
+    ) v(Parametro, est)
+    CROSS APPLY (
+        SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+        WHERE f.Parametro = v.Parametro AND f.CompTipo IN (b.CompTipo, N'(CRUZADO)')
+        ORDER BY CASE WHEN f.CompTipo = b.CompTipo THEN 0 ELSE 1 END
+    ) ff
+    WHERE v.est IN ('CRITICO','PRECAUCION')
+) k
+WHERE b.rn_recencia = 1 AND b.CompTipo = 'TRACCION' AND b.Proyecto LIKE '%Antapaccay%'
+GROUP BY b.Modelo
+ORDER BY b.Modelo;
+GO
+
+-- 162.2b ⭐ QUIEN APORTA EL SALTO. Si un solo parametro explica casi todas las marcas nuevas, la
+--   conversacion con Carlos no es sobre el triage sino sobre ESE parametro. Sospechoso: ISO>6.
+SELECT v.Parametro, ff.Inf,
+       SUM(CASE WHEN v.est = 'CRITICO' THEN 1 ELSE 0 END)    AS Criticos,
+       SUM(CASE WHEN v.est = 'PRECAUCION' THEN 1 ELSE 0 END) AS Precauciones
+FROM [dbo].[vw_MuestrasRankeadas] b WITH (NOLOCK)
+CROSS APPLY (VALUES
+    (N'Fe',b.Estado_Fe),(N'PQ',b.Estado_PQ),(N'Cr',b.Estado_Cr),(N'Ni',b.Estado_Ni),
+    (N'Cu',b.Estado_Cu),(N'Pb',b.Estado_Pb),(N'Sn',b.Estado_Sn),(N'Al',b.Estado_Al),
+    (N'Si',b.Estado_Si),(N'Ca',b.Estado_Ca),(N'Zn',b.Estado_Zn),(N'Mg',b.Estado_Mg),
+    (N'K',b.Estado_K),(N'Na',b.Estado_Na),(N'B',b.Estado_B),(N'P',b.Estado_P),(N'Mo',b.Estado_Mo),
+    (N'V100',b.Estado_V100),(N'V40',b.Estado_V40),(N'TAN',b.Estado_TAN),(N'TBN',b.Estado_TBN),
+    (N'Oxidacion',b.Estado_Oxi),(N'Sulfatacion',b.Estado_Sulf),(N'Nitracion',b.Estado_Nit),
+    (N'Agua',b.Estado_Agua),(N'Hollin',b.Estado_Hollin),(N'Diesel',b.Estado_Diesel),
+    (N'ISO>4',b.Estado_ISO4),(N'ISO>6',b.Estado_ISO6),(N'ISO>14',b.Estado_ISO14)
+) v(Parametro, est)
+CROSS APPLY (
+    SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+    WHERE f.Parametro = v.Parametro AND f.CompTipo IN (b.CompTipo, N'(CRUZADO)')
+    ORDER BY CASE WHEN f.CompTipo = b.CompTipo THEN 0 ELSE 1 END
+) ff
+WHERE b.rn_recencia = 1 AND b.CompTipo = 'TRACCION' AND b.Proyecto LIKE '%Antapaccay%'
+  AND v.est IN ('CRITICO','PRECAUCION')
+GROUP BY v.Parametro, ff.Inf
+ORDER BY COUNT(*) DESC;
+GO
+
+-- 162.3 ⭐ QUE LOS INFORMATIVOS SIGAN VIENDOSE, CON SU VALOR Y SIN ETIQUETA. En MT el Zn es
+--   Inf=1: el CA3165 (Zn 194,8) tiene que aparecer en la columna Contaminacion como 'Zn(194.8) 🟥'
+--   y aun asi NO contar. Si la fila salio 🟢 con el Zn marcado, ESO ES LO CORRECTO ahora -- y el
+--   pie de la tabla lo explica. Lo que NO puede aparecer por ningun lado es un '(inf)'.
+SELECT LEFT(MD, 2200) AS Inicio
+FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+
+-- 162.4 ⚠⚠ LO QUE ESTE CAMBIO ROMPE, Y HAY QUE SABERLO. El triage ya cuenta con las celdas, pero
+--   /barrido, /barridodet y /ranking SIGUEN contando con Estado_General. Durante un rato van a
+--   dar numeros distintos para la misma flota, que es exactamente el sintoma del BLOQUE 122 ("el
+--   mismo valor, dos modulos, dos respuestas"). Esto mide el desfase.
+--   ⇒ No se arregla hoy A PROPOSITO: tocar Estado_General mientras el limite de las ruedas de
+--     Antapaccay siga mal (Shell Spirax, BLOQUE 158.4) convertiria 54 falsos criticos en 54
+--     equipos "observados" en TODOS los modulos a la vez.
+SELECT b.Proyecto, b.CompTipo, COUNT(*) AS Componentes,
+       SUM(CASE WHEN b.Estado_General <> 'OK' THEN 1 ELSE 0 END) AS Cuenta_Estado_General,
+       SUM(CASE WHEN k.peor < 3 THEN 1 ELSE 0 END)               AS Cuenta_Triage_nuevo
+FROM [dbo].[vw_MuestrasRankeadas] b WITH (NOLOCK)
+CROSS APPLY (
+    SELECT MIN(CASE WHEN ff.Inf = 0 AND v.est = 'CRITICO' THEN 1
+                    WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2 ELSE 3 END) AS peor
+    FROM (VALUES
+        (N'Fe',b.Estado_Fe),(N'PQ',b.Estado_PQ),(N'Cr',b.Estado_Cr),(N'Ni',b.Estado_Ni),
+        (N'Cu',b.Estado_Cu),(N'Pb',b.Estado_Pb),(N'Sn',b.Estado_Sn),(N'Al',b.Estado_Al),
+        (N'Si',b.Estado_Si),(N'Ca',b.Estado_Ca),(N'Zn',b.Estado_Zn),(N'Mg',b.Estado_Mg),
+        (N'K',b.Estado_K),(N'Na',b.Estado_Na),(N'B',b.Estado_B),(N'P',b.Estado_P),(N'Mo',b.Estado_Mo),
+        (N'V100',b.Estado_V100),(N'V40',b.Estado_V40),(N'TAN',b.Estado_TAN),(N'TBN',b.Estado_TBN),
+        (N'Oxidacion',b.Estado_Oxi),(N'Sulfatacion',b.Estado_Sulf),(N'Nitracion',b.Estado_Nit),
+        (N'Agua',b.Estado_Agua),(N'Hollin',b.Estado_Hollin),(N'Diesel',b.Estado_Diesel),
+        (N'ISO>4',b.Estado_ISO4),(N'ISO>6',b.Estado_ISO6),(N'ISO>14',b.Estado_ISO14)
+    ) v(Parametro, est)
+    CROSS APPLY (
+        SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+        WHERE f.Parametro = v.Parametro AND f.CompTipo IN (b.CompTipo, N'(CRUZADO)')
+        ORDER BY CASE WHEN f.CompTipo = b.CompTipo THEN 0 ELSE 1 END
+    ) ff
+    WHERE v.est IN ('CRITICO','PRECAUCION')
+) k
+WHERE b.rn_recencia = 1 AND b.CompTipo <> 'OTRO'
+GROUP BY b.Proyecto, b.CompTipo
+ORDER BY b.Proyecto, b.CompTipo;
+GO
+
+-- 162.5 COSTE. El MIN(...) va DENTRO del agregado que ya existia, asi que no hay pasada nueva.
+--   Referencia del 155.6: Scan count 1 sobre LaboratoryData, ~2 387 ms. No puede subir el Scan.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+
+-- 162.6 SMOKE. El triage se toco entero: chip, orden de filas, secciones y contador.
+SELECT TOP 1 'TriageMD'       AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_TriageMD]      WITH (NOLOCK);
+SELECT TOP 1 'CondicionMT_MD' AS Vista, LEFT(MD,60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK);
+GO
+
+/* ⭐ LO QUE ESTE PASO DESBLOQUEA, Y ES LO MEJOR QUE TIENE:
+   Ahora que el contador LEE la bandera Inf, cambiar QUE cuenta es editar UN VALOR en
+   vw_FormatoParametro -- no reescribir una vista. Si Carlos ve el 162.1 y decide que el codigo de
+   limpieza no deberia disparar el triage, es poner ISO>4/6/14 en Inf = 1 y volver a desplegar.
+   La conversacion pasa de "hay que rehacer el triage" a "que cuenta y que no", que es la que el
+   area sabe contestar. */

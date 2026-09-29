@@ -3202,9 +3202,12 @@ WITH base AS (   -- BASE LIGERA: rankeadas rn=1 (1 pasada de la fundacion); TODO
         Oxidacion, Estado_Oxi, Sulfatacion, Estado_Sulf, Nitracion, Estado_Nit,
         Agua, Estado_Agua, Hollin, Estado_Hollin, Diesel, Estado_Diesel,
         ISO4, Estado_ISO4, ISO6, Estado_ISO6, ISO14, Estado_ISO14,
-        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr,
-        CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' ELSE N'🟢' END AS estadoChip,
-        CASE WHEN Estado_General LIKE '%CRITIC%' THEN 1 WHEN Estado_General LIKE '%PRECAUC%' THEN 2 ELSE 3 END AS estadoOrd
+        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr
+    /* 5c/N (29/09): el chip y el contador YA NO salen de Estado_General. Ese mira 9 metales de
+       desgaste + TBN, mientras la tabla muestra 30 parametros: por eso podia haber una fila 🟢
+       con algo marcado dos columnas mas alla, que es el bug E0. Ahora los dos se calculan en
+       'rows_' a partir de las MISMAS celdas que se imprimen, asi que no pueden contradecirse.
+       Mismo arreglo que ya llevaba vw_CondicionMT_MD desde el BLOQUE 118. */
     FROM [dbo].[vw_MuestrasRankeadas]
     WHERE rn_recencia = 1 AND CompTipo <> 'OTRO'
 ),
@@ -3218,8 +3221,10 @@ mg AS (   -- expandir a (modelo real) + (todos)
 ),
 rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SOBRE LA MISMA FILA
              -- (OUTER APPLY), no en un CTE aparte al que luego haya que volver con un JOIN.
-    SELECT m.Proyecto, m.ModeloG, m.CompTipo, m.Modelo AS RealModelo, m.estadoOrd, m.Equipo,
-        CAST(N'| ' + m.Equipo + N' | ' + m.compAbbr + N' | ' + ISNULL(m.Grado,N'—') + N' | ' + m.estadoChip
+    SELECT m.Proyecto, m.ModeloG, m.CompTipo, m.Modelo AS RealModelo, m.Equipo,
+        ISNULL(mm.peor, 3) AS estadoOrd,
+        CAST(N'| ' + m.Equipo + N' | ' + m.compAbbr + N' | ' + ISNULL(m.Grado,N'—')
+           + N' | ' + CASE mm.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END
            + N' | ' + ISNULL(mm.Desgaste,      N'—')
            + N' | ' + ISNULL(mm.Aditivos,      N'—')
            + N' | ' + ISNULL(mm.Contaminacion, N'—')
@@ -3243,13 +3248,21 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
        Cada parametro sale con su VALOR (antes la columna Salud mostraba 'V100' a secas, sin
        numero) y con 🟥 si es critico. */
     OUTER APPLY (
-        SELECT MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
+        SELECT MIN(g.peorFam) AS peor,
+               MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
                MAX(CASE WHEN g.GrupoOrden = 2 THEN g.txt END) AS Aditivos,
                MAX(CASE WHEN g.GrupoOrden = 3 THEN g.txt END) AS Contaminacion,
                MAX(CASE WHEN g.GrupoOrden = 1 THEN g.txt END) AS Salud,
                MAX(CASE WHEN g.GrupoOrden = 5 THEN g.txt END) AS Limpieza
         FROM (
             SELECT ff.GrupoOrden,
+                   /* peor estado de esta familia MIRANDO SOLO los parametros que cuentan (Inf=0).
+                      1 critico · 2 precaucion · 3 nada. Los Inf=1 (K, Na, B, y Ca/Zn/Mg/Mo cuando
+                      son contaminantes, o sea en MT) SIGUEN IMPRIMIENDOSE con su valor en la celda
+                      de siempre -- solo no entran al conteo. */
+                   MIN(CASE WHEN ff.Inf = 0 AND v.est = 'CRITICO'    THEN 1
+                            WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
+                            ELSE 3 END) AS peorFam,
                    STRING_AGG(CONVERT(nvarchar(max),
                        v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
                      + CASE WHEN v.est = 'CRITICO' THEN N' 🟥' ELSE N'' END), N', ')
@@ -3287,7 +3300,7 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
                 (N'ISO>14', m.ISO14,  m.Estado_ISO14)
             ) v(metal, val, est)
             CROSS APPLY (
-                SELECT TOP 1 f.GrupoOrden, f.Orden
+                SELECT TOP 1 f.GrupoOrden, f.Orden, f.Inf
                 FROM [dbo].[vw_FormatoParametro] f
                 WHERE f.Parametro = v.metal AND f.CompTipo IN (m.CompTipo, N'(CRUZADO)')
                 ORDER BY CASE WHEN f.CompTipo = m.CompTipo THEN 0 ELSE 1 END
@@ -3360,13 +3373,16 @@ SELECT
              THEN N'⚠ **' + b.ModeloG + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
              ELSE N'' END
       + b.bodyMD
-      /* J (29/09): con las 5 columnas, Aditivos / Salud / Codigo de limpieza YA SE VEN, pero
-         Estado_General sigue mirando solo desgaste y contaminacion. Sin esta linea, un equipo
-         🟢 con un aditivo marcado se lee como una contradiccion -- que es el bug E0 de la ronda
-         anterior. Aqui NO se arregla cambiando el contador (eso es decision del area): se
-         arregla DICIENDO que miden cosas distintas. */
+      /* 5c/N (29/09): con J las 5 columnas ya se ven, pero el contador seguia siendo
+         Estado_General (9 metales) -- una fila 🟢 con un aditivo marcado se leia como
+         contradiccion, el bug E0. Se dejo un pie explicandolo, que era un PARCHE. Ahora el
+         contador sale de las mismas celdas, asi que E0 esta cerrado de raiz. El pie sigue, pero
+         ya no justifica una contradiccion: nombra los parametros que el area declaro
+         INFORMATIVOS (Inf=1) y que se ven sin contar.
+         ⛔ Y se nombran EN PROSA, en el pie, una sola vez. Nunca una etiqueta pegada al dato:
+            ver la REGLA PERMANENTE DE 'Inf' en la cabecera de vw_FormatoParametro. */
       + NCHAR(10) + NCHAR(10)
-      + N'_El **Estado** (🟥 / 🟨 / 🟢) se decide con **Desgaste** y **Contaminación**. Un equipo puede salir 🟢 y aun así tener algo marcado en **Aditivos**, **Salud** o **Código de limpieza**: esas familias se muestran para que se vean, pero todavía no disparan el estado._'
+      + N'_El **Estado** y el conteo salen de las **mismas celdas** que ves en la tabla. Se muestran también algunos parámetros que el área tiene definidos como **informativos** — `K`, `Na`, `B`, y `Ca`/`Zn`/`Mg`/`Mo` en Motor de Tracción, donde son contaminantes: se ven con su valor, pero **no cuentan** como observación._'
     AS nvarchar(max)) AS MD
 FROM body b
 LEFT JOIN recoblock rb ON rb.Proyecto=b.Proyecto AND rb.ModeloG=b.ModeloG AND rb.CompTipo=b.CompTipo;
