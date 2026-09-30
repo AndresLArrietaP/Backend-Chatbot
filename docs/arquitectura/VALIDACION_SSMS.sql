@@ -7995,3 +7995,55 @@ SELECT MD AS MD FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%';
 GO
 SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 185 (30/09) -- ⭐ /diagcompleto RESUELTO: 6,6 s (MD_Completo), salida identica
+--   ("4 de 6 componentes observados" en MD; 6 componentes en MD_Completo). Probado en Teams: /diagcompleto
+--   y /condicionmt responden. Los INDICES NO SE TOCARON (solo quedo sugerida la §2.0 para el DBA).
+
+
+-- ==== BLOQUE 186 - Las 11 vistas "incubando", con el filtro abajo ====
+-- Auditoria (30/09): mismas dos condiciones que tumbaron /condicionmt y /diagcompleto -- el filtro del
+--   flujo cae sobre el resultado final y la vista instancia la fundacion varias veces:
+--     vw_TendenciaMD 9x · TendenciaGraficoObs 5x · ObservadosBarrido 5x · UltimoAnalisis 4x ·
+--     TendenciaGrafico 4x · TendenciaMetal 3x · ObservadosResumen 3x · TendenciaIncipiente 3x · ...
+-- CURA APLICADA (mismo patron probado): CROSS APPLY sobre Mine.MiningEquipment (8 vistas por equipo) o
+--   Mine.MiningProject (3 de flota) y CADA lectura pesada envuelta con el filtro. Contratos intactos.
+-- ⛔ RESPALDO: docs/arquitectura/respaldo/DDL_vistas_2026-09-30_antes_filtro_abajo.sql (se corre tal cual
+--   para volver atras) y la etiqueta git 'respaldo-antes-filtro-abajo-2026-09-30'.
+-- ⚑ EXITO: cada una en SEGUNDOS. Por equipo: LaboratoryData ~1 400 lecturas. De flota: bastante menos
+--   que 18 252 (Antapaccay es una fraccion de la base).
+-- ⚑ Si alguna tarda MAS que antes o cambia la salida: se revierte ESA vista desde el respaldo.
+-- Consultas EXACTAS de los flujos (CONFIG_FLUJOS), modo produccion.
+
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 186.1 ⭐ /tendencia (MD_equipo_comp) -- la que pataleaba: 33-43 s
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_TendenciaMD
+WHERE Equipo LIKE '%CA3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%';
+GO
+-- 186.2 /grafica (MD_metal)
+SELECT MD, Observados, Recomendaciones FROM vw_TendenciaGraficoMD
+WHERE Equipo LIKE '%CA3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%' AND Parametro='Fe';
+GO
+-- 186.3 /ultimo (MD_equipo_comp)
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_UltimoAnalisisMD
+WHERE Equipo LIKE '%CA3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%';
+GO
+-- 186.4 tendencia P1, metal y grafica de observados
+SELECT LEN(MD) AS L FROM vw_TendenciaP1MD WHERE Equipo LIKE '%CA3160%';
+SELECT LEN(MD) AS L FROM vw_TendenciaMetalMD WHERE Equipo LIKE '%CA3160%' AND Parametro='Fe';
+SELECT LEN(MD) AS L FROM vw_TendenciaGraficoObsMD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 186.5 historial
+SELECT LEN(MD) AS L FROM vw_HistorialMD WHERE Equipo LIKE '%CA3160%';
+SELECT LEN(MD) AS L FROM vw_HistorialEquipoMD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 186.6 ⭐ FLOTA (MD_flota): barrido resumen, barrido detalle e incipiente
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_ObservadosResumenMD
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+SELECT DetalleTodosMD AS MD, Observados, Recomendaciones FROM vw_ObservadosBarridoMD
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%';
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_TendenciaIncipienteMD
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
