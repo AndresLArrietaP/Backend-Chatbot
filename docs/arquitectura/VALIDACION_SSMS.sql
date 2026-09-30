@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   166 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   167 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -186,6 +186,7 @@
      BLOQUE 163  PASO 6 (B): /tendencia sin la tabla de limites
      BLOQUE 164  Rehacer las dos comprobaciones del 163 que no probaban nada
      BLOQUE 165  B2: el aviso se dispara por los limites QUE HACEN FALTA
+     BLOQUE 166  PASOS 7 (E) y 8 (A): encabezado de muestra + la grafica se basta sola
    ============================================================================ */
 
 /* ============================================================================
@@ -7237,3 +7238,59 @@ SELECT TOP 1 'MuestrasEstado' AS Vista, Equipo AS x FROM [dbo].[vw_MuestrasEstad
 SELECT TOP 1 'AcumuladoVida'  AS Vista, Equipo AS x FROM [dbo].[vw_AcumuladoVida]  WITH (NOLOCK);
 SELECT TOP 1 'TendenciaMD'    AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
 GO
+
+
+-- ==== BLOQUE 166 - PASOS 7 (E) y 8 (A). Un solo bloque para los dos ====
+-- 7 (E) ENCABEZADO DE MUESTRA dentro de la matriz, en /diagcompleto y /condicionmt: cuatro filas
+--   (Fecha · Grado · Hrs Comp · T. muestra) bajo un grupo «Muestra», una columna por componente.
+--   Va POR FILA y no como una linea unica arriba porque cada componente tiene SU fecha y SUS
+--   horas: en cuanto el LH y el RH se muestrean en dias distintos, una cabecera unica mentiria.
+--   vw_DiagnosticoEquipo pasa a exponer Grado y HorasComponente (ya se calculaban).
+-- 8 (A) LA GRAFICA se basta sola: fuera la columna Spark (la grafica ASCII esta debajo y decia lo
+--   mismo peor) y el resumen pasa a LISTA DE TEXTO con su logica -- Prom., sigma, Nº fuera de
+--   limite y Acum, cada uno diciendo de que esta hecho. Los limites ya eran una linea.
+--   vw_TendenciaElemento gana NMuestras: sin ese numero un promedio de 2 muestras se lee igual
+--   que uno de 6, y la grafica los pone al lado.
+
+-- 166.1 ⭐ /diagcompleto CON ENCABEZADO. Tras «| Par. | MT LH | ... |» deben venir las 4 filas.
+SELECT LEFT(MD, 900) AS Inicio
+FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+-- 166.2 ⭐ /condicionmt IGUAL. Y aqui se ve si el LH y el RH traen fechas distintas, que es el
+--   caso que justifica todo el diseno.
+SELECT LEFT(MD, 800) AS Inicio
+FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+-- 166.3 ⭐ LA GRAFICA. Sin columna Spark en la tabla, y con el resumen en texto debajo.
+SELECT LEFT(MD, 1600) AS Inicio
+FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK)
+WHERE Equipo = N'CA3160' AND compAbbr = N'MT LH' AND Parametro = N'Fe';
+GO
+-- 166.4 ⚠ QUE EL ENCABEZADO NO ROMPA EL ANCHO. La matriz ya tenia una columna por componente; las
+--   filas nuevas no anaden columnas, pero el 'Grado' es largo ('SHELL OMALA S4 GXV 680') y se
+--   repite por componente. Si el MD crece mucho, la palanca es abreviar el Grado, no quitar la
+--   fila.
+SELECT 'DiagnosticoMD' AS Vista, LEN(MD) AS Largo FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo = N'CA3160'
+UNION ALL
+SELECT 'CondicionMT_MD', LEN(MD) FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+-- 166.5 SMOKE de las 4 vistas tocadas (mas las que cuelgan de vw_TendenciaElemento).
+SELECT TOP 1 'DiagnosticoEquipo' AS Vista, Equipo AS x FROM [dbo].[vw_DiagnosticoEquipo] WITH (NOLOCK);
+SELECT TOP 1 'DiagnosticoMD'     AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_DiagnosticoMD]     WITH (NOLOCK);
+SELECT TOP 1 'CondicionMT_MD'    AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_CondicionMT_MD]    WITH (NOLOCK);
+SELECT TOP 1 'TendenciaElemento' AS Vista, Equipo AS x FROM [dbo].[vw_TendenciaElemento] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+SELECT TOP 1 'TendenciaGraficoMD' AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_TendenciaGraficoMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+SELECT TOP 1 'TendenciaMD'       AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_TendenciaMD]       WITH (NOLOCK) WHERE Equipo = N'CA3160';
+SELECT TOP 1 'UltimoAnalisisMD'  AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_UltimoAnalisisMD]  WITH (NOLOCK);
+GO
+-- 166.6 COSTE de /diagcompleto. Referencia: ~12 s, 7 lecturas de la cadena de 'base'. El
+--   encabezado sale de 'comp', que ya existia: no puede subir el Scan count.
+SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT LEFT(MD, 80) FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;
+GO
+
+/* ⚑ LO QUE QUEDA DE A Y NO ES SQL: que /grafica ABSORBA a /tendenciametal es cambio de Copilot --
+   desactivar el tema 08 (⛔ desactivar, NO borrar el nodo) y que la firma de /grafica pase a
+   ‹equipo› ‹componente› ‹metal›, los tres obligatorios. La vista ya acepta los tres. */

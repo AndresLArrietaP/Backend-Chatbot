@@ -1281,6 +1281,9 @@ SELECT
     MAX(CASE WHEN rn_recencia = 1 THEN FechaMuestreo END) AS f6,
     CAST(AVG(Valor) AS decimal(18,1)) AS Prom,
     CAST(STDEV(Valor) AS decimal(18,1)) AS Sigma,
+    /* A (29/09): sobre cuantas muestras estan hechos el Prom y el sigma. Sin este numero, un
+       promedio de 2 muestras se lee igual que uno de 6 -- y la grafica los pone al lado. */
+    COUNT(Valor) AS NMuestras,
     SUM(FueraUmbral) AS NVecesObs,
     CASE WHEN SUM(FueraUmbral) > 0 THEN 1 ELSE 0 END AS EsRelevante,
     CASE
@@ -1386,7 +1389,9 @@ WITH hs AS (
 )
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
-    Horometro, HorasDeAceite, CM, EsDDI, Estado_General,
+    /* E (29/09): Grado y HorasComponente salen para el encabezado de muestra de /diagcompleto
+       y /condicionmt. Ya estaban calculados; solo no se proyectaban. */
+    Horometro, HorasDeAceite, HorasComponente, Grado, CM, EsDDI, Estado_General,
     /* Met. Obs. = metales fuera de umbral de ESA muestra (determinantes + informativos),
        reusa Estado_<metal> ya calculados. Para variantes 1/4/5 del historial. */
     STUFF(CONCAT(
@@ -1969,6 +1974,7 @@ WITH base AS (   /* UNICA lectura de la fundacion. Antes se leia 4 veces (base, 
 unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 parametros): esta tabla es
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
     SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
+           b.FechaMuestreo, b.Grado, b.HorasComponente, b.CM,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
            v.cell,
            /* El valor CRUDO, antes de sustituir ':C'/':P' por los cuadros de color.
@@ -2034,19 +2040,39 @@ comp AS (   /* 1 fila por equipo+componente, DERIVADA de unpv.
            MAX(Modelo)      AS Modelo,
            MAX(compOrd)     AS compOrd,
            MAX(compAbbr)    AS compAbbr,
-           MAX(CompMarcado) AS CompMarcado
+           MAX(CompMarcado) AS CompMarcado,
+           MAX(FechaMuestreo)    AS FechaMuestreo,
+           MAX(Grado)            AS Grado,
+           MAX(HorasComponente)  AS HorasComponente,
+           MAX(CM)               AS CM
     FROM unpv
     GROUP BY Equipo, Compartimiento
 ),
 /* CABECERAS de columnas (dinámicas) por variante */
 hdr_all AS (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+        /* E (29/09): filas de encabezado DENTRO de la matriz. Van por fila y no como una
+           cabecera unica porque cada componente tiene SU fecha, SU grado y SUS horas: una sola
+           linea arriba mentiria en cuanto dos componentes se muestrearan en dias distintos. */
+        CAST(N'| **Muestra** |' + REPLICATE(N' |', COUNT(DISTINCT Compartimiento)) + NCHAR(10)
+           + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CM,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS cabMD
     FROM comp GROUP BY Equipo
 ),
 hdr_obs AS (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+        /* E (29/09): filas de encabezado DENTRO de la matriz. Van por fila y no como una
+           cabecera unica porque cada componente tiene SU fecha, SU grado y SUS horas: una sola
+           linea arriba mentiria en cuanto dos componentes se muestrearan en dias distintos. */
+        CAST(N'| **Muestra** |' + REPLICATE(N' |', COUNT(DISTINCT Compartimiento)) + NCHAR(10)
+           + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CM,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS cabMD
     FROM comp WHERE CompMarcado = 1 GROUP BY Equipo
 ),
 /* FILAS de parámetros (celdas en orden de componente) por variante */
@@ -2124,14 +2150,14 @@ SELECT
         ELSE
              N'| Par. | ' + ho.cols + N' |' + NCHAR(10)
            + N'|---|' + REPLICATE(N'---|', ho.N) + NCHAR(10)
-           + bo.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
+           + ho.cabMD + NCHAR(10) + bo.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
         END
     AS nvarchar(max)) AS MD,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' (completo) — ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes**' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ha.cols + N' |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', ha.N) + NCHAR(10)
-      + ba.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
+      + ha.cabMD + NCHAR(10) + ba.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
     AS nvarchar(max)) AS MD_Completo
 FROM g
 JOIN hdr_all ha ON ha.Equipo=g.Equipo
@@ -2285,6 +2311,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_CondicionMT_MD] AS
 WITH base AS (
     SELECT Equipo, Proyecto, Modelo, Compartimiento, Estado_General,
+        FechaMuestreo, Grado, HorasComponente, CM,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' ELSE N'MT RH' END AS compAbbr
     FROM [dbo].[vw_DiagnosticoEquipo]
     WHERE Compartimiento LIKE '%TRACCION%'
@@ -2324,9 +2351,16 @@ unpv AS (   /* Las filas las define vw_FormatoParametro (hoja MT del Excel): mis
     ) p
 ),
 hdr AS (
+    /* E (29/09): mismo encabezado de muestra que /diagcompleto. Una fila por campo porque el LH y
+       el RH pueden muestrearse en dias distintos: una linea unica arriba mentiria. */
     SELECT Equipo, COUNT(DISTINCT compAbbr) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
-    FROM (SELECT DISTINCT Equipo, compOrd, compAbbr FROM base) z GROUP BY Equipo
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+        CAST(N'| **Muestra** |' + REPLICATE(N' |', COUNT(DISTINCT compAbbr)) + NCHAR(10)
+           + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
+           + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CM,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS cabMD
+    FROM (SELECT DISTINCT Equipo, compOrd, compAbbr, FechaMuestreo, Grado, HorasComponente, CM FROM base) z GROUP BY Equipo
 ),
 rows_ AS (
     SELECT Equipo, grp, ord, nombre,
@@ -2385,7 +2419,7 @@ SELECT
         N'**Condición Motores de Tracción — ' + g.Equipo + N'** · ' + CAST(ob.NumObs AS nvarchar(10)) + N' de ' + CAST(ob.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + h.cols + N' |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', h.N) + NCHAR(10)
-      + bd.bodyMD
+      + h.cabMD + NCHAR(10) + bd.bodyMD
     AS nvarchar(max)) AS MD
 FROM g
 JOIN obs ob ON ob.Equipo=g.Equipo
@@ -2621,10 +2655,23 @@ SELECT
                N'**Tendencia — ' + g.Equipo + N' · ' + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END + N'**')
       + NCHAR(10) + NCHAR(10)
       + N'**Gráfica de ' + CONVERT(nvarchar(20), g.Parametro) + N'**' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Acum | Spark |' + NCHAR(10)
-      + N'|---|---|---|---|---|---|---|---|---|' + NCHAR(10)
+      + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Acum |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
       + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
-        + N' | ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' | ' + ISNULL(te.Spark, N'·') + N' |' + NCHAR(10) + NCHAR(10)
+        + N' | ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' |' + NCHAR(10) + NCHAR(10)
+      /* A (29/09): el resumen sale como LISTA DE TEXTO y diciendo de que esta hecho cada cifra.
+         Andres lo pidio asi: "como texto, pero bien detallado y mencionando la logica". En una
+         tabla, 'Prom.' y 'σ' son dos numeros sin contexto; aqui cada uno lleva su regla, que es
+         lo que evita que alguien compare un promedio de 6 muestras con uno de 2.
+         El Spark se va: la grafica ASCII esta debajo y decia lo mismo en peor. */
+      + N'**Resumen del período**' + NCHAR(10) + NCHAR(10)
+      + N'- **Prom.:** ' + ISNULL(CONVERT(nvarchar(20),CAST(te.Prom AS decimal(18,1))), N'—')
+        + N' — media de las **' + CONVERT(nvarchar(10), te.NMuestras) + N'** muestras del período (las 6 últimas como máximo).' + NCHAR(10)
+      + N'- **Desv. est. (σ):** ' + ISNULL(CONVERT(nvarchar(20),CAST(te.Sigma AS decimal(18,1))), N'—')
+        + N' — cuánto se mueve el parámetro entre muestra y muestra. Un σ alto con promedio bajo apunta a una lectura suelta, no a una tendencia.' + NCHAR(10)
+      + N'- **Nº fuera de límite:** ' + CONVERT(nvarchar(10), te.NVecesObs)
+        + N' de ' + CONVERT(nvarchar(10), te.NMuestras) + N' — veces que superó **LP** en el período.' + NCHAR(10)
+      + N'- **Acum:** ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'— (solo aplica a metales de desgaste)' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') + N' — suma del metal con el criterio del área; un `—` significa **no se puede calcular**, no cero.' END + NCHAR(10) + NCHAR(10)
       + N'**Límites de referencia (ppm)**: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') + NCHAR(10) + NCHAR(10)
       + N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```'
     AS nvarchar(max)) AS MD

@@ -99,8 +99,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
-| **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
-| **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
+| **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✅ **escrito** — falta ver | **166** | determinista |
+| **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✅ **SQL escrito** — el resto es Copilot | **166** | determinista |
 
 **El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
 medición posterior sobre esa cadena miente. El **4** antes que **G** (acumulados por componente depende de
@@ -1640,3 +1640,25 @@ columna, **declarado en el código y con fecha**. Única normalización de este 
 `nan` ni `M`: esos no son un componente mal escrito sino **ausencia de dato**, y ya tienen su vía (`G2`).
 
 ⚠ **Tapa el síntoma: la carga lo sigue metiendo.** Por eso queda como **V** para Carlos.
+
+## ✅ Pasos 7 (E) y 8 (A) — BLOQUE 166
+
+**7 · E** — cuatro filas de encabezado **dentro** de la matriz (`Fecha` · `Grado` · `Hrs Comp` ·
+`T. muestra`), bajo un grupo `**Muestra**`, **una columna por componente**. Van **por fila** y no como una
+línea única arriba porque cada componente tiene **su** fecha y **sus** horas: en cuanto el LH y el RH se
+muestrean en días distintos, una cabecera única **mentiría**. `vw_DiagnosticoEquipo` pasa a exponer `Grado`
+y `HorasComponente` — ya se calculaban, solo no salían.
+
+**8 · A** — la gráfica **se basta sola**: fuera la columna `Spark` (la gráfica ASCII está justo debajo y
+decía lo mismo peor) y el resumen pasa a **lista de texto con su lógica** — `Prom.`, `σ`, `Nº fuera de
+límite` y `Acum`, cada uno diciendo **de qué está hecho**. Los límites ya eran una línea.
+
+`vw_TendenciaElemento` gana **`NMuestras`**: sin ese número, un promedio de **2** muestras se lee igual que
+uno de **6** — y la gráfica los pone al lado.
+
+⚠ **Al escribirlo usé `te.NMuestras` antes de que existiera** — la misma clase de error (Msg 207) que
+cazamos hoy tres veces. Lo detecté auditando las columnas contra la vista real antes de dar nada por hecho.
+
+⚑ **Lo que falta de A no es SQL:** que `/grafica` **absorba** a `/tendenciametal` es Copilot — desactivar
+el tema **08** (⛔ desactivar, **no** borrar el nodo) y que la firma pase a `‹equipo› ‹componente› ‹metal›`,
+los tres obligatorios. La vista ya acepta los tres.
