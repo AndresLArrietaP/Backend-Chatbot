@@ -7753,3 +7753,38 @@ SELECT x.entrada,
         ORDER BY LEN([Code])) AS resuelve_a
 FROM (VALUES (N'3160'),(N'CA3160'),(N'T3160'),(N'HT079'),(N'T11')) x(entrada);
 GO
+
+-- RESULTADOS BLOQUE 176 (30/09) -- la igualdad NO alcanzo; pero trajo la evidencia decisiva.
+--   176.1 /condicionmt ........ > 3 min, cortado
+--   176.2 /diagcompleto ....... 170 498 ms (CPU 35 422). E/S:
+--         LaboratoryData   Scan count 312 · logical reads 1 181 361
+--         Eqpcare.lc       Scan count 318 · 26 303
+--         MiningEquipment/Project/Fleet  Scan count 312 cada una
+--         Worktable        Scan count 9 871
+--   176.3 resolucion de codigos PERFECTA: 3160/CA3160/T3160 -> CA3160 · HT079 -> HT079 · T11 -> T11.
+--         ⇒ N4 RESUELTO (independiente del rendimiento).
+--   ⇒ LA FUNDACION COMPLETA SE EJECUTA 312 VECES PARA UN CAMION. Nested loop: el optimizador pone la
+--     cadena de 6 vistas como lado interno y la repite por cada fila externa. Ley 2 en su forma mas
+--     cara. Cada ejecucion es barata (175: 772 paginas); lo que mata es la REPETICION.
+
+
+-- ==== BLOQUE 177 - Prohibir el bucle: OPTION (HASH JOIN) ====
+-- Con HASH JOIN cada rama se calcula UNA vez y se une por hash; no hay lado interno que repetir.
+--   Una linea al final de la consulta del flujo; no toca ninguna vista.
+-- ⚑ EXITO = Scan count de LaboratoryData de 312 a UN DIGITO. El tiempo es secundario (tier).
+-- ⚑ Si no baja -> ya no es ajuste de consulta: es reescribir estas dos vistas para leer la cadena
+--   una sola vez, o volver a su version previa a la ronda del 28/09.
+
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 177.1 ⭐ /diagcompleto, la misma de 176.2 + HASH JOIN (va primero: la de 176.2 SI termina)
+DECLARE @e nvarchar(50) = N'CA3160';
+SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo = @e
+OPTION (HASH JOIN, RECOMPILE);
+GO
+-- 177.2 ⭐ /condicionmt + HASH JOIN (cortar a los 3 min si no termina)
+DECLARE @e nvarchar(50) = N'CA3160';
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo = @e
+OPTION (HASH JOIN, RECOMPILE);
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO

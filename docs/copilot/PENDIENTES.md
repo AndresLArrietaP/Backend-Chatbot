@@ -115,6 +115,11 @@ ejecuciones de `MD_equipo`**, acción SQL de las dos corridas fallidas. Anotar: 
 - reintentos → aplicar **Capa A** (Reintentos = Ninguno).
 - ~100 s limpio → rendimiento en frío real → consolidar `unpv` (vuelve a SQL).
 
+**Bloques 173-176 (30/09):** descartados `ARITHABORT`, el índice (un camión = 772 páginas, 1 ms) y el
+`LIKE` (con `=` igual de lento). **Causa:** `Scan count 312` sobre `LaboratoryData` — la fundación entera
+se re-ejecuta 312 veces en un *nested loop* para un solo camión (ley 2). ⇒ BLOQUE 177: `OPTION (HASH JOIN)`.
+**N4 resuelto** (176.3): `3160`/`CA3160`/`T3160` → `CA3160`, `HT079`/`T11` intactos.
+
 **Historial revisado:** equipo **llega**, reintentos **None**, la acción muere a los **2 m 0 s** (techo fijo
 del conector, no configurable). Misma consulta: 35-41 s en SSMS. ⇒ Sospecha principal: **`ARITHABORT`** —
 SSMS usa `ON`, el conector `OFF`, y SQL Server compila **planes distintos**; todo lo medido en SSMS era otro
