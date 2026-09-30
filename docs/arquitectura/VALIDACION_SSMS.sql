@@ -7586,3 +7586,41 @@ GO
 -- 172.2 Y como se ven los codigos de 3160 hoy (lo que devuelve el LIKE del flujo).
 SELECT [Code] FROM [Mine].[MiningEquipment] WHERE [Code] LIKE '%3160%' ORDER BY [Code];
 GO
+
+-- RESULTADOS BLOQUE 172 (30/09): 172.1 -> T1, T11 (reales): la regla T se estrecha a T + 4 digitos.
+--   172.2 -> solo CA3160. Teams tras el revert: SIGUE en timeout. Historial del flujo MD_equipo:
+--   equipo LLEGA ('%CA3160%'), RetryPolicy = None, la accion SQL muere a los 2 m 0 s (limite fijo del
+--   conector). Consultas reales:
+--     SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3160%'
+--     SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%'
+
+
+-- ==== BLOQUE 173 - "Rapido en SSMS, lento en produccion": ARITHABORT ====
+-- SSMS abre la sesion con ARITHABORT ON; el conector de Power Automate (ADO.NET) con OFF. SQL Server
+--   guarda un PLAN DISTINTO por cada combinacion de opciones SET, asi que todo lo medido en SSMS usaba
+--   un plan que produccion NUNCA usa. En vistas tan anidadas los dos planes pueden diferir por minutos.
+-- Y /diagcompleto pide MD_Completo (todos los componentes), no MD: nunca se midio esa columna.
+-- Se corren las consultas EXACTAS del flujo, primero como produccion (OFF) y despues como SSMS (ON).
+-- ⚑ Decidido antes de medir: si con OFF pasan de ~100 s y con ON no -> es el plan del conector, y la
+--   cura es que la consulta del flujo NO dependa de esa opcion (OPTION (RECOMPILE) al final del query
+--   del flujo, que fuerza un plan para ESE valor y esa sesion). Si con ON tambien pasan de 100 s -> es
+--   la vista, y vuelve al SQL (consolidar unpv / base).
+
+-- 173.1 ⭐ /condicionmt COMO PRODUCCION.
+SET ARITHABORT OFF; SET STATISTICS TIME ON;
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 173.2 ⭐ /diagcompleto COMO PRODUCCION (columna MD_Completo, la que pide el flujo).
+SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 173.3 La misma de 173.2 como SSMS, para comparar.
+SET ARITHABORT ON;
+SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 173.4 Y la cura candidata, en modo produccion: el mismo query con OPTION (RECOMPILE).
+SET ARITHABORT OFF;
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3160%' OPTION (RECOMPILE);
+GO
+SET STATISTICS TIME OFF; SET ARITHABORT ON;
+GO
+-- ⚠ Si alguna pasa de 3 minutos, cortarla: con eso ya se sabe la respuesta.

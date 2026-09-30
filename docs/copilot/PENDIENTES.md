@@ -115,6 +115,11 @@ ejecuciones de `MD_equipo`**, acción SQL de las dos corridas fallidas. Anotar: 
 - reintentos → aplicar **Capa A** (Reintentos = Ninguno).
 - ~100 s limpio → rendimiento en frío real → consolidar `unpv` (vuelve a SQL).
 
+**Historial revisado:** equipo **llega**, reintentos **None**, la acción muere a los **2 m 0 s** (techo fijo
+del conector, no configurable). Misma consulta: 35-41 s en SSMS. ⇒ Sospecha principal: **`ARITHABORT`** —
+SSMS usa `ON`, el conector `OFF`, y SQL Server compila **planes distintos**; todo lo medido en SSMS era otro
+plan. Además `/diagcompleto` pide **`MD_Completo`**, nunca medida. ⇒ **BLOQUE 173.**
+
 ### 🆕 Tres pedidos nuevos del PASO 0
 
 **N1 · `/tendencia` y `/grafica` en UNA SOLA tabla** — *SQL*. Hoy cada una imprime **dos** tablas con las
