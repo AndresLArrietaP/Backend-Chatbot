@@ -7906,3 +7906,25 @@ SELECT COUNT(*), MAX(Fe), MAX(NumCompObs) FROM [dbo].[vw_DiagnosticoEquipo] WHER
 GO
 SET STATISTICS IO OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 181 (30/09), parcial (el mensaje se corto por MAX(Cond_Area)):
+--   181.1 fundacion .............. LaboratoryData 25 lecturas     -> el filtro LLEGA
+--   181.2 vw_MuestrasRankeadas .... 25                             -> LLEGA
+--   181.3 vw_UltimoAnalisisAceite . 1 365 (6 filas)                -> LLEGA (sigue siendo un camion)
+--   vw_DiagnosticoEquipo leida: un SELECT con dos ventanas por Equipo; no puede bloquear.
+--   ⇒ Quedan: vw_UltimoAnalisisFlota o la propia vista MD.
+
+
+-- ==== BLOQUE 182 - Las tres cifras que faltan (SIN columnas anchas) ====
+-- ⚑ Pegar SOLO las lineas 'Table ''[Oil].[LaboratoryData]''...' de Mensajes. ~1 400 = llega; ~18 000 = no.
+SET ARITHABORT OFF; SET STATISTICS IO ON;
+DECLARE @e nvarchar(50) = N'CA3160';
+-- 182.1
+SELECT COUNT(*) AS n FROM [dbo].[vw_UltimoAnalisisFlota] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 182.2
+SELECT COUNT(*) AS n FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 182.3 la vista MD entera, sin imprimir el MD
+SELECT COUNT(*) AS n FROM [dbo].[vw_CondicionMT_MD] WHERE Equipo = @e OPTION (RECOMPILE);
+GO
+SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
