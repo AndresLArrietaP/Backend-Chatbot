@@ -1,7 +1,12 @@
 # Prompt "Presentación de filas" — formatea la salida de KomfIA SQL en el fallback
 
-Va en un nodo **Solicitud (Prompt / AI Builder)** dentro del tema de sistema **"Potenciar conversaciones"**, DESPUÉS del nodo del agente KomfIA SQL:
-`intención desconocida → KomfIA SQL → Solicitud (este prompt) → Mensaje {salida} → Finalizar`.
+Vive en **Herramientas → «Formato»** (herramienta tipo Prompt, GPT-4.1 mini, disponible para el agente
+KomfIA). No la llama ningún tema: la elige el **orquestador** por su descripción, después de que KomfIA SQL
+devuelve filas. *(Antes se documentaba como un nodo dentro de «Potenciar conversaciones»; en Copilot quedó
+como herramienta. Verificado en captura el 30/09.)*
+
+**Descripción de la herramienta** (hoy dice solo «Formato», y el orquestador elige por descripción):
+> Presenta en viñetas las filas JSON que devuelve el agente KomfIA SQL. Úsala SOLO con la salida de KomfIA SQL, nunca con la salida de un tema: las tablas de los temas se imprimen tal cual.
 
 - **Entrada `filas`** = la salida JSON del agente KomfIA SQL (su `respuesta`/output crudo).
 - **Salida** = una línea de contexto + **viñetas con cifras**. ⛔ **Nunca una tabla**: las tablas son de los

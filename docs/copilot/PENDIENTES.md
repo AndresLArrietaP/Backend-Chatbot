@@ -188,7 +188,7 @@ Y el prompt del fallback aún rotulaba `Ca/Zn/K/Na/Mg/B/P` como `'inf'`.
 | Dónde se pega | Archivo | Qué cambió |
 |---|---|---|
 | Prompt `Análisis de aceite` | [prompts/analisis_prompts.md](prompts/analisis_prompts.md) | + ninguna línea con `\|` · no filtrar filas |
-| Prompt `Presentación de filas` | [prompts/formateo_fallback.md](prompts/formateo_fallback.md) | viñetas con prefijo 🔎, máx 12 · sin `'inf'` · dirección por grupo · el 0 no es medición |
+| Herramienta `Formato` (Herramientas) | [prompts/formateo_fallback.md](prompts/formateo_fallback.md) | viñetas con prefijo 🔎, máx 12 · sin `'inf'` · dirección por grupo · el 0 no es medición |
 | Instrucciones de **KomfIA SQL** | [KomfIA_SQL_MD.docx](KomfIA_SQL_MD.docx) (4 422 UTF-16) | lo mismo + un mensaje que empieza con `/` no se responde con datos |
 | Instrucciones de la **central** | [KomfIA_central_MD.docx](KomfIA_central_MD.docx) (5 954 UTF-16) | presentar en viñetas · comando sin datos = su mensaje, no fallback · otro modelo = consulta nueva, nunca filtro de la tabla anterior |
 

@@ -31,7 +31,7 @@ Parte de la config. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_TEMAS.md](
   consultas de datos reales a su módulo).
 - **Tema:** SIN flujo/SQL (Disparo → Solicitud → Mensaje → Finalizar). Hogar de las consultas simples/conceptuales.
 
-## Prompt 3: `Presentación de filas` (fallback, tema de sistema «Potenciar conversaciones»)
+## Prompt 3: `Formato` (fallback — Herramientas → «Formato», la elige el orquestador)
 - **Tipo:** Solicitud (AI Builder), **sin conocimiento**. Va tras el agente KomfIA SQL.
 - **Entrada:** `filas` (Texto) = la salida JSON de KomfIA SQL.
 - **Instrucciones:** **`docs/copilot/prompts/formateo_fallback.md`**. Desde el 30/09 (C2) responde en **viñetas
