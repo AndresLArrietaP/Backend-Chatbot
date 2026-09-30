@@ -2282,100 +2282,102 @@ GO
 
 /* ==== vw_CondicionMT_MD (condición de Motores de Tracción de 1 equipo) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_CondicionMT_MD] AS
-/* 30/09 -- TUBERIA LINEAL: cada CTE se referencia UNA sola vez.
-   Los CTE de SQL Server no se materializan: cada referencia re-ejecuta la cadena entera hasta la
-   fundacion (~25 s por camion). La version anterior leia vw_DiagnosticoEquipo ~11 veces -- 'unpv'
-   hacia 'd JOIN base' (la misma vista dos veces) y se usaba 4 veces; 'hdr' 2; 'g' 1 -- y no terminaba
-   en 5 min (BLOQUES 173-178). Aqui: base -> unpv -> rows_ -> fin -> SELECT. Los conteos, Proyecto/Modelo
-   y los observados viajan DENTRO de la tuberia como agregados; las recomendaciones salen de un OUTER
-   APPLY sobre la lista de metales marcados, que es constante y barata. */
-WITH base AS (
-    SELECT d.*,
-        CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd,
-        CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' ELSE N'MT RH' END AS compAbbr
-    FROM [dbo].[vw_DiagnosticoEquipo] d
-    WHERE d.Compartimiento LIKE '%TRACCION%'
-),
-unpv AS (   /* filas = hoja MT de vw_FormatoParametro; la marca sale del valor crudo (':C'/':P'), ASCII. */
-    SELECT b.Equipo, b.Proyecto, b.Modelo, b.compOrd, b.compAbbr,
-           f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
-           ISNULL(p.cell, N'—') AS cell,
-           CASE WHEN p.raw LIKE '%:C%' OR p.raw LIKE '%:P%' THEN 1 ELSE 0 END AS marcada
-    FROM base b
-    INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = 'TRACCION'
-    OUTER APPLY (
-        SELECT v.cell, v.raw FROM (VALUES
-            (N'Fe', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Fe AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Fe AS nvarchar(40))),
-            (N'PQ', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(PQ AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(PQ AS nvarchar(40))),
-            (N'Cr', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cr AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Cr AS nvarchar(40))),
-            (N'Ni', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ni AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Ni AS nvarchar(40))),
-            (N'Cu', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cu AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Cu AS nvarchar(40))),
-            (N'Pb', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Pb AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Pb AS nvarchar(40))),
-            (N'Sn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Sn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Sn AS nvarchar(40))),
-            (N'Al', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Al AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Al AS nvarchar(40))),
-            (N'Si', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Si AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Si AS nvarchar(40))),
-            (N'Ca', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ca AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Ca AS nvarchar(40))),
-            (N'Zn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Zn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Zn AS nvarchar(40))),
-            (N'K', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(K AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(K AS nvarchar(40))),
-            (N'Na', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Na AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Na AS nvarchar(40))),
-            (N'B', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(B AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(B AS nvarchar(40))),
-            (N'P', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(P AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(P AS nvarchar(40))),
-            (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Mg AS nvarchar(40))),
-            (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(V100 AS nvarchar(40))),
-            (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(TBN AS nvarchar(40)))
-        ) v(Parametro, cell, raw) WHERE v.Parametro = f.Parametro
-    ) p
-),
-unpv2 AS (  /* componente observado = alguna celda marcada. Ventana sobre la MISMA pasada. */
-    SELECT u.*, MAX(u.marcada) OVER (PARTITION BY u.Equipo, u.compOrd) AS compMarcado
-    FROM unpv u
-),
-rows_ AS (  /* una fila por parametro; lleva tambien lo que antes salia de hdr / g / obs. */
-    SELECT Equipo, grp, ord, nombre,
-        MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
-        COUNT(DISTINCT compAbbr) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
-        COUNT(DISTINCT CASE WHEN compMarcado = 1 THEN compOrd END) AS NumObs,
-        COUNT(DISTINCT compOrd) AS NumMT,
-        MAX(marcada) AS algunaMarcada,
-        MAX(CASE WHEN compOrd = 1 AND marcada = 1 THEN nombre END) AS obsLH,
-        MAX(CASE WHEN compOrd = 2 AND marcada = 1 THEN nombre END) AS obsRH,
-        CASE WHEN ROW_NUMBER() OVER (PARTITION BY Equipo, grp ORDER BY ord) = 1 THEN 1 ELSE 0 END AS EsInicioGrupo,
-        CAST(N'| ' + nombre + N' | ' + STRING_AGG(cell, N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS rowMD
-    FROM unpv2 GROUP BY Equipo, grp, ord, nombre
-),
-fin AS (    /* una fila por equipo */
-    SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
-        MAX(N) AS N, MAX(cols) AS cols, MAX(NumObs) AS NumObs, MAX(NumMT) AS NumMT,
-        STRING_AGG(CAST(CASE WHEN EsInicioGrupo = 1 THEN N'| **' + grp + N'** |' + REPLICATE(N' |', N) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
-            WITHIN GROUP (ORDER BY ord) AS bodyMD,
-        STRING_AGG(CAST(obsLH AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY ord) AS obsLH,
-        STRING_AGG(CAST(obsRH AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY ord) AS obsRH,
-        STRING_AGG(CAST(CASE WHEN algunaMarcada = 1 THEN nombre END AS nvarchar(max)), N',') AS marcados
-    FROM rows_ GROUP BY Equipo
-)
-SELECT
-    f.Equipo, f.Proyecto, f.Modelo,
+/* 30/09 -- EL FILTRO POR EQUIPO VIVE ABAJO, no arriba.
+   Con la tuberia como CTEs y el filtro sobre el resultado final, el optimizador NO lo bajaba a traves
+   de las agregaciones: al armar el MD calculaba la traccion de TODA la flota (lc leido 655 veces = los
+   654 componentes de traccion de la base) y filtraba al final -- ~2,5 min por camion (BLOQUES 179-183).
+   Aqui la vista recorre Mine.MiningEquipment (10 paginas) y hace CROSS APPLY de la tuberia con el equipo
+   ya fijado en su base (d.Equipo = me.Code). El filtro del flujo -- LIKE o '=' -- cae sobre la tabla
+   chica y la tuberia corre una vez, para ese camion. Misma logica y misma salida que antes. */
+/* Equipo sale de me.[Code] y no de x: asi el WHERE del flujo cae sobre la tabla chica ANTES del APPLY.
+   Si saliera de x, el optimizador podria no reconocer que es el mismo valor y correr el APPLY por equipo. */
+SELECT me.[Code] AS Equipo, x.Proyecto, x.Modelo, x.Observados, x.Recomendaciones, x.MD
+FROM [Mine].[MiningEquipment] me
+CROSS APPLY (
+    SELECT * FROM (
+        SELECT fi.Equipo, fi.Proyecto, fi.Modelo,
     ISNULL(NULLIF(CONCAT_WS(N' · ',
-        CASE WHEN f.obsLH IS NOT NULL THEN N'MT LH: ' + f.obsLH END,
-        CASE WHEN f.obsRH IS NOT NULL THEN N'MT RH: ' + f.obsRH END), N''), N'(ninguno fuera de límite)') AS Observados,
+        CASE WHEN fi.obsLH IS NOT NULL THEN N'MT LH: ' + fi.obsLH END,
+        CASE WHEN fi.obsRH IS NOT NULL THEN N'MT RH: ' + fi.obsRH END), N''), N'(ninguno fuera de límite)') AS Observados,
     ISNULL(rc.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
     CAST(
-        N'**Condición Motores de Tracción — ' + f.Equipo + N'** · ' + CAST(f.NumObs AS nvarchar(10)) + N' de ' + CAST(f.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | ' + f.cols + N' |' + NCHAR(10)
-      + N'|---|' + REPLICATE(N'---|', f.N) + NCHAR(10)
-      + f.bodyMD
+        N'**Condición Motores de Tracción — ' + fi.Equipo + N'** · ' + CAST(fi.NumObs AS nvarchar(10)) + N' de ' + CAST(fi.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | ' + fi.cols + N' |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', fi.N) + NCHAR(10)
+      + fi.bodyMD
     AS nvarchar(max)) AS MD
-FROM fin f
+FROM (
+            SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
+                    MAX(N) AS N, MAX(cols) AS cols, MAX(NumObs) AS NumObs, MAX(NumMT) AS NumMT,
+                    STRING_AGG(CAST(CASE WHEN EsInicioGrupo = 1 THEN N'| **' + grp + N'** |' + REPLICATE(N' |', N) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
+                        WITHIN GROUP (ORDER BY ord) AS bodyMD,
+                    STRING_AGG(CAST(obsLH AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY ord) AS obsLH,
+                    STRING_AGG(CAST(obsRH AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY ord) AS obsRH,
+                    STRING_AGG(CAST(CASE WHEN algunaMarcada = 1 THEN nombre END AS nvarchar(max)), N',') AS marcados
+                FROM (
+                    SELECT Equipo, grp, ord, nombre,
+                            MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
+                            COUNT(DISTINCT compAbbr) AS N,
+                            STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+                            COUNT(DISTINCT CASE WHEN compMarcado = 1 THEN compOrd END) AS NumObs,
+                            COUNT(DISTINCT compOrd) AS NumMT,
+                            MAX(marcada) AS algunaMarcada,
+                            MAX(CASE WHEN compOrd = 1 AND marcada = 1 THEN nombre END) AS obsLH,
+                            MAX(CASE WHEN compOrd = 2 AND marcada = 1 THEN nombre END) AS obsRH,
+                            CASE WHEN ROW_NUMBER() OVER (PARTITION BY Equipo, grp ORDER BY ord) = 1 THEN 1 ELSE 0 END AS EsInicioGrupo,
+                            CAST(N'| ' + nombre + N' | ' + STRING_AGG(cell, N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS rowMD
+                        FROM (
+                            SELECT u.*, MAX(u.marcada) OVER (PARTITION BY u.Equipo, u.compOrd) AS compMarcado
+                                FROM (
+                                    SELECT b.Equipo, b.Proyecto, b.Modelo, b.compOrd, b.compAbbr,
+                                               f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
+                                               ISNULL(p.cell, N'—') AS cell,
+                                               CASE WHEN p.raw LIKE '%:C%' OR p.raw LIKE '%:P%' THEN 1 ELSE 0 END AS marcada
+                                        FROM (
+                                                SELECT d.*,
+                                                    CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd,
+                                                    CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' ELSE N'MT RH' END AS compAbbr
+                                                FROM [dbo].[vw_DiagnosticoEquipo] d
+                                                WHERE d.Compartimiento LIKE '%TRACCION%' AND d.Equipo = me.[Code]
+                                        ) b
+                                        INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = 'TRACCION'
+                                        OUTER APPLY (
+                                            SELECT v.cell, v.raw FROM (VALUES
+                                                (N'Fe', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Fe AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Fe AS nvarchar(40))),
+                                                (N'PQ', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(PQ AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(PQ AS nvarchar(40))),
+                                                (N'Cr', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cr AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Cr AS nvarchar(40))),
+                                                (N'Ni', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ni AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Ni AS nvarchar(40))),
+                                                (N'Cu', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Cu AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Cu AS nvarchar(40))),
+                                                (N'Pb', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Pb AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Pb AS nvarchar(40))),
+                                                (N'Sn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Sn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Sn AS nvarchar(40))),
+                                                (N'Al', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Al AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Al AS nvarchar(40))),
+                                                (N'Si', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Si AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Si AS nvarchar(40))),
+                                                (N'Ca', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Ca AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Ca AS nvarchar(40))),
+                                                (N'Zn', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Zn AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Zn AS nvarchar(40))),
+                                                (N'K', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(K AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(K AS nvarchar(40))),
+                                                (N'Na', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Na AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Na AS nvarchar(40))),
+                                                (N'B', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(B AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(B AS nvarchar(40))),
+                                                (N'P', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(P AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(P AS nvarchar(40))),
+                                                (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Mg AS nvarchar(40))),
+                                                (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(V100 AS nvarchar(40))),
+                                                (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(TBN AS nvarchar(40)))
+                                            ) v(Parametro, cell, raw) WHERE v.Parametro = f.Parametro
+                                        ) p
+                                ) u
+                        ) u2 GROUP BY Equipo, grp, ord, nombre
+                ) r GROUP BY Equipo
+        ) fi
 OUTER APPLY (
     SELECT CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
            + STRING_AGG(CONVERT(nvarchar(max), N'- **' + r.label + N':** ' + r.indicio), NCHAR(10)) WITHIN GROUP (ORDER BY r.ord)
            + NCHAR(10) + NCHAR(10) + N'Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en el próximo PM. Retirar los 8 tapones magnéticos para inspección y limpieza en busca de particulado anormal. Para mayor información y detalle, contactar a confiabilidad.operaciones@kmmp.com.pe' AS nvarchar(max)) AS Recomendaciones
     FROM (SELECT DISTINCT rr.ord, rr.label, rr.indicio
           FROM [dbo].[vw_Recomendaciones] rr
-          WHERE CHARINDEX(N',' + rr.metal + N',', N',' + f.marcados + N',') > 0) r
+          WHERE CHARINDEX(N',' + rr.metal + N',', N',' + fi.marcados + N',') > 0) r
     HAVING COUNT(*) > 0
-) rc;
+) rc
+    ) z
+) x;
 GO
 
 

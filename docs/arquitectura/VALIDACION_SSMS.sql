@@ -7952,3 +7952,26 @@ SELECT MAX(LEN(Cond_Area)) AS x FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo =
 GO
 SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 183 (30/09): las 4 columnas de vw_DiagnosticoEquipo por separado -> < 2 s y 1 365
+--   lecturas cada una. La base esta sana. El problema esta DENTRO de la vista MD.
+--   Y el numero que lo delata: en 180, lc Scan count 655 = los 654 componentes de TRACCION de toda la
+--   base (Antamina 388 + Antapaccay 72 + Cerro Verde 128 + Cuajone 24 + Toquepala 22 + Toromocho 20).
+--   ⇒ Al armar el MD la vista calcula la traccion de TODA la flota y filtra al final: el filtro sobre el
+--     resultado no baja a traves de las agregaciones.
+
+
+-- ==== BLOQUE 184 - vw_CondicionMT_MD con el filtro ABAJO (CROSS APPLY sobre MiningEquipment) ====
+-- La vista recorre Mine.MiningEquipment y hace CROSS APPLY de la tuberia con d.Equipo = me.Code en su
+--   base. Equipo sale de me.[Code]: el WHERE del flujo cae sobre la tabla chica antes del APPLY.
+-- ⚑ EXITO: LaboratoryData ~1 400 lecturas y lc Scan count de un digito (no 655). Tiempo en segundos.
+-- Se prueba con la consulta EXACTA que manda hoy el flujo (LIKE), sin tocar Power Automate.
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+-- 184.1 ⭐
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3160%';
+GO
+SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET ARITHABORT ON;
+GO
+-- 184.2 la salida tiene que ser la MISMA de 179/180: "1 de 2 observados", Zn(40.2) marcado en MT LH.
+SELECT LEFT(MD, 200) AS Inicio, Observados FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3161%';
+GO
