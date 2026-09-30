@@ -96,8 +96,8 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5h** | **G2** · `compAbbr` NULL tumbaba el `MD` entero | ✅ **CERRADO** (161, 0 nulos) | **161** | determinista |
 | **5i** | **S** · Cerro Verde: **1 579 muestras sin componente** → **Carlos** | ⏸ **no es SQL** — es carga | **161.1** | dato |
 | **5k** | **U** · **885 componentes sin ningún límite** → **Carlos** | ⏸ **no es SQL** — la más grande | **164.3** | dato |
-| **5l** | **V** · typo en la BD: `MOTORO DE TRACCION RH` | ⏸ **no es SQL** — duplica componente | **164.2** | dato |
-| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **escrito** · **B2** corrige el aviso — falta ver | **163** · **164** · **165** | determinista |
+| **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
+| **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
 | **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✍ escribir | visual | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✍ escribir | visual | determinista |
@@ -1620,3 +1620,23 @@ mismos equipos**. Razones:
 **tres** motores de tracción, y eso ya engaña a quien lo lee. Ahí sí vale una normalización — **declarada
 en el código y con fecha**, nunca silenciosa. El **165.4** dice además si `MOTORO` es el único typo o hay
 una familia, porque eso cambia la respuesta entera.
+
+### ✅ BLOQUE 165 — B cerrado y el typo zanjado
+
+**165.1/165.2** `HT079`/`HT080` → `ConAviso = 1` y «no se puede decir». `CA3160` sigue en **0**. Los
+`3115`/`3117` pasan a 1 y **es lo correcto**: tienen algún límite suelto pero **ninguno de desgaste**, así
+que su verde no significaba nada. El aviso salta donde debe y calla donde debe.
+
+**165.3 — el typo, con datos:** 72 equipos (todos `HT###`, Antamina), 215 muestras, desde 2024-07 y **aún
+entrando**. Y **en los 72 convive** con el nombre correcto. ⇒ Se cumple la condición que puse: esos
+camiones mostraban **tres** motores de tracción.
+
+**165.4 — y es uno solo, no una familia.** De los 47 `Compartimiento` distintos, el resto son componentes
+legítimos. La otra basura no son typos sino vacíos ya conocidos: `NULL` (1 606 / 68 equipos), `nan` (76 / 9)
+y `M` (1 / 1).
+
+⇒ **Normalizado** `MOTORO DE TRACCION RH` → `MOTOR DE TRACCION RH` en las **dos** vistas que leen la
+columna, **declarado en el código y con fecha**. Única normalización de este tipo en el sistema. No se toca
+`nan` ni `M`: esos no son un componente mal escrito sino **ausencia de dato**, y ya tienen su vía (`G2`).
+
+⚠ **Tapa el síntoma: la carga lo sigue metiendo.** Por eso queda como **V** para Carlos.

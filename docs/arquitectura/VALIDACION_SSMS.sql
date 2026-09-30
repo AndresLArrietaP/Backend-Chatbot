@@ -7200,3 +7200,40 @@ GO
    ⇒ Si el 165.3 muestra que SI convive en el mismo equipo, cambia la cosa: ahi el camion aparece
      con tres motores de traccion y eso ya engana al que lo lee. En ese caso si vale una
      normalizacion, pero DECLARADA en el codigo y con fecha, no silenciosa. */
+
+
+-- RESULTADOS BLOQUE 165 (29/09) -- B CERRADO y el typo zanjado. Sin mas bloques.
+--
+-- 165.1 ✅ HT079 y HT080: ConAviso = 1 y MD_Relevantes dice «no se puede decir si hay parametros
+--   fuera de umbral». Era la afirmacion que antes mentia. B2 correcto.
+-- 165.2 ✅ SIN RUIDO. CA3160 (con limites de desgaste) sigue en 0. Los 3115/3117 pasan a 1, y es
+--   LO CORRECTO: tienen algun limite suelto pero ninguno de desgaste, asi que su verde no
+--   significaba nada. El aviso salta donde debe y calla donde debe.
+-- 165.3 ⭐ EL TYPO, ZANJADO CON DATOS: 'MOTORO DE TRACCION RH' esta en 72 equipos (todos HT###,
+--   Antamina), 215 muestras, desde 2024-07-09 y con entradas hasta 2026-07. Y en LOS 72 CONVIVE
+--   con 'MOTOR DE TRACCION RH' (19 a 41 muestras correctas por equipo).
+--   ⇒ Se cumple la condicion que yo mismo puse: esos camiones mostraban TRES motores de traccion.
+-- 165.4 ✅ Y ES UNO SOLO, no una familia. De los 47 Compartimiento distintos, el resto son
+--   componentes legitimos (MANDO FINAL, DIFERENCIAL, PTO, DAMPER, REDUCTOR DE GIRO, TANDEM,
+--   FRENO, CAJA GIRO...). La otra basura no son typos sino vacios ya conocidos: NULL (1 606
+--   muestras, 68 equipos), 'nan' (76 / 9) y 'M' (1 / 1).
+--
+-- ⇒ DECISION: se normaliza 'MOTORO DE TRACCION RH' -> 'MOTOR DE TRACCION RH' en las DOS vistas
+--   que leen la columna (vw_MuestrasEstado y vw_AcumuladoVida), DECLARADO en el codigo y con
+--   fecha. Es la UNICA normalizacion de este tipo en el sistema. No se toca 'nan' ni 'M': esos no
+--   son un componente mal escrito, son ausencia de dato, y ya tienen su via (G2 los etiqueta).
+-- ⚠ Esto TAPA EL SINTOMA: la carga lo sigue metiendo. Por eso queda como pendiente V para Carlos.
+
+-- 165.5 COMPROBACION UNICA. Tras desplegar, ningun equipo puede tener ya tres MT.
+SELECT TOP 10 Equipo, COUNT(DISTINCT Compartimiento) AS CompsTraccion
+FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK)
+WHERE CompTipo = 'TRACCION'
+GROUP BY Equipo
+HAVING COUNT(DISTINCT Compartimiento) > 2
+ORDER BY COUNT(DISTINCT Compartimiento) DESC;
+GO
+-- Esperado: 0 filas. Y el smoke de siempre:
+SELECT TOP 1 'MuestrasEstado' AS Vista, Equipo AS x FROM [dbo].[vw_MuestrasEstado] WITH (NOLOCK) WHERE rn_recencia = 1;
+SELECT TOP 1 'AcumuladoVida'  AS Vista, Equipo AS x FROM [dbo].[vw_AcumuladoVida]  WITH (NOLOCK);
+SELECT TOP 1 'TendenciaMD'    AS Vista, LEFT(MD,50) AS x FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO

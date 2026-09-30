@@ -456,7 +456,17 @@ WITH muestras AS (
         UPPER(LTRIM(RTRIM(MP.[Name])))  AS ProyKey,
         UPPER(LTRIM(RTRIM(EF.[Model]))) AS ModeloKey,
         LD.[MiningEquipmentId],
-        LD.[Compartimiento],
+        /* ⛔ V (29/09) -- NORMALIZACION DECLARADA, la unica del sistema.
+           'MOTORO DE TRACCION RH' es un typo de carga: 215 muestras en 72 equipos de Antamina,
+           desde 2024-07 y todavia entrando. Se normaliza porque se cumple la condicion que lo
+           justifica (BLOQUE 165.3): CONVIVE con el nombre correcto en LOS 72 equipos, asi que
+           esos camiones mostraban TRES motores de traccion en vez de dos. Y el 165.4 confirma que
+           es un valor UNICO, no una familia de typos -- si fueran diez, esto seria una tabla de
+           sinonimos y otra decision.
+           ⚠ Normalizar aqui TAPA EL SINTOMA: la carga lo sigue metiendo. Queda en la lista de
+           Carlos (pendiente V) precisamente por eso. */
+        CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH'
+             THEN N'MOTOR DE TRACCION RH' ELSE LD.[Compartimiento] END AS [Compartimiento],
         CASE
             WHEN LD.[Compartimiento] LIKE '%TRACCION%'    THEN 'TRACCION'
             WHEN LD.[Compartimiento] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
@@ -1144,7 +1154,11 @@ GO
    acumulado es de toda la vida del componente, que es justo lo que la ventana impedia.
    Solo los 8 metales de DESGASTE, que son los unicos que el display muestra. */
 CREATE OR ALTER VIEW [dbo].[vw_AcumuladoVida] AS
-SELECT ME.[Code] AS Equipo, LD.[Compartimiento], pa.Parametro,
+SELECT ME.[Code] AS Equipo,
+       /* V (29/09): misma normalizacion que la fundacion. Ver la nota en vw_MuestrasEstado. */
+       CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH'
+            THEN N'MOTOR DE TRACCION RH' ELSE LD.[Compartimiento] END AS [Compartimiento],
+       pa.Parametro,
        CAST(SUM(pa.Valor) AS decimal(18,1)) AS Acumulado
 FROM [Oil].[LaboratoryData] LD
 INNER JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
@@ -1168,7 +1182,10 @@ WHERE pa.Valor IS NOT NULL
              las muestras 'C' del equipo en ese compartimiento. En MT y Motor si esta acotado. */
        OR (LD.[Compartimiento] LIKE '%RUEDA%'   AND LD.[CM] = 'C')
        OR (LD.[Compartimiento] LIKE '%HIDRAUL%' AND LD.[CM] = 'C') )
-GROUP BY ME.[Code], LD.[Compartimiento], pa.Parametro;
+GROUP BY ME.[Code],
+         CASE WHEN LD.[Compartimiento] = N'MOTORO DE TRACCION RH'
+              THEN N'MOTOR DE TRACCION RH' ELSE LD.[Compartimiento] END,
+         pa.Parametro;
 GO
 
 
