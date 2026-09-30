@@ -73,6 +73,21 @@ GO
 --       Curar la vista primero; pedir índices solo si el plan real lo pide.
 -- ============================================================================
 
+-- 2.0 ⭐ URGENTE (30/09) — extender el INCLUDE del índice principal §1.1 con las 13 columnas que la
+--     fundación lee desde el bloque D (28/09). Sin ellas el índice dejó de CUBRIR: cada vista por
+--     equipo va a la tabla base o la recorre entera (/diagcompleto: 76 936 páginas para UN camión;
+--     /condicionmt y /diagcompleto en FlowActionTimedOut). Misma clave: no cambia ningún plan de
+--     orden, solo evita la tabla base. ONLINE = ON: no bloquea lecturas mientras se reconstruye.
+--     Evidencia: VALIDACION_SSMS.sql BLOQUE 175.
+-- CREATE NONCLUSTERED INDEX IX_LabData_UltimaMuestra
+-- ON [Oil].[LaboratoryData] ([MiningEquipmentId], [Compartimiento], [FechaMuestreo] DESC, [LaboratoryDataId] DESC)
+-- INCLUDE ([CM], [Grado], [Horometro], [HorasDeAceite], [HorasA], [HorasB],
+--          [Fe_ppm], [Cr_ppm], [Cu_ppm], [Ni_ppm], [Pb_ppm], [Sn_ppm], [Si_ppm], [Al_ppm],
+--          [Ca_ppm], [Zn_ppm], [K_ppm], [Mg_ppm], [B_ppm], [P_ppm], [Indice_PQ], [TBN], [V100],
+--          [Viscosidad40], [TAN], [Oxidacion], [Sulfatacion], [Nitracion], [Mo_ppm],
+--          [Agua], [Hollin], [Diesel], [Refrigerante], [Iso4406_4], [Iso4406_6], [Iso4406_14])
+-- WITH (DROP_EXISTING = ON, ONLINE = ON, DATA_COMPRESSION = PAGE);
+
 -- 2.1 LaboratoryData — variante angosta del principal (si 1.1 resultara muy pesado)
 -- CREATE NONCLUSTERED INDEX IX_LaboratoryData_Equipo_Comp_Fecha
 -- ON [Oil].[LaboratoryData] (MiningEquipmentId, Compartimiento, FechaMuestreo DESC)

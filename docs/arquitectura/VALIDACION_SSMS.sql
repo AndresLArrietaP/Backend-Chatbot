@@ -7662,3 +7662,48 @@ GO
 /* DECIDIDO ANTES DE MEDIR: si 174.1 y 174.2 bajan de ~60 s y las lecturas de LaboratoryData caen a
    una fraccion de 76 936 -> se prueba en Teams y queda. Si no bajan -> el filtro sigue sin llegar y
    se mira el plan real (no mas hipotesis a ciegas). */
+
+-- RESULTADOS BLOQUE 174 (30/09): el PARTITION BY por Equipo NO movio el tiempo. /condicionmt >3 min,
+--   /diagcompleto sin cambio visible. Triage de flota intacto: 49 de 54 (41 criticos). Se mantiene el
+--   cambio (es correcto y no rompe nada), pero no era EL cuello.
+
+
+-- ==== BLOQUE 175 - LA RAIZ: el indice principal dejo de CUBRIR la fundacion el 28/09 ====
+-- IX_LabData_UltimaMuestra (desplegado, DDL_indices §1.1) tiene la clave justa -- MiningEquipmentId,
+--   Compartimiento, FechaMuestreo, LaboratoryDataId -- e INCLUDE de los 16 parametros ORIGINALES.
+--   El bloque D (28/09) hizo que la fundacion lea 13 columnas MAS: Viscosidad40, TAN, Oxidacion,
+--   Sulfatacion, Nitracion, Mo_ppm, Agua, Hollin, Diesel, Refrigerante, Iso4406_4/6/14.
+--   NINGUNA esta en el INCLUDE -> el indice ya no cubre -> SQL Server va a la tabla base por cada fila
+--   o abandona el indice y recorre LaboratoryData entera. Por eso TODO empeoro desde la ronda del 28/09
+--   y por eso 76 936 paginas para un solo camion.
+-- ⚑ DECIDIDO ANTES DE MEDIR: si 175.3 lee MUCHO mas que 175.2, la cobertura es la raiz y la cura es
+--   extender el INCLUDE (script listo en DDL_indices.sql §2.0, requiere al DBA).
+
+-- 175.1 ¿El indice desplegado es el del archivo? Columnas reales, clave primero.
+SELECT i.name AS Indice, c.name AS Columna, ic.key_ordinal AS OrdenClave, ic.is_included_column AS Include
+FROM sys.indexes i
+JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN sys.columns c        ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE i.object_id = OBJECT_ID('Oil.LaboratoryData')
+ORDER BY i.name, ic.is_included_column, ic.key_ordinal;
+GO
+
+SET STATISTICS IO ON; SET STATISTICS TIME ON;
+-- 175.2 ⭐ UN camion, SOLO columnas cubiertas por el indice.
+SELECT LD.[Compartimiento], LD.[FechaMuestreo], LD.[Fe_ppm], LD.[Cu_ppm], LD.[V100], LD.[TBN]
+FROM [Oil].[LaboratoryData] LD
+JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] LIKE '%CA3160%' AND LD.[FechaMuestreo] >= DATEADD(MONTH, -12, GETDATE());
+GO
+-- 175.3 ⭐ EL MISMO camion, + las 13 columnas del bloque D (lo que lee hoy la fundacion).
+SELECT LD.[Compartimiento], LD.[FechaMuestreo], LD.[Fe_ppm], LD.[Cu_ppm], LD.[V100], LD.[TBN],
+       LD.[Viscosidad40], LD.[TAN], LD.[Oxidacion], LD.[Sulfatacion], LD.[Nitracion], LD.[Mo_ppm],
+       LD.[Agua], LD.[Hollin], LD.[Diesel], LD.[Refrigerante], LD.[Iso4406_4], LD.[Iso4406_6], LD.[Iso4406_14]
+FROM [Oil].[LaboratoryData] LD
+JOIN [Mine].[MiningEquipment] ME ON ME.[Id] = LD.[MiningEquipmentId]
+WHERE ME.[Code] LIKE '%CA3160%' AND LD.[FechaMuestreo] >= DATEADD(MONTH, -12, GETDATE());
+GO
+SET STATISTICS IO OFF; SET STATISTICS TIME OFF;
+GO
+/* Leer en Mensajes: 'Table LaboratoryData ... logical reads'. 175.2 deberia ser decenas/centenas;
+   si 175.3 da miles, confirmado. */
