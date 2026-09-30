@@ -7707,3 +7707,49 @@ SET STATISTICS IO OFF; SET STATISTICS TIME OFF;
 GO
 /* Leer en Mensajes: 'Table LaboratoryData ... logical reads'. 175.2 deberia ser decenas/centenas;
    si 175.3 da miles, confirmado. */
+
+-- RESULTADOS BLOQUE 175 (30/09) -- INDICE DESCARTADO COMO CAUSA.
+--   175.1 el indice desplegado NO es el del archivo: falta Ca, Zn, K, Mg, HorasA, HorasB en el INCLUDE
+--         (y nunca tuvo las 13 del bloque D). Queda como mejora §2.0 para el DBA, no urgencia.
+--   175.2 un camion, columnas cubiertas ....... 22 lecturas, 0 ms   (242 muestras de CA3160, 6 comp.)
+--   175.3 el mismo + las 13 del bloque D ...... 772 lecturas, 1 ms
+--   ⇒ Leer UN camion cuesta nada. Las vistas leen 76 936 paginas: calculan la FLOTA ENTERA.
+
+
+-- ==== BLOQUE 176 - LA RAIZ: con LIKE el filtro no se propaga a las ramas de la vista ====
+-- Con 'Equipo = ''CA3160''' SQL Server propaga la constante a TODAS las ramas unidas por Equipo
+--   (unpv, hdr, body, obs...) y cada una calcula un camion. Con LIKE no puede: la inferencia de
+--   predicados solo funciona con igualdades. Una rama queda filtrada y el resto calcula toda la flota
+--   (7 veces en /diagcompleto) antes de unirse. Explica el 5x de CLAUDE.md, que '=' en SSMS fuera
+--   rapido, y que IN (subconsulta) fuera aun peor.
+-- CURA: el flujo resuelve el codigo primero y a la vista le llega una IGUALDAD. OPTION (RECOMPILE) hace
+--   que @e se compile como constante. La normalizacion T3160 -> 3160 (N4) va sobre el TEXTO, nunca la
+--   columna; solo T + 4 digitos (T1/T11 son codigos reales, 172.1).
+-- ⚑ DECIDIDO ANTES DE MEDIR: si 176.1 y 176.2 quedan por debajo de ~40 s en modo produccion, se cambia
+--   la plantilla de los flujos por equipo. Si no, se abre el plan real.
+
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 176.1 ⭐ /condicionmt
+DECLARE @in nvarchar(50) = N'3160';
+DECLARE @e nvarchar(50) = (SELECT TOP 1 [Code] FROM [Mine].[MiningEquipment]
+    WHERE [Code] LIKE '%' + CASE WHEN @in LIKE 'T[0-9][0-9][0-9][0-9]%' THEN SUBSTRING(@in,2,50) ELSE @in END + '%'
+    ORDER BY LEN([Code]));
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo = @e OPTION (RECOMPILE);
+GO
+-- 176.2 ⭐ /diagcompleto (MD_Completo, la columna que pide el flujo)
+DECLARE @in nvarchar(50) = N'CA3160';
+DECLARE @e nvarchar(50) = (SELECT TOP 1 [Code] FROM [Mine].[MiningEquipment]
+    WHERE [Code] LIKE '%' + CASE WHEN @in LIKE 'T[0-9][0-9][0-9][0-9]%' THEN SUBSTRING(@in,2,50) ELSE @in END + '%'
+    ORDER BY LEN([Code]));
+SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo = @e OPTION (RECOMPILE);
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
+-- 176.3 LA RESOLUCION DE CODIGOS (N4). Esperado: 3160 -> CA3160 · CA3160 -> CA3160 · T3160 -> CA3160 ·
+--   HT079 -> HT079 · T11 -> T11 (no se toca).
+SELECT x.entrada,
+       (SELECT TOP 1 [Code] FROM [Mine].[MiningEquipment]
+        WHERE [Code] LIKE '%' + CASE WHEN x.entrada LIKE 'T[0-9][0-9][0-9][0-9]%' THEN SUBSTRING(x.entrada,2,50) ELSE x.entrada END + '%'
+        ORDER BY LEN([Code])) AS resuelve_a
+FROM (VALUES (N'3160'),(N'CA3160'),(N'T3160'),(N'HT079'),(N'T11')) x(entrada);
+GO
