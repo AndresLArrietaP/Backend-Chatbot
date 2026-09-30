@@ -2282,22 +2282,26 @@ GO
 
 /* ==== vw_CondicionMT_MD (condición de Motores de Tracción de 1 equipo) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_CondicionMT_MD] AS
+/* 30/09 -- TUBERIA LINEAL: cada CTE se referencia UNA sola vez.
+   Los CTE de SQL Server no se materializan: cada referencia re-ejecuta la cadena entera hasta la
+   fundacion (~25 s por camion). La version anterior leia vw_DiagnosticoEquipo ~11 veces -- 'unpv'
+   hacia 'd JOIN base' (la misma vista dos veces) y se usaba 4 veces; 'hdr' 2; 'g' 1 -- y no terminaba
+   en 5 min (BLOQUES 173-178). Aqui: base -> unpv -> rows_ -> fin -> SELECT. Los conteos, Proyecto/Modelo
+   y los observados viajan DENTRO de la tuberia como agregados; las recomendaciones salen de un OUTER
+   APPLY sobre la lista de metales marcados, que es constante y barata. */
 WITH base AS (
-    SELECT Equipo, Proyecto, Modelo, Compartimiento, Estado_General,
-        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' ELSE N'MT RH' END AS compAbbr
-    FROM [dbo].[vw_DiagnosticoEquipo]
-    WHERE Compartimiento LIKE '%TRACCION%'
-),
-unpv AS (   /* Las filas las define vw_FormatoParametro (hoja MT del Excel): mismo orden, mismos grupos y
-               las mismas 23 filas que /ultimo. Los parametros que la BD no mide salen con '—'. */
-    SELECT b.Equipo, b.compOrd, b.compAbbr, f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
-           ISNULL(p.cell, N'—') AS cell,
-           /* La marca se guarda tal cual la trae la fundacion (':C'/':P'), antes de convertirla en
-              emoji: es ASCII y no depende de la intercalacion. De aqui salen el contador del
-              encabezado y la lista de observados, asi no pueden contradecir a la tabla. */
-           CASE WHEN p.raw LIKE '%:C%' OR p.raw LIKE '%:P%' THEN 1 ELSE 0 END AS marcada
+    SELECT d.*,
+        CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd,
+        CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' ELSE N'MT RH' END AS compAbbr
     FROM [dbo].[vw_DiagnosticoEquipo] d
-    JOIN base b ON b.Equipo=d.Equipo AND b.Compartimiento=d.Compartimiento
+    WHERE d.Compartimiento LIKE '%TRACCION%'
+),
+unpv AS (   /* filas = hoja MT de vw_FormatoParametro; la marca sale del valor crudo (':C'/':P'), ASCII. */
+    SELECT b.Equipo, b.Proyecto, b.Modelo, b.compOrd, b.compAbbr,
+           f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
+           ISNULL(p.cell, N'—') AS cell,
+           CASE WHEN p.raw LIKE '%:C%' OR p.raw LIKE '%:P%' THEN 1 ELSE 0 END AS marcada
+    FROM base b
     INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = 'TRACCION'
     OUTER APPLY (
         SELECT v.cell, v.raw FROM (VALUES
@@ -2322,84 +2326,56 @@ unpv AS (   /* Las filas las define vw_FormatoParametro (hoja MT del Excel): mis
         ) v(Parametro, cell, raw) WHERE v.Parametro = f.Parametro
     ) p
 ),
-hdr AS (
-    /* ⛔ E (29/09) REVERTIDO. Aqui se intento meter el encabezado de muestra igual que en
-       /diagcompleto: cuatro STRING_AGG mas en este CTE. La vista paso de responder a NO TERMINAR
-       en 16 MINUTOS. No es coste lineal, es un cambio de plan: 'base' lo leen hdr, unpv y obsdet,
-       y engordar hdr hizo que el optimizador re-ejecutara la cadena de vw_DiagnosticoEquipo.
-       ⇒ El encabezado es COSMETICO y esta vista es de las calientes. Una funcion que funciona no
-       se cambia por una mejora visual sin poder medir antes. Ver BLOQUE 167. */
-    SELECT Equipo, COUNT(DISTINCT compAbbr) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
-    FROM (SELECT DISTINCT Equipo, compOrd, compAbbr FROM base) z GROUP BY Equipo
+unpv2 AS (  /* componente observado = alguna celda marcada. Ventana sobre la MISMA pasada. */
+    SELECT u.*, MAX(u.marcada) OVER (PARTITION BY u.Equipo, u.compOrd) AS compMarcado
+    FROM unpv u
 ),
-rows_ AS (
+rows_ AS (  /* una fila por parametro; lleva tambien lo que antes salia de hdr / g / obs. */
     SELECT Equipo, grp, ord, nombre,
+        MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
+        COUNT(DISTINCT compAbbr) AS N,
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+        COUNT(DISTINCT CASE WHEN compMarcado = 1 THEN compOrd END) AS NumObs,
+        COUNT(DISTINCT compOrd) AS NumMT,
+        MAX(marcada) AS algunaMarcada,
+        MAX(CASE WHEN compOrd = 1 AND marcada = 1 THEN nombre END) AS obsLH,
+        MAX(CASE WHEN compOrd = 2 AND marcada = 1 THEN nombre END) AS obsRH,
         CASE WHEN ROW_NUMBER() OVER (PARTITION BY Equipo, grp ORDER BY ord) = 1 THEN 1 ELSE 0 END AS EsInicioGrupo,
         CAST(N'| ' + nombre + N' | ' + STRING_AGG(cell, N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS rowMD
-    FROM unpv GROUP BY Equipo, grp, ord, nombre
+    FROM unpv2 GROUP BY Equipo, grp, ord, nombre
 ),
-body AS (
-    SELECT r.Equipo,
-        STRING_AGG(CAST(CASE WHEN r.EsInicioGrupo = 1 THEN N'| **' + r.grp + N'** |' + REPLICATE(N' |', h.N) + NCHAR(10) ELSE N'' END + r.rowMD AS nvarchar(max)), NCHAR(10))
-            WITHIN GROUP (ORDER BY r.ord) AS bodyMD
-    FROM rows_ r JOIN hdr h ON h.Equipo=r.Equipo GROUP BY r.Equipo
-),
-/* Observados y Recomendaciones (MT) */
-obsdet AS (   /* Una sola fuente de verdad: lo observado es lo que la tabla marca. Antes esto
-                repetia su propia lista de 13 metales, que no coincidia con las 23 filas del formato. */
-    SELECT Equipo, compOrd, compAbbr, nombre AS metal
-    FROM unpv WHERE marcada = 1
-),
-obscomp AS (
-    SELECT Equipo, compOrd, compAbbr, STRING_AGG(metal, N', ') AS metals
-    FROM obsdet GROUP BY Equipo, compOrd, compAbbr
-),
-obsall AS (
-    SELECT Equipo, STRING_AGG(compAbbr + N': ' + metals, N' · ') WITHIN GROUP (ORDER BY compOrd) AS Observados
-    FROM obscomp GROUP BY Equipo
-),
-recos AS (
-    SELECT DISTINCT od.Equipo, r.ord, r.label, r.indicio
-    FROM obsdet od JOIN [dbo].[vw_Recomendaciones] r ON r.metal = od.metal
-),
-recoblock AS (
-    SELECT Equipo,
-        CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
-           + STRING_AGG(CONVERT(nvarchar(max), N'- **' + label + N':** ' + indicio), NCHAR(10)) WITHIN GROUP (ORDER BY ord)
-           + NCHAR(10) + NCHAR(10) + N'Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en el próximo PM. Retirar los 8 tapones magnéticos para inspección y limpieza en busca de particulado anormal. Para mayor información y detalle, contactar a confiabilidad.operaciones@kmmp.com.pe' AS nvarchar(max)) AS Recomendaciones
-    FROM recos GROUP BY Equipo
-),
-g AS (
-    SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo
-    FROM base GROUP BY Equipo
-),
-obs AS (   /* El contador sale de las celdas marcadas, no de Estado_General: ese solo mira 9 metales
-              de desgaste + TBN, y por eso el encabezado decia '0 de 2 observados' con el Zn en rojo
-              dos filas mas abajo (BLOQUE 118: 119 componentes en esa situacion). */
-    SELECT Equipo,
-        COUNT(DISTINCT CASE WHEN marcada = 1 THEN compOrd END) AS NumObs,
-        COUNT(DISTINCT compOrd) AS NumMT
-    FROM unpv GROUP BY Equipo
+fin AS (    /* una fila por equipo */
+    SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
+        MAX(N) AS N, MAX(cols) AS cols, MAX(NumObs) AS NumObs, MAX(NumMT) AS NumMT,
+        STRING_AGG(CAST(CASE WHEN EsInicioGrupo = 1 THEN N'| **' + grp + N'** |' + REPLICATE(N' |', N) + NCHAR(10) ELSE N'' END + rowMD AS nvarchar(max)), NCHAR(10))
+            WITHIN GROUP (ORDER BY ord) AS bodyMD,
+        STRING_AGG(CAST(obsLH AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY ord) AS obsLH,
+        STRING_AGG(CAST(obsRH AS nvarchar(max)), N', ') WITHIN GROUP (ORDER BY ord) AS obsRH,
+        STRING_AGG(CAST(CASE WHEN algunaMarcada = 1 THEN nombre END AS nvarchar(max)), N',') AS marcados
+    FROM rows_ GROUP BY Equipo
 )
 SELECT
-    g.Equipo, g.Proyecto, g.Modelo,
-    ISNULL(oa.Observados, N'(ninguno fuera de límite)') AS Observados,
-    ISNULL(rb.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
+    f.Equipo, f.Proyecto, f.Modelo,
+    ISNULL(NULLIF(CONCAT_WS(N' · ',
+        CASE WHEN f.obsLH IS NOT NULL THEN N'MT LH: ' + f.obsLH END,
+        CASE WHEN f.obsRH IS NOT NULL THEN N'MT RH: ' + f.obsRH END), N''), N'(ninguno fuera de límite)') AS Observados,
+    ISNULL(rc.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Sin parámetros de Motor de Tracción fuera de límite — sin recomendaciones aplicables por ahora.') AS Recomendaciones,
     CAST(
-        N'**Condición Motores de Tracción — ' + g.Equipo + N'** · ' + CAST(ob.NumObs AS nvarchar(10)) + N' de ' + CAST(ob.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | ' + h.cols + N' |' + NCHAR(10)
-      + N'|---|' + REPLICATE(N'---|', h.N) + NCHAR(10)
-      + bd.bodyMD
+        N'**Condición Motores de Tracción — ' + f.Equipo + N'** · ' + CAST(f.NumObs AS nvarchar(10)) + N' de ' + CAST(f.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | ' + f.cols + N' |' + NCHAR(10)
+      + N'|---|' + REPLICATE(N'---|', f.N) + NCHAR(10)
+      + f.bodyMD
     AS nvarchar(max)) AS MD
-FROM g
-JOIN obs ob ON ob.Equipo=g.Equipo
-JOIN hdr h ON h.Equipo=g.Equipo
-JOIN body bd ON bd.Equipo=g.Equipo
-LEFT JOIN obsall oa ON oa.Equipo=g.Equipo
-LEFT JOIN recoblock rb ON rb.Equipo=g.Equipo;
-/* Sin encabezado de muestra a proposito: en 'hdr' colgaba la vista y como OUTER APPLY dependia de que
-   el filtro por Equipo llegara primero (con IN (subconsulta) paso de 25 s a >6 min). Ver BLOQUE 171. */
+FROM fin f
+OUTER APPLY (
+    SELECT CAST(N'**🔧 Recomendaciones Técnicas**' + NCHAR(10)
+           + STRING_AGG(CONVERT(nvarchar(max), N'- **' + r.label + N':** ' + r.indicio), NCHAR(10)) WITHIN GROUP (ORDER BY r.ord)
+           + NCHAR(10) + NCHAR(10) + N'Acortar la frecuencia de monitoreo y programar dializado/cambio de aceite en el próximo PM. Retirar los 8 tapones magnéticos para inspección y limpieza en busca de particulado anormal. Para mayor información y detalle, contactar a confiabilidad.operaciones@kmmp.com.pe' AS nvarchar(max)) AS Recomendaciones
+    FROM (SELECT DISTINCT rr.ord, rr.label, rr.indicio
+          FROM [dbo].[vw_Recomendaciones] rr
+          WHERE CHARINDEX(N',' + rr.metal + N',', N',' + f.marcados + N',') > 0) r
+    HAVING COUNT(*) > 0
+) rc;
 GO
 
 

@@ -7828,3 +7828,27 @@ GO
      LEFT JOIN de igualdad (codigo directo + codigo con T) y se combina con ISNULL. Arregla TODA
      vista que pase por ahi, no solo estas dos.
    · el salto en 178.1 -> es la fundacion (candidato: el LEFT JOIN a vw_InvPorComponente de G1). */
+
+-- RESULTADOS BLOQUE 178 (30/09): los 4 eslabones responden en segundos (10:24:19 -> 10:25:11).
+--   La cadena de abajo esta sana; vw_DiagnosticoEquipo sola ~25 s por camion. El problema esta DENTRO
+--   de las vistas MD: /condicionmt la leia ~11 veces (unpv = 'd JOIN base' x4 usos, hdr x2, g x1).
+
+
+-- ==== BLOQUE 179 - vw_CondicionMT_MD reescrita como TUBERIA LINEAL ====
+-- base -> unpv -> unpv2 -> rows_ -> fin -> SELECT. Cada CTE se usa UNA vez; vw_DiagnosticoEquipo se lee
+--   UNA vez. El radar de check_ddl ya no lista ningun CTE de esta vista.
+-- ⚑ EXITO: termina, y con el operador de PRODUCCION (el flujo sigue mandando LIKE) queda bajo ~60 s.
+-- ⚑ SALIDA IDENTICA a la anterior para CA3160 (referencia de hoy): "1 de 2 observados",
+--   cabecera '| Par. | MT LH | MT RH |', Zn(40.2) marcado en MT LH, y el bloque de recomendaciones de Zn.
+
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 179.1 ⭐ la consulta EXACTA del flujo
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3160%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
+-- 179.2 un equipo SIN observados: tiene que decir '(ninguno fuera de límite)' y la recomendacion por
+--   defecto, no NULL (el OUTER APPLY de recomendaciones devuelve 0 filas ahi).
+SELECT TOP 3 Equipo, Observados, LEFT(Recomendaciones, 80) AS Reco
+FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3161%';
+GO
