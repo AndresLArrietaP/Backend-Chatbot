@@ -7408,3 +7408,46 @@ GO
    puede comprobar que las dos fuentes siguen coincidiendo.
    ⛔ NO se aplica ahora a proposito: apilar un segundo cambio sin medir el primero es como se
    llego hasta aqui. */
+
+
+-- RESULTADOS BLOQUE 169 (30/09) -- EL ENCABEZADO SI ERA LA CAUSA. Me equivoque al absolverlo.
+-- A/B limpio, misma vista, mismo dia, unica diferencia el encabezado:
+--     SIN encabezado -> 21 315 ms       CON encabezado -> no termina (5+ min)
+--
+-- ANALISIS A FONDO -- POR QUE ESTA VISTA SI Y /diagcompleto NO:
+--   'hdr' esta referenciado DOS VECES: en 'body' (JOIN hdr h, linea 63) y en el SELECT final
+--   (JOIN hdr h, linea 114). Los CTE de SQL Server NO SE MATERIALIZAN, asi que hdr se ejecuta
+--   ENTERO dos veces, y cada ejecucion re-corre su subarbol: el DISTINCT sobre 'base' ->
+--   vw_DiagnosticoEquipo -> toda la cadena hasta la fundacion.
+--     · SIN cabMD: un DISTINCT sobre 3 columnas cortas y un STRING_AGG. Dos pasadas se aguantan.
+--     · CON cabMD: cada pasada suma 4 STRING_AGG con su ORDER BY (4 ordenaciones mas), produce
+--       nvarchar(max) -- LOB -- y el DISTINCT pasa a ordenar filas mucho mas anchas porque
+--       arrastra 'Grado'. Y todo eso x2.
+--   Es la LEY 2 en estado puro: el encabezado no cuesta el doble, vuelve CARO un CTE que se lee
+--   dos veces, y la agregacion LOB impide podar la proyeccion de 'base' -> cada pasada arrastra
+--   la fundacion entera.
+--
+--   ⇒ /diagcompleto lo aguanto porque ahi hdr_all lee 'comp', comp lee 'unpv', y unpv lee 'base'
+--     UNA SOLA VEZ: esa consolidacion se hizo a proposito en los BLOQUES 116/117.
+--     vw_CondicionMT_MD NUNCA la recibio -- su 'unpv' lee vw_DiagnosticoEquipo por su cuenta,
+--     aparte de 'base' (radar: unpv x3 · hdr x2 · obsdet x2).
+--   ⇒ NO es que la vista "se lleve mal con los encabezados". Es que tiene la deuda estructural
+--     que la otra ya pago.
+--
+-- LA CURA, que es la documentada en la ley 2 ("OUTER APPLY en la misma fila"):
+--   Sacar cabMD de 'hdr' y calcularlo en el SELECT FINAL con un OUTER APPLY correlacionado por
+--   Equipo. Asi se ejecuta UNA vez por fila de salida y con el equipo ya conocido -- lectura
+--   filtrada, no una pasada completa -- y 'hdr' se queda igual de barato que hoy:
+--
+--     OUTER APPLY (
+--         SELECT N'| **Muestra** |' + REPLICATE(N' |', COUNT(*)) + NCHAR(10)
+--              + N'| Fecha | '      + STRING_AGG(...) WITHIN GROUP (ORDER BY compOrd) + ...
+--         FROM (SELECT DISTINCT compOrd, compAbbr, FechaMuestreo, Grado, HorasComponente, CM
+--               FROM base WHERE base.Equipo = g.Equipo) z
+--     ) cab
+--
+--   ⛔ NO SE APLICA ESTA NOCHE. Van dos veces que doy por buena una hipotesis sobre esta vista sin
+--      medirla, y las dos costaron una ronda. Se prueba con calma, con la linea base 21 315 ms
+--      delante, en la tanda de rendimiento posterior al 02/10 -- donde ademas toca consolidar las
+--      3 lecturas de 'unpv', que es la deuda de fondo. Con esa consolidacion hecha, el encabezado
+--      probablemente entre solo.
