@@ -7408,32 +7408,3 @@ GO
    puede comprobar que las dos fuentes siguen coincidiendo.
    ⛔ NO se aplica ahora a proposito: apilar un segundo cambio sin medir el primero es como se
    llego hasta aqui. */
-
-
--- RESULTADOS BLOQUE 168 (30/09) -- CONFIRMADO: el culpable era el CASE sobre Compartimiento.
---   /condicionmt vuelve a responder: 21 315 ms (compilacion 7 925 ms aparte) y devuelve
---   "Condicion Motores de Traccion - CA3160 · 1 de 2 observados".
---   ⇒ Y eso significa que ACUSE AL ENCABEZADO SIN PRUEBAS. Lo revertí el 29/09 culpandolo, y era
---     inocente. La leccion no es solo "no tocar zona caliente": es que revertir por sospecha,
---     sin medir, desanda trabajo bueno y deja el fallo real en pie. Aqui costo dos rondas.
-
-
--- ==== BLOQUE 169 - El encabezado de /condicionmt, ahora CON linea base ====
--- Se reaplica lo mismo que el 29/09, sin cambios: los 4 campos viajan en el DISTINCT que 'hdr' ya
--- hacia, asi que no hay lecturas nuevas. La diferencia es que ahora hay contra que comparar.
--- ⛔ LINEA BASE MEDIDA: 21 315 ms. Si esto sube de forma clara, se revierte SOLO el encabezado y
---    esta vez con dato, no con sospecha.
-
--- 169.1 ⭐ PRIMERO EL TIEMPO. Nada mas corriendo.
-SET STATISTICS TIME ON;
-SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
-GO
-SET STATISTICS TIME OFF;
-GO
-
--- 169.2 Y RECIEN AHORA lo visual: las 4 filas bajo «Muestra», una columna por MT.
---   En el CA3160 el LH y el RH pueden traer fechas y horas distintas: ahi se ve por que el
---   encabezado va por fila y no como una linea unica arriba.
-SELECT LEFT(MD, 700) AS Inicio
-FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
-GO

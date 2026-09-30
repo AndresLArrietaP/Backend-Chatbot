@@ -2298,7 +2298,6 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_CondicionMT_MD] AS
 WITH base AS (
     SELECT Equipo, Proyecto, Modelo, Compartimiento, Estado_General,
-        FechaMuestreo, Grado, HorasComponente, CM,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' ELSE N'MT RH' END AS compAbbr
     FROM [dbo].[vw_DiagnosticoEquipo]
     WHERE Compartimiento LIKE '%TRACCION%'
@@ -2338,21 +2337,15 @@ unpv AS (   /* Las filas las define vw_FormatoParametro (hoja MT del Excel): mis
     ) p
 ),
 hdr AS (
-    /* E (30/09): encabezado de muestra, igual que en /diagcompleto. Una fila por campo porque el
-       LH y el RH pueden muestrearse en dias distintos: una linea unica arriba mentiria.
-       ⚑ Se reintenta despues de haberlo acusado SIN PRUEBAS: el 29/09 esta vista dejo de
-       responder y le eche la culpa a este encabezado, pero el culpable era un CASE sobre
-       Compartimiento en la fundacion (BLOQUE 168). Ahora hay linea base -- 21,3 s -- contra la
-       que medir, que es lo que faltaba la primera vez.
-       Sin lecturas extra: los 4 campos viajan en el DISTINCT que este CTE ya hacia. */
+    /* ⛔ E (29/09) REVERTIDO. Aqui se intento meter el encabezado de muestra igual que en
+       /diagcompleto: cuatro STRING_AGG mas en este CTE. La vista paso de responder a NO TERMINAR
+       en 16 MINUTOS. No es coste lineal, es un cambio de plan: 'base' lo leen hdr, unpv y obsdet,
+       y engordar hdr hizo que el optimizador re-ejecutara la cadena de vw_DiagnosticoEquipo.
+       ⇒ El encabezado es COSMETICO y esta vista es de las calientes. Una funcion que funciona no
+       se cambia por una mejora visual sin poder medir antes. Ver BLOQUE 167. */
     SELECT Equipo, COUNT(DISTINCT compAbbr) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
-        CAST(N'| **Muestra** |' + REPLICATE(N' |', COUNT(DISTINCT compAbbr)) + NCHAR(10)
-           + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CM,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS cabMD
-    FROM (SELECT DISTINCT Equipo, compOrd, compAbbr, FechaMuestreo, Grado, HorasComponente, CM FROM base) z GROUP BY Equipo
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
+    FROM (SELECT DISTINCT Equipo, compOrd, compAbbr FROM base) z GROUP BY Equipo
 ),
 rows_ AS (
     SELECT Equipo, grp, ord, nombre,
@@ -2411,7 +2404,6 @@ SELECT
         N'**Condición Motores de Tracción — ' + g.Equipo + N'** · ' + CAST(ob.NumObs AS nvarchar(10)) + N' de ' + CAST(ob.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + h.cols + N' |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', h.N) + NCHAR(10)
-      + h.cabMD + NCHAR(10)
       + bd.bodyMD
     AS nvarchar(max)) AS MD
 FROM g
