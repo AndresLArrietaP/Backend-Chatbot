@@ -103,6 +103,17 @@ MODI) no existe en la BD y hoy no devuelve nada. Regla: si empieza con `T`+dígi
 **plantilla del flujo** (cubre comando y lenguaje natural), aplicada al **texto del usuario, nunca a la
 columna**. No quitar todas las letras: `HT079` quedaría `079` y encontraría otros equipos. Antes de
 aplicarla: **BLOQUE 172.1 debe dar 0 filas**.
+⚠ **172.1 dio `T1` y `T11`** (códigos reales). ⇒ Regla corregida: quitar la `T` **solo si le siguen 4+
+dígitos** (`T3160` → `3160` → `CA3160`, único match según 172.2). `T1`/`T11` quedan intactos.
+
+### 🔴 Tras el revert, Teams SIGUE en timeout (30/09 09:06-09:11)
+
+Mensaje: *«Esa consulta de **toda la flota** tardó más de lo esperado»*. **Siguiente paso: historial de
+ejecuciones de `MD_equipo`**, acción SQL de las dos corridas fallidas. Anotar: (1) la **consulta que llegó**
+— ¿`LIKE '%3160%'` o `LIKE '%%'`?; (2) duración; (3) nº de reintentos.
+- equipo vacío → mismo bug que **C1**, pero con `equipo` (Copilot, no SQL).
+- reintentos → aplicar **Capa A** (Reintentos = Ninguno).
+- ~100 s limpio → rendimiento en frío real → consolidar `unpv` (vuelve a SQL).
 
 ### 🆕 Tres pedidos nuevos del PASO 0
 
