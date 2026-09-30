@@ -52,15 +52,15 @@ parámetro**: `ISO>6` aporta 38 críticos + 10 precauciones = **las 48**. Sin é
 `ISO>4/6/14` → `Inf = 1` en `vw_FormatoParametro`. Se siguen viendo, dejan de contar.
 *(Medido en BLOQUE **162.2b**. Detalle en la sección «Resultado del BLOQUE 162».)*
 
-### 🔴 Resultado del PASO 0 (30/09) — dos módulos **muertos en producción**
+### ✅ Resultado del PASO 0 (30/09) — CERRADO. Dos módulos estaban muertos en producción; curados el mismo día
 
 | Comando | Resultado |
 |---|---|
 | `/triage antapaccay` | ✅ renderiza (**45 de 54**, 38 críticos — la data se movió desde el 162) |
 | `/tendencia 3160 mt lh` | ✅ renderiza |
 | `/grafica 3160 mt lh Fe` | ✅ renderiza |
-| `/diagcompleto 3160` | ⛔ **`FlowActionTimedOut`** |
-| `/condicionmt 3160` | ⛔ **`FlowActionTimedOut`** |
+| `/diagcompleto 3160` | ⛔ `FlowActionTimedOut` → ✅ **6,6 s** tras el filtro abajo (BLOQUE 185) |
+| `/condicionmt 3160` | ⛔ `FlowActionTimedOut` → ✅ **1,4 s** tras el filtro abajo (BLOQUE 184) |
 
 **Error de medición mío, y la regla estaba escrita en `CLAUDE.md`:** medí todo el día con
 `Equipo = N'CA3160'` y el flujo `MD_equipo` manda `Equipo LIKE '%3160%'`. *«Medir con el operador de
