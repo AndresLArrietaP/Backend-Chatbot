@@ -201,6 +201,10 @@ def columnas_no_expuestas(texto):
             if alias.lower() in ("as", "on", "where", "group", "order", "with", "cross", "outer", "left", "join"):
                 continue
             origenes.setdefault(alias, set()).add(m.group(1))
+        # una tabla derivada '( ... ) r' tambien es un origen: sin esto, un alias reutilizado entre
+        # una subconsulta y una vista (vw_DiagnosticoMD con sus CTE desplegados) se leia como de la vista
+        for m in re.finditer(r"\)\s+(?:AS\s+)?([a-z][a-z0-9_]{0,4})\b(?=\s*(?:\n|JOIN|ON|GROUP|WHERE|,|CROSS|OUTER|LEFT|INNER|\)))", cuerpo):
+            origenes.setdefault(m.group(1), set()).add("(derivada)")
         binds = {}
         for alias, orgs in origenes.items():
             if len(orgs) != 1:

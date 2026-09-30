@@ -7975,3 +7975,23 @@ GO
 -- 184.2 la salida tiene que ser la MISMA de 179/180: "1 de 2 observados", Zn(40.2) marcado en MT LH.
 SELECT LEFT(MD, 200) AS Inicio, Observados FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3161%';
 GO
+
+-- RESULTADOS BLOQUE 184 (30/09) -- ⭐ /condicionmt RESUELTO: 146 s -> 1,4 s (CPU 94 ms). lc 655 -> 2.
+--   Salida identica ("1 de 2 observados", Zn(40.2) en MT LH). 184.2: CA3161 "2 de 2", correcto (Zn en
+--   los dos lados, 179.2). Con la consulta EXACTA del flujo (LIKE): no hay que tocar Power Automate.
+
+
+-- ==== BLOQUE 185 - vw_DiagnosticoMD con el mismo patron ====
+-- CROSS APPLY sobre Mine.MiningEquipment; los 15 CTE desplegados en su sitio (un CROSS APPLY no admite
+--   WITH; SQL Server ya los trata como macros, asi que la logica no cambia). Cada copia lleva el equipo
+--   fijado en su base: las lecturas repetidas son de UN camion.
+-- ⚑ EXITO: segundos, y la salida igual a la de antes (6 componentes, "4 de 6 componentes observados").
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+-- 185.1 ⭐ la consulta EXACTA del flujo para /diagcompleto
+SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 185.2 la variante MD (solo observados)
+SELECT MD AS MD FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%';
+GO
+SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET ARITHABORT ON;
+GO
