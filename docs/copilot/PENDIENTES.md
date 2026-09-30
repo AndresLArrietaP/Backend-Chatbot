@@ -99,7 +99,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
-| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⛔ `/condicionmt` **revertido** (rompía la vista) | **166** · **167** | determinista |
+| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ✅ `/condicionmt` **reaplicado** con línea base | **166** · **169** | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✅ **SQL escrito** — el resto es Copilot | **166** | determinista |
 
 **El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
@@ -1721,3 +1721,16 @@ recomendación original, la que yo mismo di, y que no debí saltarme.
 `LEFT JOIN vw_InvPorComponente` (paso `G1`) en la vista **más leída del sistema**, ligando por `CompTipo`
 —que también es un `CASE`—. La cura sin join está escrita en el BLOQUE 168. **No la aplico ahora a
 propósito:** apilar un segundo cambio sin medir el primero es exactamente cómo llegué hasta aquí.
+
+## ✅ Confirmado: el culpable era el `CASE`, y el encabezado era inocente
+
+`/condicionmt` vuelve a responder — **21 315 ms** — tras revertir la normalización. Y eso deja algo claro
+que conviene anotar: **acusé al encabezado sin pruebas** y lo reverti culpándolo. Era inocente.
+
+⇒ La lección no es solo *«no tocar zona caliente»*. Es que **revertir por sospecha, sin medir, desanda
+trabajo bueno y deja el fallo real en pie**. Aquí costó dos rondas: la primera reversión no arregló nada
+porque apuntaba al sitio equivocado.
+
+**Reaplicado** (BLOQUE 169), idéntico al del 29/09 — los 4 campos viajan en el `DISTINCT` que `hdr` ya
+hacía, así que **no hay lecturas nuevas**. La diferencia es que ahora hay **línea base: 21,3 s**. Si sube
+de forma clara, se revierte **con dato, no con sospecha**.
