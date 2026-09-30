@@ -7928,3 +7928,27 @@ SELECT COUNT(*) AS n FROM [dbo].[vw_CondicionMT_MD] WHERE Equipo = @e OPTION (RE
 GO
 SET STATISTICS IO OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 182 (30/09): vw_UltimoAnalisisFlota, vw_DiagnosticoEquipo y vw_CondicionMT_MD con
+--   COUNT(*) -> 1 365 lecturas las tres: el filtro LLEGA arriba. Pero con COUNT(*) el optimizador PODA
+--   las columnas (no aparece lc). Con el MD real (180): lc x655, Worktable 1,17 M, LaboratoryData 18 252.
+--   ⇒ El filtro no es el problema: el plan se deforma cuando se CALCULAN columnas.
+--   Plan real: SHOWPLAN denegado al usuario de solo lectura (Msg 262). Se bisecciona por columnas.
+
+
+-- ==== BLOQUE 183 - Biseccion por columnas en vw_DiagnosticoEquipo ====
+-- 178.4 (MAX(Fe), MAX(Cond_Area), MAX(NumCompObs)) tardo ~25 s; COUNT(*) es instantaneo.
+-- Una columna por consulta. ⚑ Pegar solo 'LaboratoryData ... logical reads' y el elapsed de cada una.
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+DECLARE @e nvarchar(50) = N'CA3160';
+-- 183.1 un ESTADO (necesita los limites)
+SELECT MAX(Estado_General) AS x FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 183.2 una CELDA formateada (valor + marca)
+SELECT MAX(Fe) AS x FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 183.3 el conteo por VENTANA
+SELECT MAX(NumCompObs) AS x FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 183.4 el estado del area (JOIN con OR contra HsCc)
+SELECT MAX(LEN(Cond_Area)) AS x FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = @e OPTION (RECOMPILE);
+GO
+SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET ARITHABORT ON;
+GO
