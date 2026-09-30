@@ -7375,3 +7375,36 @@ GO
    no tiene un 'comp' equivalente -- habria que crearlo, y eso ya no es un retoque visual sino una
    reestructuracion, del mismo saco que las 3 lecturas de 'unpv'. Va con la tanda de rendimiento
    de despues del 02/10, no antes. */
+
+
+-- ==== BLOQUE 168 - La causa real: un CASE sobre la columna por la que se filtra ====
+-- 🔴 EL REVERT DEL 167 NO BASTO: /condicionmt siguio sin terminar en 17 minutos. El encabezado NO
+--   era el culpable, o no el unico. La causa esta un nivel mas abajo, en la FUNDACION:
+--   Ayer normalice 'MOTORO DE TRACCION RH' envolviendo la proyeccion en un CASE:
+--       CASE WHEN LD.[Compartimiento] = N'MOTORO...' THEN N'MOTOR...' ELSE LD.[Compartimiento] END
+--   Y 'Compartimiento' es LA COLUMNA POR LA QUE FILTRA MEDIO SISTEMA. vw_CondicionMT_MD hace
+--   'WHERE Compartimiento LIKE %TRACCION%'. Al volverla CALCULADA, el predicado deja de bajar y
+--   hay que materializar la cadena entera antes de filtrar.
+--   ⇒ Es la LEY 3 y su corolario -- el que escribi YO un dia antes, midiendo 11 min contra 2 s.
+--     Converti en columna calculada justamente la que todo el sistema usa para filtrar.
+-- ⇒ REVERTIDO en las 2 vistas. El typo vuelve a estar VISIBLE y va a Carlos, que era la
+--   recomendacion original y la que no debi haberme saltado.
+
+-- 168.1 ⭐ LA UNICA CONSULTA QUE IMPORTA AHORA. Referencia: respondia en segundos.
+SET STATISTICS TIME ON;
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+SET STATISTICS TIME OFF;
+GO
+
+/* ⚑ SI SIGUE LENTO, el siguiente sospechoso esta identificado y no hay que buscarlo:
+   vw_MuestrasEstado gano hoy un 'LEFT JOIN [dbo].[vw_InvPorComponente] inv ON inv.CompTipo =
+   m.CompTipo' (paso G1). Es un join contra 7 filas, pero entra en la vista MAS LEIDA del sistema
+   y liga por CompTipo, que tambien es un CASE.
+   La cura sin join: los 6 CASE de aditivos leen la direccion de una condicion directa
+   -- 'm.CompTipo <> N''TRACCION''' para Ca/Zn/Mg/Mo, invertido siempre para B/P -- que es
+   EXACTAMENTE lo que la cabecera de vw_FormatoParametro declara invariante ("solo 4 parametros
+   cambian de grupo entre hojas"). Se pierde el join, no la regla; y una consulta de validacion
+   puede comprobar que las dos fuentes siguen coincidiendo.
+   ⛔ NO se aplica ahora a proposito: apilar un segundo cambio sin medir el primero es como se
+   llego hasta aqui. */

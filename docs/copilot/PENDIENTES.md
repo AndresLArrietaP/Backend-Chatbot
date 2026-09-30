@@ -1701,3 +1701,23 @@ El encabezado de `/condicionmt` queda **pendiente, no descartado** — pero no s
 `/diagcompleto` funcionó porque se arma sobre `comp`, un CTE que **ya** agrupaba y no está en la cadena
 caliente. `vw_CondicionMT_MD` no tiene equivalente: habría que crearlo, y eso es **reestructuración**, del
 mismo saco que sus 3 lecturas de `unpv`. Va con la tanda de rendimiento posterior al 02/10.
+
+## 🔴🔴 La causa real: convertí en calculada la columna por la que se filtra
+
+El revert del encabezado **no bastó** — `/condicionmt` siguió 17 minutos. El culpable estaba un nivel más
+abajo y era **de ayer**: al normalizar el typo envolví la proyección de `Compartimiento` en un `CASE`.
+
+Y `Compartimiento` es **la columna por la que filtra medio sistema** — `vw_CondicionMT_MD` hace
+`WHERE Compartimiento LIKE '%TRACCION%'`. Al volverla calculada, **el predicado deja de bajar** y hay que
+materializar la cadena entera antes de filtrar.
+
+⇒ Es la **ley 3 y su corolario** — el que escribí **yo, un día antes**, midiendo *11 min contra 2 s*.
+Convertí en columna calculada justamente la que todo el sistema usa para filtrar.
+
+**Revertido en las dos vistas.** El typo vuelve a estar **visible** y va a Carlos — que era la
+recomendación original, la que yo mismo di, y que no debí saltarme.
+
+⚑ **Si sigue lento**, el siguiente sospechoso ya está identificado: `vw_MuestrasEstado` ganó hoy un
+`LEFT JOIN vw_InvPorComponente` (paso `G1`) en la vista **más leída del sistema**, ligando por `CompTipo`
+—que también es un `CASE`—. La cura sin join está escrita en el BLOQUE 168. **No la aplico ahora a
+propósito:** apilar un segundo cambio sin medir el primero es exactamente cómo llegué hasta aquí.
