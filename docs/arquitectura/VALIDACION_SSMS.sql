@@ -7852,3 +7852,29 @@ GO
 SELECT TOP 3 Equipo, Observados, LEFT(Recomendaciones, 80) AS Reco
 FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3161%';
 GO
+
+-- RESULTADOS BLOQUE 179 (30/09) -- REESCRITURA CORRECTA; la repeticion desaparecio.
+--   Salida identica: "1 de 2 observados", cabecera MT LH | MT RH, Zn 40.2 marcado en LH, reco de Zn.
+--   179.2 CA3161: 'MT LH: Zn · MT RH: Zn' + su recomendacion. OK.
+--   E/S: LaboratoryData Scan count 312 -> 1 · lecturas 1 181 361 -> 18 252 · CPU ~34 s · 151 s.
+--   ⇒ 18 252 = lo que lee el triage de TODA la flota (18 211). Con LIKE '%CA3160%' el optimizador estima
+--     decenas de equipos y recorre todo. 176 (=, vista vieja) = un camion x312; 179 (LIKE, vista nueva) =
+--     una vez, toda la flota. Falta la combinacion.
+--   (Aparte, preexistente y NO de este cambio: /condicionmt muestra ISO>4/6/14 en '—' aunque haya dato;
+--    el VALUES de la vista nunca incluyo esas celdas. Anotado para despues.)
+
+
+-- ==== BLOQUE 180 - La combinacion: vista lineal + IGUALDAD (resolvedor de N4) ====
+-- ⚑ DECIDIDO: si 180.1 baja de ~20 s -> la plantilla de los flujos por equipo pasa a
+--   DECLARE @e = <resolvedor 176.3>; SELECT ... WHERE Equipo = @e OPTION (RECOMPILE)
+--   y vw_DiagnosticoMD recibe la misma reescritura lineal.
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 180.1 ⭐
+DECLARE @in nvarchar(50) = N'3160';
+DECLARE @e nvarchar(50) = (SELECT TOP 1 [Code] FROM [Mine].[MiningEquipment]
+    WHERE [Code] LIKE '%' + CASE WHEN @in LIKE 'T[0-9][0-9][0-9][0-9]%' THEN SUBSTRING(@in,2,50) ELSE @in END + '%'
+    ORDER BY LEN([Code]));
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo = @e OPTION (RECOMPILE);
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
