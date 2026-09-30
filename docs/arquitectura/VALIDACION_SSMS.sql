@@ -7878,3 +7878,31 @@ SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 180 (30/09) -- con IGUALDAD, IDENTICO a LIKE: LaboratoryData 18 252 lecturas,
+--   lc Scan count 655, Worktable 1 169 069, CPU 30 s, 146 s. Salida correcta.
+--   ⇒ El filtro por equipo NO LLEGA a la tabla con NINGUN operador: se calcula la flota entera y se
+--     filtra al final (lc 655 > las 242 muestras de CA3160 = entran filas de otros camiones).
+--   ⇒ Algun eslabon de la cadena BLOQUEA el pushdown. Se localiza por lecturas, no por tiempo.
+
+
+-- ==== BLOQUE 181 - ¿En que eslabon se deja de filtrar? (solo LECTURAS) ====
+-- Un camion leido directo cuesta 772 paginas (175.3). La flota entera, 18 252.
+-- ⚑ LEER SOLO en Mensajes: 'Table LaboratoryData ... logical reads N' de CADA consulta.
+--   El primer eslabon que marque ~18 000 en vez de ~800 es el que bloquea.
+
+SET ARITHABORT OFF; SET STATISTICS IO ON;
+DECLARE @e nvarchar(50) = N'CA3160';
+-- 181.1 fundacion
+SELECT COUNT(*), MAX(Estado_General), MAX(Fe_LC) FROM [dbo].[vw_MuestrasEstado] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 181.2
+SELECT COUNT(*), MAX(HorasComponente) FROM [dbo].[vw_MuestrasRankeadas] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 181.3
+SELECT COUNT(*), MAX(HorasComponente) FROM [dbo].[vw_UltimoAnalisisAceite] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 181.4
+SELECT COUNT(*), MAX(Cond_Area) FROM [dbo].[vw_UltimoAnalisisFlota] WHERE Equipo = @e OPTION (RECOMPILE);
+-- 181.5
+SELECT COUNT(*), MAX(Fe), MAX(NumCompObs) FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = @e OPTION (RECOMPILE);
+GO
+SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
