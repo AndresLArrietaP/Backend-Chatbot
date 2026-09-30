@@ -8047,3 +8047,32 @@ WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRA
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 186 (30/09) -- el patron cura las vistas de UNA fuente y empeora las de VARIAS.
+--   ✅ TendenciaP1MD 1,6 s (LD 2 734) · UltimoAnalisisMD 11,9 s · TendenciaMetalMD 9 s ·
+--      TendenciaGraficoObsMD 16,5 s · Barrido resumen 4,3 s · Barrido detalle 18,7 s · Incipiente 10,4 s
+--   🔴 TendenciaMD ~2 min (LD 268 069; antes 62 357) · TendenciaGraficoMD 92 s (LD 7 424 265, Scan 152)
+--   🔴 HistorialMD / HistorialEquipoMD: no terminan
+--   ⇒ En las que UNEN varias fuentes pesadas, correlacionar cada una con me.Code las convierte en sub-APPLY
+--     y el optimizador las une con bucles anidados, re-ejecutando una por cada fila de la otra.
+--   ⇒ REVERTIDAS desde el respaldo esas 4; quedan las 7 que mejoraron.
+
+
+-- ==== BLOQUE 187 - Linea base REAL de las 4 revertidas, con el operador de produccion ====
+-- /historial nunca se habia medido: hay que saber si ya estaba enfermo o si lo enfermo el cambio.
+-- ⚑ Cortar cualquiera que pase de 3 min: eso ya es la respuesta.
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 187.1 ⭐ historial (primero: es la duda)
+SELECT LEN(MD) AS L FROM vw_HistorialMD WHERE Equipo LIKE '%CA3160%';
+GO
+SELECT LEN(MD) AS L FROM vw_HistorialEquipoMD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 187.2 /tendencia y /grafica, en su version anterior
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_TendenciaMD
+WHERE Equipo LIKE '%CA3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%';
+GO
+SELECT MD, Observados, Recomendaciones FROM vw_TendenciaGraficoMD
+WHERE Equipo LIKE '%CA3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%' AND Parametro='Fe';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
