@@ -7451,3 +7451,26 @@ GO
 --      delante, en la tanda de rendimiento posterior al 02/10 -- donde ademas toca consolidar las
 --      3 lecturas de 'unpv', que es la deuda de fondo. Con esa consolidacion hecha, el encabezado
 --      probablemente entre solo.
+
+
+-- ==== BLOQUE 170 - El encabezado de /condicionmt por OUTER APPLY (cura de la ley 2) ====
+-- QUE CAMBIO, y es puramente ADITIVO: no se toco NI UN CTE existente. 'hdr' queda como estaba.
+--   El encabezado se calcula en el SELECT FINAL con un OUTER APPLY correlacionado por Equipo, que
+--   corre UNA vez por equipo de salida y con el Equipo ya conocido -- lectura filtrada, no una
+--   pasada completa. Lee vw_DiagnosticoEquipo directo a proposito, para no ensanchar 'base', que
+--   ya se lee 3 veces.
+-- ⛔ LINEA BASE: 21 315 ms SIN encabezado. Con el encabezado dentro de 'hdr': NO TERMINABA.
+--    Si esto vuelve a colgarse, NO se insiste: se revierte y el encabezado espera a que se
+--    consoliden las 3 lecturas de 'unpv', que es la deuda de fondo.
+
+-- 170.1 ⭐⭐ EL TIEMPO, Y NADA MAS. Si no baja de ~25 s, se revierte.
+SET STATISTICS TIME ON;
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+SET STATISTICS TIME OFF;
+GO
+
+-- 170.2 Y SOLO SI EL 170.1 PASO: las 4 filas bajo «Muestra», una columna por MT.
+SELECT LEFT(MD, 700) AS Inicio
+FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO

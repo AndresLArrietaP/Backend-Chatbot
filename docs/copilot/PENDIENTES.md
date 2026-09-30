@@ -99,7 +99,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
-| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⏸ `/condicionmt` **aparcado** (ley 2 · cura escrita) | **166** · **169** | determinista |
+| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⏳ `/condicionmt` **cura aplicada** — falta medir | **166** · **170** | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✅ **SQL escrito** — el resto es Copilot | **166** | determinista |
 
 **El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
@@ -1757,3 +1757,16 @@ conocido, y `hdr` se queda tan barato como hoy.
 ⛔ **No se aplica esta noche.** Van **dos** hipótesis mías dadas por buenas sin medir sobre esta vista, y
 las dos costaron una ronda entera. Va con la tanda de rendimiento posterior al 02/10, junto con consolidar
 las 3 lecturas de `unpv` — **con esa consolidación hecha, el encabezado probablemente entre solo.**
+
+## ⏳ Aplicada la cura del `OUTER APPLY` (BLOQUE 170)
+
+**Puramente aditiva: no se tocó ni un CTE existente.** `hdr` queda exactamente como está. El encabezado se
+calcula en el `SELECT` final con un `OUTER APPLY` **correlacionado por `Equipo`** — corre **una vez por
+equipo de salida**, con el `Equipo` ya conocido, así que es una lectura filtrada y no una pasada completa.
+Lee `vw_DiagnosticoEquipo` directo **a propósito**, para no ensanchar `base`, que ya se lee 3 veces.
+
+Lleva `ISNULL` sobre el resultado: un agregado sobre 0 filas devuelve NULL y **anularía todo el `MD`**
+(modo A de la ley 5).
+
+⛔ **Criterio de corte, fijado de antemano:** línea base **21 315 ms**. Si el 170.1 no baja de ~25 s,
+**se revierte y no se insiste** — el encabezado espera a que se consoliden las 3 lecturas de `unpv`.
