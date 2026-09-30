@@ -1961,7 +1961,6 @@ WITH base AS (   /* UNICA lectura de la fundacion. Antes se leia 4 veces (base, 
 unpv AS (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 parametros): esta tabla es
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
     SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
-           b.FechaMuestreo, b.Grado, b.HorasComponente, b.CM,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
            v.cell,
            /* El valor CRUDO, antes de sustituir ':C'/':P' por los cuadros de color.
@@ -2027,39 +2026,21 @@ comp AS (   /* 1 fila por equipo+componente, DERIVADA de unpv.
            MAX(Modelo)      AS Modelo,
            MAX(compOrd)     AS compOrd,
            MAX(compAbbr)    AS compAbbr,
-           MAX(CompMarcado) AS CompMarcado,
-           MAX(FechaMuestreo)    AS FechaMuestreo,
-           MAX(Grado)            AS Grado,
-           MAX(HorasComponente)  AS HorasComponente,
-           MAX(CM)               AS CM
+           MAX(CompMarcado) AS CompMarcado
     FROM unpv
     GROUP BY Equipo, Compartimiento
 ),
-/* CABECERAS de columnas (dinámicas) por variante */
+/* CABECERAS de columnas (dinámicas) por variante.
+   Sin encabezado de muestra a proposito: con el operador de produccion esta vista quedo en ~41 s y
+   dio FlowActionTimedOut en Teams. hdr_all y hdr_obs se leen 2 veces. Ver BLOQUE 171. */
 hdr_all AS (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
-        /* E (29/09): filas de encabezado DENTRO de la matriz. Van por fila y no como una
-           cabecera unica porque cada componente tiene SU fecha, SU grado y SUS horas: una sola
-           linea arriba mentiria en cuanto dos componentes se muestrearan en dias distintos. */
-        CAST(N'| **Muestra** |' + REPLICATE(N' |', COUNT(DISTINCT Compartimiento)) + NCHAR(10)
-           + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CM,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS cabMD
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
     FROM comp GROUP BY Equipo
 ),
 hdr_obs AS (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
-        /* E (29/09): filas de encabezado DENTRO de la matriz. Van por fila y no como una
-           cabecera unica porque cada componente tiene SU fecha, SU grado y SUS horas: una sola
-           linea arriba mentiria en cuanto dos componentes se muestrearan en dias distintos. */
-        CAST(N'| **Muestra** |' + REPLICATE(N' |', COUNT(DISTINCT Compartimiento)) + NCHAR(10)
-           + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' + NCHAR(10)
-           + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CM,N'—')), N' | ') WITHIN GROUP (ORDER BY compOrd) + N' |' AS nvarchar(max)) AS cabMD
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
     FROM comp WHERE CompMarcado = 1 GROUP BY Equipo
 ),
 /* FILAS de parámetros (celdas en orden de componente) por variante */
@@ -2137,14 +2118,14 @@ SELECT
         ELSE
              N'| Par. | ' + ho.cols + N' |' + NCHAR(10)
            + N'|---|' + REPLICATE(N'---|', ho.N) + NCHAR(10)
-           + ho.cabMD + NCHAR(10) + bo.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
+           + bo.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
         END
     AS nvarchar(max)) AS MD,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' (completo) — ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes**' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ha.cols + N' |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', ha.N) + NCHAR(10)
-      + ha.cabMD + NCHAR(10) + ba.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
+      + ba.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
     AS nvarchar(max)) AS MD_Completo
 FROM g
 JOIN hdr_all ha ON ha.Equipo=g.Equipo
@@ -2404,11 +2385,6 @@ SELECT
         N'**Condición Motores de Tracción — ' + g.Equipo + N'** · ' + CAST(ob.NumObs AS nvarchar(10)) + N' de ' + CAST(ob.NumMT AS nvarchar(10)) + N' observados' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + h.cols + N' |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', h.N) + NCHAR(10)
-      /* E (30/09): encabezado de muestra, por fila, porque el LH y el RH pueden muestrearse en
-         dias distintos y una linea unica arriba mentiria.
-         ⛔ ISNULL obligatorio: un agregado sobre 0 filas devuelve NULL y anularia TODO el MD
-         (modo A de la ley 5). */
-      + ISNULL(cab.cabMD + NCHAR(10), N'')
       + bd.bodyMD
     AS nvarchar(max)) AS MD
 FROM g
@@ -2416,30 +2392,9 @@ JOIN obs ob ON ob.Equipo=g.Equipo
 JOIN hdr h ON h.Equipo=g.Equipo
 JOIN body bd ON bd.Equipo=g.Equipo
 LEFT JOIN obsall oa ON oa.Equipo=g.Equipo
-LEFT JOIN recoblock rb ON rb.Equipo=g.Equipo
-/* ⛔ E (30/09) -- POR QUE ESTO VA AQUI Y NO EN 'hdr'.
-   Meterlo en 'hdr' colgo la vista: hdr esta referenciado DOS veces (en 'body' y en este SELECT) y
-   los CTE de SQL Server no se materializan, asi que sus 4 STRING_AGG con ORDER BY y sus valores
-   nvarchar(max) corrian DOS veces sobre la cadena entera hasta la fundacion. Medido: 21 315 ms
-   sin encabezado contra NO TERMINA con el (BLOQUE 169).
-   Aqui es la cura de la ley 2: OUTER APPLY EN LA MISMA FILA. Corre una vez por equipo de salida,
-   con el Equipo ya conocido -- lectura correlacionada y filtrada, no una pasada completa -- y no
-   toca ni un CTE existente. Lee vw_DiagnosticoEquipo directo a proposito, para no ensanchar
-   'base', que ya se lee 3 veces. */
-OUTER APPLY (
-    SELECT N'| **Muestra** |' + REPLICATE(N' |', COUNT(*)) + NCHAR(10)
-         + N'| Fecha | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(FORMAT(z.FechaMuestreo,'dd-MMM-yy'),N'—')), N' | ') WITHIN GROUP (ORDER BY z.compOrd) + N' |' + NCHAR(10)
-         + N'| Grado | '      + STRING_AGG(CONVERT(nvarchar(max), ISNULL(z.Grado,N'—')), N' | ') WITHIN GROUP (ORDER BY z.compOrd) + N' |' + NCHAR(10)
-         + N'| Hrs Comp | '   + STRING_AGG(CONVERT(nvarchar(max), ISNULL(CONVERT(nvarchar(20),CAST(z.HorasComponente AS decimal(18,0))),N'—')), N' | ') WITHIN GROUP (ORDER BY z.compOrd) + N' |' + NCHAR(10)
-         + N'| T. muestra | ' + STRING_AGG(CONVERT(nvarchar(max), ISNULL(z.CM,N'—')), N' | ') WITHIN GROUP (ORDER BY z.compOrd) + N' |' AS cabMD
-    FROM (
-        SELECT DISTINCT d.Compartimiento,
-               CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN 1 ELSE 2 END AS compOrd,
-               d.FechaMuestreo, d.Grado, d.HorasComponente, d.CM
-        FROM [dbo].[vw_DiagnosticoEquipo] d
-        WHERE d.Equipo = g.Equipo AND d.Compartimiento LIKE '%TRACCION%'
-    ) z
-) cab;
+LEFT JOIN recoblock rb ON rb.Equipo=g.Equipo;
+/* Sin encabezado de muestra a proposito: en 'hdr' colgaba la vista y como OUTER APPLY dependia de que
+   el filtro por Equipo llegara primero (con IN (subconsulta) paso de 25 s a >6 min). Ver BLOQUE 171. */
 GO
 
 

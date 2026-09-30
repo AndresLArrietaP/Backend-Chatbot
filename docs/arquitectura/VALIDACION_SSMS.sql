@@ -7560,3 +7560,29 @@ GO
           equipo, no solo estos dos.
    ⚠ 171.5 tiene que dar 0 filas en cualquier caso, o la cura del flujo no se puede aplicar tal cual.
 */
+
+-- RESULTADOS BLOQUE 171 (30/09):
+--   171.0 /tendencia + LIKE ............ ~33 s  (control: el LIKE solo NO mata)
+--   171.1 /condicionmt + LIKE .......... 9,4 s compila + 25,4 s ejecuta = ~35 s
+--   171.2 /condicionmt + IN(subconsulta) > 6 min, cortado  -> CURA DEL FLUJO DESCARTADA
+--   171.3 /diagcompleto + LIKE ......... 9,7 + 31,6 = ~41 s
+--   171.4 /diagcompleto + IN ........... 12,4 + 19,1 = ~31 s
+--   171.5 equipos perdidos ............. 0
+--   ⇒ Caso (b) del arbol: se REVIERTE el encabezado de las dos vistas. Sin margen frente a los ~100 s
+--     de Teams (compilacion en frio + disco), y el OUTER APPLY dependia de que el filtro llegara primero.
+
+
+-- ==== BLOQUE 172 - Tras el revert: prueba en TEAMS + los codigos T ====
+-- 172.0 LA PRUEBA QUE IMPORTA NO ES AQUI: en Teams, /diagcompleto 3160 y /condicionmt 3160.
+--   Si responden -> el encabezado era la diferencia.
+--   Si siguen en FlowActionTimedOut -> la causa es anterior: revisar en MD_equipo Reintentos = Ninguno
+--   y Timeout PT100S (CONFIG_TIMEOUT capas A y B), y despues el JOIN de G1 en la fundacion.
+
+-- 172.1 CODIGOS 'T'. En Teams se usan 3160, CA3160 y T3160 (codigo de Cummins, MODI). T3160 no existe
+--   en la BD. Regla propuesta en el flujo: si el texto empieza con T seguida de digitos, quitar la T.
+--   Solo es segura si NINGUN codigo real empieza con T+digito. Tiene que dar 0 filas.
+SELECT [Code] FROM [Mine].[MiningEquipment] WHERE [Code] LIKE 'T[0-9]%' ORDER BY [Code];
+GO
+-- 172.2 Y como se ven los codigos de 3160 hoy (lo que devuelve el LIKE del flujo).
+SELECT [Code] FROM [Mine].[MiningEquipment] WHERE [Code] LIKE '%3160%' ORDER BY [Code];
+GO

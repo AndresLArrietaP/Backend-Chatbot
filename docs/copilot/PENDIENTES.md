@@ -90,6 +90,20 @@ después:  WHERE Equipo IN (SELECT Code FROM Mine.MiningEquipment WHERE Code LIK
 El `LIKE` se resuelve contra la tabla **ligera** de equipos y a la vista pesada le llega una lista corta de
 códigos **exactos**. Verificado que es exacta: la fundación saca `Equipo` de `ME.[Code]`.
 
+### ✅ Resultado del BLOQUE 171 — caso (b): encabezado REVERTIDO en las dos vistas
+
+`/condicionmt` ~35 s y `/diagcompleto` ~41 s con `LIKE` (caché caliente) — sin margen frente a los ~100 s
+de Teams. La cura del flujo `IN (subconsulta)` **colgó `/condicionmt`** (>6 min): descartada.
+⇒ **Prueba siguiente, en Teams:** `/diagcompleto 3160` y `/condicionmt 3160` (BLOQUE 172). Si siguen
+cayendo: revisar en `MD_equipo` **Reintentos = Ninguno** y **Timeout `PT100S`** (CONFIG_TIMEOUT capas A/B).
+El encabezado vuelve cuando se consolide `unpv` y se mida con `LIKE` en frío.
+
+**N4 · Tres formas del mismo camión: `3160` · `CA3160` · `T3160`** — *flujo*. `T3160` (código de Cummins,
+MODI) no existe en la BD y hoy no devuelve nada. Regla: si empieza con `T`+dígitos, quitar la `T` en la
+**plantilla del flujo** (cubre comando y lenguaje natural), aplicada al **texto del usuario, nunca a la
+columna**. No quitar todas las letras: `HT079` quedaría `079` y encontraría otros equipos. Antes de
+aplicarla: **BLOQUE 172.1 debe dar 0 filas**.
+
 ### 🆕 Tres pedidos nuevos del PASO 0
 
 **N1 · `/tendencia` y `/grafica` en UNA SOLA tabla** — *SQL*. Hoy cada una imprime **dos** tablas con las
