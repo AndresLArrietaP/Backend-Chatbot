@@ -99,7 +99,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
-| **7** | **E** · encabezado de muestra en `/diagcompleto` y `/condicionmt` | ✅ **escrito** — falta ver | **166** | determinista |
+| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⛔ `/condicionmt` **revertido** (rompía la vista) | **166** · **167** | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✅ **SQL escrito** — el resto es Copilot | **166** | determinista |
 
 **El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
@@ -1676,3 +1676,28 @@ los tres obligatorios. La vista ya acepta los tres.
 vista de este archivo que **no expone** esa columna en su `SELECT` final. **Probado en negativo** con el
 error real (`te.NMuestras`): muerde. Y afinado para no gritar en falso — un alias corto como `r` se reutiliza
 para un CTE dentro de la misma vista, así que **un alias ambiguo no se juzga**.
+
+## 🔴 Rompí `vw_CondicionMT_MD`, y la lección es de proceso
+
+**8 (A) quedó bien** y **7 (E) funciona en `/diagcompleto`** — el encabezado se ve como se pidió, y de paso
+**valida el diseño**: en el mismo `CA3160` el MT lleva `OMALA` y la rueda `SPIRAX`, con horas de **166 a
+17 318**. Una cabecera única arriba habría mentido en las dos filas.
+
+**Pero `/condicionmt` pasó de responder a no terminar en 16 minutos.** Metí el encabezado en `hdr`
+—cuatro `STRING_AGG` más— y esa vista tiene `base` leído por `hdr`, `unpv` y `obsdet`. No es coste lineal:
+el optimizador volteó el plan. **Es la ley 2**, y el radar lo venía imprimiendo en **cada corrida de hoy**.
+Revertido.
+
+### Lo que falla en mi proceso, sin adornos
+
+- **Mis scripts `.py` no son pruebas**: aplican el cambio al DDL con `assert` para no corromper el archivo.
+- **El único verificador es `check_ddl.py`, y no mide rendimiento.** Sin acceso a la BD, **un cambio de plan
+  me es invisible** hasta que alguien lo corre. No hay forma de que lo detecte antes.
+- ⇒ **La única defensa real es no tocar un CTE que el radar lista**, salvo que el cambio valga el riesgo.
+  Una mejora visual **nunca** lo vale. Anotado como corolario de la **ley 2** en `CLAUDE.md`.
+- ⇒ Y **la medición va primero** en el bloque. Hoy iba de sexta: se quemaron 16 minutos antes de llegar.
+
+El encabezado de `/condicionmt` queda **pendiente, no descartado** — pero no se reintenta en `hdr`. En
+`/diagcompleto` funcionó porque se arma sobre `comp`, un CTE que **ya** agrupaba y no está en la cadena
+caliente. `vw_CondicionMT_MD` no tiene equivalente: habría que crearlo, y eso es **reestructuración**, del
+mismo saco que sus 3 lecturas de `unpv`. Va con la tanda de rendimiento posterior al 02/10.

@@ -1,6 +1,6 @@
 /* ============================================================================
    KomfIA — ÍNDICE DE VALIDACIÓN EN SSMS
-   167 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
+   168 bloques · índice regenerado el 25/09/2026; bloques 136-143 añadidos el 28/09.
    Ctrl+F sobre 'BLOQUE N' para saltar. Están en orden numérico.
    Los RESULTADOS de cada corrida quedan comentados justo debajo de su bloque.
    ----------------------------------------------------------------------------
@@ -187,6 +187,7 @@
      BLOQUE 164  Rehacer las dos comprobaciones del 163 que no probaban nada
      BLOQUE 165  B2: el aviso se dispara por los limites QUE HACEN FALTA
      BLOQUE 166  PASOS 7 (E) y 8 (A): encabezado de muestra + la grafica se basta sola
+     BLOQUE 167  Volver a la linea base tras romper vw_CondicionMT_MD
    ============================================================================ */
 
 /* ============================================================================
@@ -7306,3 +7307,71 @@ GO
 --   a una vista de este archivo que NO expone esa columna en su SELECT final. Probado en negativo
 --   con el error real (te.NMuestras). Afinado para no gritar en falso: un alias corto como 'r' se
 --   reutiliza para un CTE dentro de la misma vista, asi que un alias AMBIGUO no se juzga.
+
+
+-- RESULTADOS BLOQUE 166 (29/09) -- 8 (A) BIEN. 7 (E) a medias, y ROMPI UNA VISTA.
+--
+-- 166.1 ✅ /diagcompleto CON ENCABEZADO, y se ve exactamente como se pidio:
+--     | **Muestra** | | | | |
+--     | Fecha | 15-Sep-26 | 15-Sep-26 | 15-Sep-26 | 15-Sep-26 |
+--     | Grado | SHELL OMALA S4 GXV 680 | ... | SHELL SPIRAX S5 CFD M 60 | ... |
+--     | Hrs Comp | 16571 | 15002 | 166 | 17318 |
+--     | T. muestra | ADI | ADI | C | M |
+--   ⭐ Y de paso VALIDA EL DISENO: el MT lleva OMALA y la rueda SPIRAX en el MISMO equipo, y las
+--     horas van de 166 a 17 318. Una cabecera unica arriba habria mentido en las dos filas.
+--
+-- 166.3 ✅ LA GRAFICA. Tabla sin Spark, y el resumen en texto con su logica:
+--     - Prom.: 122.1 - media de las 6 muestras del periodo (las 6 ultimas como maximo).
+--     - Desv. est. (σ): 31.9 - cuanto se mueve entre muestra y muestra...
+--     - Nº fuera de limite: 0 de 6 - veces que supero LP en el periodo.
+--     - Acum: 6 785.4 - suma del metal con el criterio del area...
+--   Limites en una linea y la grafica ASCII debajo. A queda cerrado en SQL.
+--
+-- 166.2 / 166.4 ⛔⛔ vw_CondicionMT_MD NO TERMINO EN 16 MINUTOS. Antes respondia.
+--   CAUSA: meti el encabezado en 'hdr' -- cuatro STRING_AGG mas -- y esa vista tiene 'base' leido
+--   por hdr, unpv y obsdet. No es coste lineal: el optimizador volteo el plan y se puso a
+--   re-ejecutar la cadena de vw_DiagnosticoEquipo. Es la ley 2, y el radar de check_ddl lo venia
+--   imprimiendo en CADA corrida de hoy ('vw_CondicionMT_MD.unpv x3 · hdr x2 · obsdet x2').
+--   ⇒ REVERTIDO. El encabezado es COSMETICO; la vista es de las calientes. Una funcion que
+--     funciona no se cambia por una mejora visual sin poder medir antes.
+--
+-- 166.6 /diagcompleto: 16 229 ms con Scan count 7 sobre LaboratoryData. El Scan count es el
+--   MISMO de la referencia (7), o sea que el encabezado no anadio lecturas. El tiempo se midio
+--   con la consulta colgada del 166.2 todavia comiendose el servidor, asi que no es comparable.
+--   Lo resuelve el 167.1, que ahora va PRIMERO.
+--
+-- 🔴 LA LECCION DE PROCESO, que es la que importa:
+--   * Mis scripts .py NO son pruebas: aplican el cambio al DDL con asserts. El unico verificador
+--     es check_ddl.py, y NO MIDE RENDIMIENTO -- sin acceso a la BD, un cambio de plan me es
+--     invisible hasta que alguien lo corre.
+--   * La unica defensa real es NO TOCAR un CTE que el radar lista, salvo que el cambio valga el
+--     riesgo. Una mejora visual nunca lo vale. Anotado como corolario de la ley 2 en CLAUDE.md.
+--   * Y la medicion va PRIMERO en el bloque. Hoy iba de sexta: se quemaron 16 minutos antes de
+--     llegar a ella.
+
+
+-- ==== BLOQUE 167 - Volver a la linea base, midiendo ANTES de mirar nada ====
+-- 167.1 ⭐⭐ PRIMERO EL TIEMPO. Las dos vistas que se tocaron, solas y sin nada mas corriendo.
+--   Referencias: /diagcompleto ~12 s con Scan count 7 · /condicionmt respondia en segundos.
+--   ⛔ Si /condicionmt no vuelve a responder, el problema NO era el encabezado y hay que buscar
+--     en otro lado antes de seguir.
+SET STATISTICS TIME ON;
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+SET STATISTICS TIME OFF;
+GO
+
+-- 167.2 Y RECIEN AHORA lo visual: /condicionmt vuelve a su formato de siempre (sin encabezado).
+SELECT LEFT(MD, 500) AS Inicio
+FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
+GO
+
+/* ⚑ QUE PASA CON EL ENCABEZADO DE /condicionmt:
+   Queda PENDIENTE, no descartado. Pero no se vuelve a intentar metiendolo en 'hdr'. La via
+   sensata es la misma que funciono en /diagcompleto: ahi el encabezado se arma sobre 'comp', un
+   CTE que YA agrupaba por equipo+componente y que no esta en la cadena caliente. vw_CondicionMT_MD
+   no tiene un 'comp' equivalente -- habria que crearlo, y eso ya no es un retoque visual sino una
+   reestructuracion, del mismo saco que las 3 lecturas de 'unpv'. Va con la tanda de rendimiento
+   de despues del 02/10, no antes. */
