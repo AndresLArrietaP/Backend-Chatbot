@@ -7624,3 +7624,41 @@ GO
 SET STATISTICS TIME OFF; SET ARITHABORT ON;
 GO
 -- ⚠ Si alguna pasa de 3 minutos, cortarla: con eso ya se sabe la respuesta.
+
+-- RESULTADOS BLOQUE 173 (30/09) -- ARITHABORT DESCARTADO.
+--   173.1 /condicionmt OFF ........ > 3 min, cortado
+--   173.2 /diagcompleto OFF ....... 168 366 ms (CPU 34 406 ms)
+--   173.3 /diagcompleto ON ........ ~3 min tambien -> no es el plan del conector
+--   173.4 condicionmt + RECOMPILE . > 5 min, cortado
+--   ⇒ La vista en si no cabe. CPU 34 s vs 168 s transcurridos: el resto es espera (el tier de la BD
+--     estrangula), pero la CAUSA es que hace demasiado trabajo para UN equipo.
+
+
+-- ==== BLOQUE 174 - LA RAIZ: el filtro de equipo no bajaba por debajo de la ventana ====
+-- La fundacion rankea con PARTITION BY MiningEquipmentId, y los flujos filtran por Equipo (ME.Code).
+--   SQL Server solo empuja un filtro por debajo de ROW_NUMBER/DENSE_RANK si la columna esta en el
+--   PARTITION BY. Resultado: cada consulta de UN camion rankeaba 12 meses de TODA la flota y despues
+--   filtraba -- 7 veces en /diagcompleto. El comentario de la fundacion ya lo decia; se mitigo con la
+--   ventana de 12 meses y nunca se arreglo.
+-- CURA: 'Equipo' entra al PARTITION BY. Cada Id tiene un solo Code -> mismas particiones, mismos
+--   rankings, y ahora el filtro por equipo baja hasta LaboratoryData.
+-- ⚑ EXITO SE MIDE EN LECTURAS DE LaboratoryData, NO EN TIEMPO (el tiempo lo ensucia el tier):
+--   antes /diagcompleto = 76 936 paginas para un equipo. Tiene que caer a una fraccion.
+-- Consultas EXACTAS del flujo, en modo produccion. PRIMERO la medicion.
+
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 174.1 ⭐ /condicionmt
+SELECT MD AS MD, Observados, Recomendaciones FROM vw_CondicionMT_MD WHERE Equipo LIKE '%CA3160%';
+GO
+-- 174.2 ⭐ /diagcompleto
+SELECT MD_Completo AS MD, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%CA3160%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
+-- 174.3 NO REGRESION: el triage de flota no debe cambiar ni de cifra ("45 de 54" o lo que diga hoy).
+SELECT LEFT(MD, 120) AS Cabecera FROM [dbo].[vw_TriageMD] WITH (NOLOCK)
+WHERE Proyecto LIKE '%Antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION';
+GO
+/* DECIDIDO ANTES DE MEDIR: si 174.1 y 174.2 bajan de ~60 s y las lecturas de LaboratoryData caen a
+   una fraccion de 76 936 -> se prueba en Teams y queda. Si no bajan -> el filtro sigue sin llegar y
+   se mira el plan real (no mas hipotesis a ciegas). */

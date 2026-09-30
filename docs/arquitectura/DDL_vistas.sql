@@ -502,9 +502,14 @@ calc AS (
     /* dedup por FECHA: rn_dia=1 = muestra "keeper" del día (mayor LaboratoryDataId);
        date_rank numera FECHAS DISTINTAS (1=más reciente). Así rn_recencia cuenta DÍAS (no filas)
        y las muestras del mismo día (re-tests) no consumen ranking (la tendencia mostraba "3 de 6"). */
+    /* PUSHDOWN (30/09): 'Equipo' va en el PARTITION BY. SQL Server solo empuja un filtro por debajo de
+       una funcion de ventana si la columna filtrada esta en el PARTITION BY; los flujos filtran por
+       Equipo (= ME.Code), no por MiningEquipmentId, asi que cada consulta de UN camion rankeaba los 12
+       meses de TODA la flota antes de filtrar (/diagcompleto: 7 lecturas, 76 936 paginas, contra 18 211
+       del triage de flota entera). Cada Id tiene un solo Code: las particiones no cambian. */
     SELECT *,
-        ROW_NUMBER() OVER (PARTITION BY MiningEquipmentId, Compartimiento, EsDDI, CAST(FechaMuestreo AS date) ORDER BY LaboratoryDataId DESC) AS rn_dia,
-        DENSE_RANK() OVER (PARTITION BY MiningEquipmentId, Compartimiento, EsDDI ORDER BY CAST(FechaMuestreo AS date) DESC) AS date_rank
+        ROW_NUMBER() OVER (PARTITION BY Equipo, MiningEquipmentId, Compartimiento, EsDDI, CAST(FechaMuestreo AS date) ORDER BY LaboratoryDataId DESC) AS rn_dia,
+        DENSE_RANK() OVER (PARTITION BY Equipo, MiningEquipmentId, Compartimiento, EsDDI ORDER BY CAST(FechaMuestreo AS date) DESC) AS date_rank
     FROM muestras
 )
 SELECT
