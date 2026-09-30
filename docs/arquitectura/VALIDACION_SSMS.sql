@@ -7294,3 +7294,15 @@ GO
 /* ⚑ LO QUE QUEDA DE A Y NO ES SQL: que /grafica ABSORBA a /tendenciametal es cambio de Copilot --
    desactivar el tema 08 (⛔ desactivar, NO borrar el nodo) y que la firma de /grafica pase a
    ‹equipo› ‹componente› ‹metal›, los tres obligatorios. La vista ya acepta los tres. */
+
+-- 🔴 DESPLIEGUE DEL 29/09 -- DOS Msg 207 MIOS, Y check_ddl NO LOS VIO:
+--   (1) vw_HistorialMuestra, 'HorasComponente': edite ESA vista creyendo que era
+--       vw_DiagnosticoEquipo. El ancla era unica en el archivo pero pertenecia a otra vista.
+--       Y sobraba: vw_DiagnosticoEquipo YA exponia HorasComponente y Grado. Revertido.
+--   (2) vw_TendenciaGraficoMD, 'NMuestras': anadi COUNT(Valor) AS NMuestras al CTE interno de
+--       vw_TendenciaElemento, pero su SELECT FINAL enumera columnas y no la incluia. La columna
+--       existia en el texto de la vista; simplemente no salia por la puerta. Anadida al final.
+-- ⇒ tools/check_ddl.py gana el control que faltaba: delata 'alias.Columna' cuando el alias apunta
+--   a una vista de este archivo que NO expone esa columna en su SELECT final. Probado en negativo
+--   con el error real (te.NMuestras). Afinado para no gritar en falso: un alias corto como 'r' se
+--   reutiliza para un CTE dentro de la misma vista, asi que un alias AMBIGUO no se juzga.

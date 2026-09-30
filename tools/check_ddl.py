@@ -160,6 +160,66 @@ def validacion_vs_ddl(texto):
 
 
 
+def _select_final(cuerpo):
+    """La region del SELECT final de una vista. En este archivo el SELECT final empieza en la
+    COLUMNA 0 y los de los CTE van indentados dentro de 'WITH ... AS ('. Se toma el ultimo."""
+    ini = None
+    for m in re.finditer(r"(?m)^SELECT\b", cuerpo):
+        ini = m.start()
+    return cuerpo[ini:] if ini is not None else cuerpo
+
+
+def columnas_no_expuestas(texto):
+    """Delata 'alias.Columna' cuando el alias apunta a una vista de este archivo que NO expone esa
+    columna en su SELECT FINAL.
+
+    Existe porque el 29/09 anadi COUNT(Valor) AS NMuestras al CTE interno de vw_TendenciaElemento
+    y la use como te.NMuestras desde vw_TendenciaGraficoMD: el SELECT final de la vista enumera
+    columnas y no la incluia -> Msg 207 al desplegar, con check_ddl dando 0 problemas.
+    Es el mismo Msg 207 del contrato *FilasMD, pero un nivel mas adentro: la columna EXISTE en el
+    texto de la vista, solo que no sale por la puerta.
+    """
+    vistas_txt = dict(vistas(texto))
+    expuestas = {}
+    for nombre, cuerpo in vistas_txt.items():
+        fin = _select_final(cuerpo)
+        if re.search(r"\bSELECT\s+\w*\.?\*", fin):   # SELECT * / d.* -> no se puede saber
+            expuestas[nombre] = None
+        else:
+            expuestas[nombre] = set(re.findall(r"\b\w+\b", fin))
+
+    fallos = set()
+    for nombre, cuerpo in vistas_txt.items():
+        # alias -> origen. Se recogen TODOS los origenes (vistas y CTE) porque el mismo alias
+        # corto se reutiliza dentro de una vista: 'r' apunta a vw_Recomendaciones en un sitio y a
+        # un CTE 'row_all' en otro. Un alias ambiguo NO se juzga -- preferible callar que gritar
+        # en falso, que es como se termina ignorando un control.
+        origenes = {}
+        for m in re.finditer(r"(?:FROM|JOIN|APPLY)\s+(\[dbo\]\.\[vw_\w+\]|\w+)\s+(?:AS\s+)?([a-z][a-z0-9_]{0,4})\b",
+                             cuerpo, re.I):
+            alias = m.group(2)
+            if alias.lower() in ("as", "on", "where", "group", "order", "with", "cross", "outer", "left", "join"):
+                continue
+            origenes.setdefault(alias, set()).add(m.group(1))
+        binds = {}
+        for alias, orgs in origenes.items():
+            if len(orgs) != 1:
+                continue
+            org = next(iter(orgs))
+            mm = re.fullmatch(r"\[dbo\]\.\[(vw_\w+)\]", org)
+            if mm:
+                binds[alias] = mm.group(1)
+        for alias, destino in binds.items():
+            cols = expuestas.get(destino)
+            if cols is None:
+                continue
+            for m in re.finditer(rf"\b{re.escape(alias)}\.(\w+)", cuerpo):
+                if m.group(1) not in cols:
+                    fallos.add((nombre, f"{alias}.{m.group(1)} -> [{destino}] no expone '{m.group(1)}' en su SELECT final"))
+    return sorted(fallos)
+
+
+
 def main():
     if not DDL.exists():
         print(f"no encuentro {DDL}")
@@ -188,6 +248,13 @@ def main():
         print("\nCTE leidos mas de una vez (informativo -- mirar aqui si una vista va lenta):")
         for vista, cte, n in sorted(multiples, key=lambda x: -x[2]):
             print(f"   {vista}.{cte}  x{n}")
+
+    ocultas = columnas_no_expuestas(texto)
+    if ocultas:
+        con_fallo += 1
+        print("\nColumnas usadas que la vista de origen NO expone (Msg 207 al desplegar):")
+        for vista, msg in ocultas:
+            print(f"   {vista}: {msg}")
 
     malas = validacion_vs_ddl(texto)
     if malas:

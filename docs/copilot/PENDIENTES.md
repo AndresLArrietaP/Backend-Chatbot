@@ -1662,3 +1662,17 @@ cazamos hoy tres veces. Lo detecté auditando las columnas contra la vista real 
 ⚑ **Lo que falta de A no es SQL:** que `/grafica` **absorba** a `/tendenciametal` es Copilot — desactivar
 el tema **08** (⛔ desactivar, **no** borrar el nodo) y que la firma pase a `‹equipo› ‹componente› ‹metal›`,
 los tres obligatorios. La vista ya acepta los tres.
+
+### 🔴 El despliegue dio dos `Msg 207` míos — y `check_ddl` no los vio
+
+1. **`vw_HistorialMuestra` / `HorasComponente`:** edité **esa** vista creyendo que era
+   `vw_DiagnosticoEquipo`. El ancla era única en el archivo pero **pertenecía a otra vista**. Y encima
+   sobraba: `vw_DiagnosticoEquipo` **ya exponía** `HorasComponente` y `Grado`. Revertido.
+2. **`vw_TendenciaGraficoMD` / `NMuestras`:** lo añadí al **CTE interno** de `vw_TendenciaElemento`, pero
+   su **`SELECT` final enumera columnas** y no lo incluía. La columna existía en el texto de la vista —
+   simplemente **no salía por la puerta**. Añadida al final.
+
+⇒ **`tools/check_ddl.py` gana el control que faltaba:** delata `alias.Columna` cuando el alias apunta a una
+vista de este archivo que **no expone** esa columna en su `SELECT` final. **Probado en negativo** con el
+error real (`te.NMuestras`): muerde. Y afinado para no gritar en falso — un alias corto como `r` se reutiliza
+para un CTE dentro de la misma vista, así que **un alias ambiguo no se juzga**.

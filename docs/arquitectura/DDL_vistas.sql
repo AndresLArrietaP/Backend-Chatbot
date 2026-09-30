@@ -1303,7 +1303,7 @@ GROUP BY Equipo, Compartimiento, Parametro, Grupo, Orden, Inf
 SELECT
     g.Equipo, g.Proyecto, g.CompTipo, g.Compartimiento, g.Parametro, Grupo, Orden, Inf, LP, LC, HorasComponente, CM, Grado,
     Modelo, Horometro,
-    d1, d2, d3, d4, d5, d6, f1, f2, f3, f4, f5, f6, Prom, Sigma, NVecesObs, EsRelevante, Tendencia,
+    d1, d2, d3, d4, d5, d6, f1, f2, f3, f4, f5, f6, Prom, Sigma, NMuestras, NVecesObs, EsRelevante, Tendencia,
     /* Spark: mini-tendencia visual (bloques ▁▂▃▄▅▆▇█) de n1..n6 cronológicos, normalizada al rango de la
        propia serie. PRE-COMPUTADA para que el central la IMPRIMA/COPIE tal cual (no regenere ASCII).
        NULL -> '·' (sin muestra esa fecha); serie plana (mx=mn) -> '▄'. */
@@ -1389,9 +1389,7 @@ WITH hs AS (
 )
 SELECT
     Equipo, Proyecto, Modelo, Compartimiento, FechaMuestreo,
-    /* E (29/09): Grado y HorasComponente salen para el encabezado de muestra de /diagcompleto
-       y /condicionmt. Ya estaban calculados; solo no se proyectaban. */
-    Horometro, HorasDeAceite, HorasComponente, Grado, CM, EsDDI, Estado_General,
+    Horometro, HorasDeAceite, CM, EsDDI, Estado_General,
     /* Met. Obs. = metales fuera de umbral de ESA muestra (determinantes + informativos),
        reusa Estado_<metal> ya calculados. Para variantes 1/4/5 del historial. */
     STUFF(CONCAT(
