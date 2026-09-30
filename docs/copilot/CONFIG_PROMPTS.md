@@ -15,8 +15,9 @@ Parte de la config. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_TEMAS.md](
 - **Entrada:** `tabla` (Texto) — descripción: "Tabla markdown ya armada del módulo (columna MD); único insumo del análisis."
 - **Salida:** record `predictionOutput` → imprimir **`{analisis.text}`** (no el record).
 - **Instrucciones:** las del prompt universal en **`docs/copilot/prompts/analisis_prompts.md`** (reconoce si la
-  tabla es vertical / matriz de componentes / tendencia por fechas; 🟥=crítico, 🟨=precaución, inf=informativo
-  elevado no crítico, — / · =sin dato; máx 4-5 viñetas gerenciales; si nada fuera de límite lo dice; no inventa).
+  tabla es vertical / matriz de componentes / tendencia por fechas; 🟥=crítico, 🟨=precaución, el grupo manda
+  la dirección, — =sin dato; máx 5 viñetas; si nada fuera de límite lo dice; no inventa; ⛔ nunca redibuja
+  ni filtra la tabla).
 - **Se usa en los temas:** Último análisis, Condición MT, Diagnóstico, Tendencia detalle, Tendencia relevantes,
   Tendencia de un metal, Triage MT. (Los "sin análisis" no lo incluyen.)
 
@@ -29,6 +30,14 @@ Parte de la config. Ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md), [CONFIG_TEMAS.md](
   metales/componentes/módulos + qué puede preguntar; responde breve; ⛔ no inventa cifras y reencamina las
   consultas de datos reales a su módulo).
 - **Tema:** SIN flujo/SQL (Disparo → Solicitud → Mensaje → Finalizar). Hogar de las consultas simples/conceptuales.
+
+## Prompt 3: `Presentación de filas` (fallback, tema de sistema «Potenciar conversaciones»)
+- **Tipo:** Solicitud (AI Builder), **sin conocimiento**. Va tras el agente KomfIA SQL.
+- **Entrada:** `filas` (Texto) = la salida JSON de KomfIA SQL.
+- **Instrucciones:** **`docs/copilot/prompts/formateo_fallback.md`**. Desde el 30/09 (C2) responde en **viñetas
+  con prefijo 🔎**, nunca con tabla: una tabla en KomfIA significa «salió de una vista».
+- Las instrucciones de los dos agentes van en **`KomfIA_central_MD.docx`** y **`KomfIA_SQL_MD.docx`**, con el
+  mismo contrato (viñetas, sin tabla; un comando `/` sin datos no se completa con el fallback).
 
 ## Prompts NUEVOS (evaluar — ver ROADMAP)
 - **Tendencia incipiente (#14):** probablemente **NO hace falta** un prompt aparte — el universal ya interpreta

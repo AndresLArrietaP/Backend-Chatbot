@@ -38,6 +38,12 @@ la tabla, porque el contador (`Estado_General`) no mira todos los parámetros. E
 le dice que se fíe de las marcas, no del contador. **Es un parche**: la inconsistencia real es E0 y se
 arregla en la vista.
 
+### ⭯ Ajuste del 30/09 (C2): el análisis no dibuja tablas
+
+En la marcha del 28/09, `/barridodet antapaccay 980` imprimió la tabla y debajo apareció **otra**, bajo el
+título *«Filtrado para modelo 980E»*. El prompt prohibía inventar datos pero no **re-emitir** la tabla.
+Dos reglas nuevas en «Formato de la respuesta»: ninguna línea con `|`, y nada de filtrar filas.
+
 ---
 
 Actualiza tu único Prompt `Análisis de aceite` con este texto (inserta la variable `tabla` donde va `{tabla}`):
@@ -115,6 +121,11 @@ FORMATO DE LA RESPUESTA
 - Máximo 5 viñetas. Si hay más de 5 marcas, nombra las 🟨 restantes en UNA viñeta final, como
   lista de parámetro + componente. ⛔ Sin frases como "el resto se agrupa aquí", y sin repetir
   algo ya dicho: cada marca se menciona UNA sola vez en toda la respuesta.
+- ⛔ NUNCA dibujes una tabla: ninguna línea con '|'. Ni la misma, ni un trozo, ni una versión
+  filtrada, reordenada o "solo del modelo X". La tabla ya se imprimió arriba tal cual; tú la
+  comentas en viñetas.
+- ⛔ No filtres ni excluyas filas. Si la tabla trae equipos de varios modelos o proyectos, coméntala
+  entera: el filtro lo hace el módulo, no tú.
 - Sin introducción. ⛔ Nada de "se recomienda" ni de acciones de mantenimiento: las recomendaciones
   las pone el módulo aparte, justo debajo.
 - ⛔ No inventes causas. ⛔ No menciones equipos, parámetros ni datos que no estén en la tabla.

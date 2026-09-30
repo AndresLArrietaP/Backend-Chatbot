@@ -80,6 +80,11 @@ más riesgo que la línea que ahorra.
 | Ranking de acumulados (flota) | proyecto | MD_acumflota · vista=vw_AcumuladosFlotaMD (fija) | no |
 | Acumulados de un equipo | equipo | MD_acumequipo · vista=vw_AcumuladosEquipoMD (fija) | no |
 
+> **`modelo` opcional (16/17, conectado el 30/09):** Entrada del tema con «Rellenar dinámicamente» y **sin**
+> pregunta si falta; en la Acción, `If(IsBlank(Topic.modelo) || Topic.modelo = "", "todos", Topic.modelo)`.
+> Estaba documentado pero en Copilot la Acción llevaba `todos` fijo: el filtro lo hacía el LLM (ley 1).
+> Verificado en Teams: `/barrido antapaccay 980` → 10 · `d475` → `6116` · `pc1250` → `8108` · sin modelo → 12.
+
 > **Barrido filtrado** es el ÚNICO que expone `columna` como Entrada (el modelo la infiere: «solo críticos»→
 > `MD_Criticos`, «solo precauciones»→`MD_Precaucion`). En todos los demás, `columna` es FIJA en la Acción.
 
@@ -132,7 +137,7 @@ lista qué entradas consume cada flujo; el TEXTO de cada descripción vive aquí
 - `parametro` = "Símbolo de UN metal/parámetro (Fe, Cu, Cr, Pb, Sn, Si, PQ…). Traduce cobre→Cu, hierro→Fe."
 - `parametros` = "Uno o VARIOS metales en símbolo, separados por coma (ej. `Fe` o `Fe,Cu,Cr`). Traduce nombres→símbolo (cobre→Cu, potasio→K). Devuelve una tabla por metal." (solo Tema 25)
 - `proyecto` = "Proyecto/mina (ej. Antapaccay). Si no lo nombran o dan algo que no es una mina válida, usa Antapaccay."
-- `modelo` = "Modelo de equipo (ej. 980E). `(todos)` si no lo nombran — NUNCA vacío."
+- `modelo` = "Modelo de equipo dentro de la flota consultada (ej. 980E, 930E, D475A, PC1250). Acepta el modelo abreviado (980, d475). Si el usuario no nombra ningún modelo, dejar vacío: se muestra la flota completa." — opcional: sin pregunta, y la Acción convierte el vacío en `todos`.
 - `columna` (solo Barrido filtrado) = "MD_Criticos para solo críticos; MD_Precaucion para solo precauciones."
 
 > ⚠ **El FORMATO de las tablas (orden y agrupación de parámetros) NO se decide aquí.** Es fuente de gerencia:

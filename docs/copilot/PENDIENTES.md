@@ -144,7 +144,20 @@ que **C1**.
 
 ---
 
-## PASO 1 · **C1** — `‹modelo›` no llega al flujo ⭐ **bloqueante**
+## PASO 1 · **C1** — `‹modelo›` no llega al flujo — ✅ **CERRADO (30/09)**
+
+**Causa confirmada:** en los temas 16 y 17 la Acción llevaba `modelo = "todos"` **fijo** y no existía la
+Entrada; el Tema 00 tampoco pasaba `p2`. Lo que se veía «filtrado» en Teams lo filtraba el LLM debajo.
+**Cura:** Entrada `modelo` opcional (sin pregunta) + Acción `If(IsBlank(Topic.modelo) || Topic.modelo = "",
+"todos", Topic.modelo)` + en el Tema 00 `modelo = If(Topic.p2 = "", "todos", Topic.p2)`. Detalle en
+[CONFIG_TEMAS](CONFIG_TEMAS.md).
+**Verificado en Teams**, las dos variantes: `980` → 10 equipos (sin `6116`/`8108`) · `d475` → `6116` ·
+`pc1250` → `8108` · sin modelo → 12. La tabla determinista ya sale filtrada.
+⚠ **Quedan por revisar con el mismo ojo:** tema **18** (Barrido filtrado) y **21** (Conteo), que también
+dicen «Rellena proyecto y modelo»; y en el Tema 00, `/barridodet` pasa `proyecto = Topic.p1` **sin**
+default a Antapaccay (vacío → `LIKE '%%'` = todas las minas).
+
+<details><summary>Plan original</summary>
 
 **Temas 16 (Barrido resumen) y 17 (Barrido detalle).** Revisar en este orden:
 
@@ -159,9 +172,35 @@ que **C1**.
 **De dónde sale:** BLOQUE **147** probó que el **SQL filtra bien** por modelo (728 / 2 397 / 2 601
 caracteres de `MD` según el modelo pedido) ⇒ **el bug es de Copilot, no de SQL.** Eso ahorró tocar 9 vistas.
 
+</details>
+
 ---
 
 ## PASO 2 · **C2** — el fallback y el análisis **dibujan tablas** ⭐ **el más grave**
+
+### ✍ Textos escritos (30/09) — falta pegarlos en Copilot y probar
+
+Al auditar apareció un **cuarto** sitio: las instrucciones de la **central** mandaban, textualmente,
+*«transpónlas a tabla legible»* y, ante «solo los críticos» o «quita los OK», *«RESPÓNDELO TÚ desde la
+tabla del último turno (extrae/filtra…)»*. **Esa línea es la que dibujó el «Filtrado para modelo 980E».**
+Y el prompt del fallback aún rotulaba `Ca/Zn/K/Na/Mg/B/P` como `'inf'`.
+
+| Dónde se pega | Archivo | Qué cambió |
+|---|---|---|
+| Prompt `Análisis de aceite` | [prompts/analisis_prompts.md](prompts/analisis_prompts.md) | + ninguna línea con `\|` · no filtrar filas |
+| Prompt `Presentación de filas` | [prompts/formateo_fallback.md](prompts/formateo_fallback.md) | viñetas con prefijo 🔎, máx 12 · sin `'inf'` · dirección por grupo · el 0 no es medición |
+| Instrucciones de **KomfIA SQL** | [KomfIA_SQL_MD.docx](KomfIA_SQL_MD.docx) (4 422 UTF-16) | lo mismo + un mensaje que empieza con `/` no se responde con datos |
+| Instrucciones de la **central** | [KomfIA_central_MD.docx](KomfIA_central_MD.docx) (5 954 UTF-16) | presentar en viñetas · comando sin datos = su mensaje, no fallback · otro modelo = consulta nueva, nunca filtro de la tabla anterior |
+
+**Prueba en Teams** (mirar la insignia antes de creerse nada):
+
+| Consulta | Debe salir |
+|---|---|
+| `/barridodet antapaccay 980` | la tabla **una sola vez**; el análisis solo en viñetas |
+| `/conteo Antapaccay 797` | el mensaje sin-datos del tema — **ninguna** tabla, **ningún** «797F» |
+| `/rankingacum antamina` | el mensaje del tema (solo Antapaccay) — **no** la tabla de Antapaccay |
+| «qué hidráulicos necesitan atención en Antapaccay» | fallback: empieza con **🔎**, en viñetas, sin `\|` |
+| tras un barrido, «solo los críticos» | tema **18** (determinista), no una tabla re-filtrada |
 
 Dos sitios, un solo vicio:
 
