@@ -7788,3 +7788,43 @@ OPTION (HASH JOIN, RECOMPILE);
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 177 (30/09) -- HASH JOIN INVIABLE.
+--   177.1 Msg 8622: hay uniones que no son igualdades (los JOIN con OR + CASE contra HsCc en
+--         vw_MuestrasRankeadas y vw_UltimoAnalisisFlota); el hash solo sirve con '='.
+--   177.2 Msg 8618: la fila del worktable pasa de 8 060 bytes (demasiadas columnas anchas juntas).
+--   ⇒ Se acaban los hints. Antes de reescribir, LOCALIZAR el eslabon.
+
+
+-- ==== BLOQUE 178 - Subir la cadena eslabon por eslabon: ¿donde nacen las 312 ejecuciones? ====
+-- Metodo aislar-y-medir. Mismo camion, igualdad, modo produccion. Cada consulta sube un nivel.
+-- Se piden columnas que OBLIGAN a hacer los JOIN de ese nivel (con COUNT(*) el optimizador los podaria).
+-- ⚑ LEER SOLO: 'Table LaboratoryData. Scan count N'. Donde N salta de 1 a cientos, ese es el culpable.
+--   Referencia arriba de todo: vw_DiagnosticoMD = 312.
+
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+-- 178.1 fundacion
+SELECT MAX(Estado_General) AS a, MAX(Fe_LC) AS b, COUNT(*) AS n
+FROM [dbo].[vw_MuestrasEstado] WHERE Equipo = N'CA3160';
+GO
+-- 178.2 + horas de componente (primer JOIN con OR contra HsCc)
+SELECT MAX(HorasComponente) AS a, COUNT(*) AS n
+FROM [dbo].[vw_MuestrasRankeadas] WHERE Equipo = N'CA3160';
+GO
+-- 178.3 + ultima muestra + estado del area (segundo JOIN con OR contra HsCc)
+SELECT MAX(Cond_Area) AS a, MAX(HorasComponente) AS b, COUNT(*) AS n
+FROM [dbo].[vw_UltimoAnalisisFlota] WHERE Equipo = N'CA3160';
+GO
+-- 178.4 la base de /diagcompleto y /condicionmt
+SELECT MAX(Fe) AS a, MAX(Cond_Area) AS b, MAX(NumCompObs) AS c, COUNT(*) AS n
+FROM [dbo].[vw_DiagnosticoEquipo] WHERE Equipo = N'CA3160';
+GO
+SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET ARITHABORT ON;
+GO
+/* COMO SE DECIDE:
+   · 178.1-178.4 todos con Scan count bajo -> el problema esta DENTRO de vw_DiagnosticoMD y
+     vw_CondicionMT_MD (sus CTE multi-leidos): se reescriben para leer vw_DiagnosticoEquipo UNA vez.
+   · el salto aparece en 178.2 o 178.3 -> es el JOIN con OR contra HsCc: se reescribe como dos
+     LEFT JOIN de igualdad (codigo directo + codigo con T) y se combina con ISNULL. Arregla TODA
+     vista que pase por ahi, no solo estas dos.
+   · el salto en 178.1 -> es la fundacion (candidato: el LEFT JOIN a vw_InvPorComponente de G1). */
