@@ -52,6 +52,61 @@ parámetro**: `ISO>6` aporta 38 críticos + 10 precauciones = **las 48**. Sin é
 `ISO>4/6/14` → `Inf = 1` en `vw_FormatoParametro`. Se siguen viendo, dejan de contar.
 *(Medido en BLOQUE **162.2b**. Detalle en la sección «Resultado del BLOQUE 162».)*
 
+### 🔴 Resultado del PASO 0 (30/09) — dos módulos **muertos en producción**
+
+| Comando | Resultado |
+|---|---|
+| `/triage antapaccay` | ✅ renderiza (**45 de 54**, 38 críticos — la data se movió desde el 162) |
+| `/tendencia 3160 mt lh` | ✅ renderiza |
+| `/grafica 3160 mt lh Fe` | ✅ renderiza |
+| `/diagcompleto 3160` | ⛔ **`FlowActionTimedOut`** |
+| `/condicionmt 3160` | ⛔ **`FlowActionTimedOut`** |
+
+**Error de medición mío, y la regla estaba escrita en `CLAUDE.md`:** medí todo el día con
+`Equipo = N'CA3160'` y el flujo `MD_equipo` manda `Equipo LIKE '%3160%'`. *«Medir con el operador de
+producción, nunca con `=`.»*
+
+⚠ **Pero el `LIKE` solo no lo explica.** `/tendencia` medía **43 s con `=`** y **respondió**; con un 5×
+uniforme habría muerto a ~215 s. Lo que tienen en común las dos que murieron es que **son las dos a las
+que les puse el encabezado** — y en `/diagcompleto` quedó en `hdr_all`/`hdr_obs`, que el radar lista
+**×2**: el mismo antipatrón que colgó `/condicionmt`. Con `=` lo toleró; con el operador real, no.
+
+⇒ **BLOQUE 171** lo separa con un **control** (`/tendencia`) y prueba la cura del flujo. **El árbol de
+decisión está escrito dentro del bloque, antes de ver los números:**
+
+- **(a)** el LIKE solo no mata y la cura del flujo lo neutraliza → **cura del flujo** en todos los módulos
+  por equipo **+** mover el encabezado de `/diagcompleto` al mismo `OUTER APPLY` que `/condicionmt`.
+- **(b)** la cura del flujo no alcanza → **revertir el encabezado** de las dos vistas.
+- **(c)** el control también muere → el `LIKE` es el problema general y la cura del flujo es obligatoria
+  para **todo** módulo por equipo.
+
+**La cura del flujo, si se confirma** — una línea por flujo, misma semántica para el usuario:
+
+```
+antes:    WHERE Equipo LIKE '%⟦equipo⟧%'
+después:  WHERE Equipo IN (SELECT Code FROM Mine.MiningEquipment WHERE Code LIKE '%⟦equipo⟧%')
+```
+
+El `LIKE` se resuelve contra la tabla **ligera** de equipos y a la vista pesada le llega una lista corta de
+códigos **exactos**. Verificado que es exacta: la fundación saca `Equipo` de `ME.[Code]`.
+
+### 🆕 Tres pedidos nuevos del PASO 0
+
+**N1 · `/tendencia` y `/grafica` en UNA SOLA tabla** — *SQL*. Hoy cada una imprime **dos** tablas con las
+**mismas columnas de fecha**: arriba `Campo` (SMR · Hrs Aceite · Hrs Comp · CM · Estado · Grado) y abajo el
+detalle por parámetro. Van **fusionadas**: una cabecera de fechas y todas las filas debajo.
+⭐ **En `/grafica`, la fila del metal en cuestión va PRIMERO**, justo bajo la cabecera de fechas, y después
+el resto. ⚠ `/tendencia` ya es la vista más cara (43 s): este cambio se mide **con `LIKE`** antes de darlo
+por bueno.
+
+**N2 · «No encontré datos» espurio antes de la respuesta real** — *Copilot*. `/triage antapaccay` y
+`/grafica 3160 mt lh Fe` imprimen primero *«No encontré datos para esa consulta»* y **después** la tabla
+buena. Dos ramas del tema están corriendo: la de sin-datos y la de datos.
+
+**N3 · `/triage` entra por su tema directo, no por el comando** — *Copilot*. El mapa de actividad lo
+muestra: el orquestador rutea al **tema 19** en vez de pasar por el **00 Comandos**. Es la misma familia
+que **C1**.
+
 ---
 
 ## PASO 1 · **C1** — `‹modelo›` no llega al flujo ⭐ **bloqueante**

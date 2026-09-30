@@ -7492,3 +7492,71 @@ GO
 --   agrega sino de CUANTAS VECES SE EJECUTA. Los mismos 4 STRING_AGG cuestan +4% en un OUTER
 --   APPLY correlacionado y cuelgan la vista dentro de un CTE leido dos veces. Antes de anadir
 --   cualquier agregado, mirar el radar de check_ddl: si el CTE esta listado, va por OUTER APPLY.
+
+
+-- ==== BLOQUE 171 - EL TIMEOUT DE PRODUCCION: separar las dos causas con un CONTROL ====
+-- QUE PASO (30/09, PASO 0 en Teams): /diagcompleto 3160 y /condicionmt 3160 -> FlowActionTimedOut.
+--   En SSMS los habia medido en 16 s y 22 s.
+--
+-- 🔴 ERROR DE MEDICION, y estaba escrito en CLAUDE.md: "medir con el operador de produccion
+--   (LIKE '%x%'), NUNCA con '='". Medi todo el dia con 'Equipo = N''CA3160''' y el flujo MD_equipo
+--   manda 'Equipo LIKE ''%3160%''' (CONFIG_FLUJOS).
+--
+-- ⚠ PERO EL LIKE SOLO NO LO EXPLICA, y las capturas lo desmienten: /tendencia medida en 43 s con
+--   '=' SI respondio en Teams con LIKE. Si el LIKE fuera un 5x uniforme, habria muerto a ~215 s.
+--   Lo que SI tienen en comun las dos que murieron es que son LAS DOS A LAS QUE LES PUSE EL
+--   ENCABEZADO:
+--     · /diagcompleto: 4 STRING_AGG en hdr_all y 4 en hdr_obs -- y el radar de check_ddl lista
+--       'vw_DiagnosticoMD.hdr_all x2' y 'hdr_obs x2'. Es EL MISMO antipatron que colgo /condicionmt
+--       dentro de su 'hdr'. Con '=' lo tolero (16 s); con el operador real, no.
+--     · /condicionmt: OUTER APPLY sobre vw_DiagnosticoEquipo. 22 s con '='.
+--   ⇒ Hipotesis combinada: el encabezado dejo las dos vistas FRAGILES y el '=' lo escondio.
+--
+-- ESTE BLOQUE LO SEPARA con un CONTROL -- /tendencia, que no lleva encabezado -- y prueba a la vez
+--   la cura de raiz del lado del flujo. Seis consultas.
+
+-- 171.0 🧪 CONTROL. /tendencia con el operador de PRODUCCION. En Teams respondio.
+--   Si aqui sale bien, el LIKE solo NO mata: el problema es de las dos vistas del encabezado.
+SET STATISTICS TIME ON;
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_TendenciaMD] WITH (NOLOCK) WHERE Equipo LIKE '%3160%';
+GO
+-- 171.1 ⭐ /condicionmt con el operador de PRODUCCION (lo que manda el flujo hoy).
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo LIKE '%3160%';
+GO
+-- 171.2 ⭐ LA CURA DEL LADO DEL FLUJO. El LIKE se resuelve contra la tabla LIGERA de equipos y a la
+--   vista pesada le llega una lista corta de codigos exactos. MISMA semantica para el usuario.
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK)
+WHERE Equipo IN (SELECT [Code] FROM [Mine].[MiningEquipment] WHERE [Code] LIKE '%3160%');
+GO
+-- 171.3 ⭐ /diagcompleto con el operador de PRODUCCION.
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK) WHERE Equipo LIKE '%3160%';
+GO
+-- 171.4 ⭐ LA CURA en /diagcompleto.
+SELECT LEFT(MD, 60) AS x FROM [dbo].[vw_DiagnosticoMD] WITH (NOLOCK)
+WHERE Equipo IN (SELECT [Code] FROM [Mine].[MiningEquipment] WHERE [Code] LIKE '%3160%');
+GO
+SET STATISTICS TIME OFF;
+GO
+-- 171.5 ⚠ QUE LA CURA NO PIERDA EQUIPOS. Si algun Equipo de las vistas no existe en
+--   MiningEquipment.Code, el IN lo haria desaparecer EN SILENCIO. Tiene que dar 0 filas.
+SELECT DISTINCT m.Equipo
+FROM [dbo].[vw_MuestrasEstado] m WITH (NOLOCK)
+WHERE m.rn_recencia = 1
+  AND NOT EXISTS (SELECT 1 FROM [Mine].[MiningEquipment] e WHERE e.[Code] = m.Equipo);
+GO
+
+/* COMO SE LEE -- y ya decidido antes de ver los numeros, para no razonar hacia atras:
+   (a) 171.0 bien  +  171.1/171.3 mal  +  171.2/171.4 bien
+       -> El LIKE solo no mata; lo que mata es el LIKE SOBRE las dos vistas fragiles, y la cura del
+          flujo lo neutraliza. SE APLICA LA CURA DEL FLUJO (una linea por flujo, todos los modulos
+          por equipo) Y ADEMAS se saca el encabezado de hdr_all/hdr_obs en /diagcompleto al mismo
+          OUTER APPLY que /condicionmt: no se deja una vista fragil esperando a que otro operador la
+          tumbe.
+   (b) 171.2/171.4 SIGUEN mal
+       -> La cura del flujo no alcanza y el problema es el encabezado en si: se REVIERTE el
+          encabezado de las dos vistas y vuelven al estado que ya funcionaba en produccion.
+   (c) 171.0 tambien mal
+       -> El LIKE si es el problema general, y la cura del flujo es obligatoria para TODO modulo por
+          equipo, no solo estos dos.
+   ⚠ 171.5 tiene que dar 0 filas en cualquier caso, o la cura del flujo no se puede aplicar tal cual.
+*/
