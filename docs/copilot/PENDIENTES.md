@@ -99,7 +99,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
-| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⛔ `/condicionmt` **revertido** (rompía la vista) | **166** · **167** | determinista |
+| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⏸ `/condicionmt` **aparcado** (ley 2 · cura escrita) | **166** · **169** | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✅ **SQL escrito** — el resto es Copilot | **166** | determinista |
 
 **El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
@@ -1721,3 +1721,39 @@ recomendación original, la que yo mismo di, y que no debí saltarme.
 `LEFT JOIN vw_InvPorComponente` (paso `G1`) en la vista **más leída del sistema**, ligando por `CompTipo`
 —que también es un `CASE`—. La cura sin join está escrita en el BLOQUE 168. **No la aplico ahora a
 propósito:** apilar un segundo cambio sin medir el primero es exactamente cómo llegué hasta aquí.
+
+## 🔬 Por qué `/condicionmt` sí se rompe y `/diagcompleto` no
+
+**A/B limpio**, misma vista, única diferencia el encabezado: **sin él 21 315 ms · con él, no termina.**
+Así que **sí era la causa** — absolverlo fue el **segundo** salto sin datos sobre esta misma vista.
+
+### El mecanismo
+
+`hdr` está referenciado **dos veces**: en `body` (línea 63) y en el `SELECT` final (línea 114). Los CTE de
+SQL Server **no se materializan**, así que se ejecuta **entero dos veces**, y cada ejecución re-corre su
+subárbol: `DISTINCT` sobre `base` → `vw_DiagnosticoEquipo` → toda la cadena hasta la fundación.
+
+- **Sin `cabMD`:** 3 columnas cortas y un `STRING_AGG`. Dos pasadas se aguantan.
+- **Con `cabMD`:** cada pasada suma **4 `STRING_AGG` con su `ORDER BY`**, produce `nvarchar(max)` (**LOB**)
+  y el `DISTINCT` ordena filas mucho más anchas por arrastrar `Grado`. **×2.**
+
+⇒ **Ley 2 en estado puro.** El encabezado no cuesta el doble: vuelve **caro** un CTE leído dos veces, y la
+agregación LOB **impide podar** la proyección de `base`, así que cada pasada arrastra la fundación entera.
+
+### Por qué la otra sí lo aguantó
+
+En `/diagcompleto`, `hdr_all` lee `comp`, `comp` lee `unpv`, y `unpv` lee `base` **una sola vez** — la
+consolidación de los BLOQUES 116/117. **`vw_CondicionMT_MD` nunca la recibió**: su `unpv` lee
+`vw_DiagnosticoEquipo` por su cuenta, aparte de `base` (radar: `unpv ×3 · hdr ×2 · obsdet ×2`).
+
+⇒ **No es que se lleve mal con los encabezados: tiene la deuda estructural que la otra ya pagó.**
+
+### La cura, escrita y lista (BLOQUE 169)
+
+Sacar `cabMD` de `hdr` y calcularlo en el `SELECT` final con un **`OUTER APPLY` correlacionado por
+`Equipo`** — la cura documentada de la ley 2. Corre **una vez por fila de salida**, con el equipo ya
+conocido, y `hdr` se queda tan barato como hoy.
+
+⛔ **No se aplica esta noche.** Van **dos** hipótesis mías dadas por buenas sin medir sobre esta vista, y
+las dos costaron una ronda entera. Va con la tanda de rendimiento posterior al 02/10, junto con consolidar
+las 3 lecturas de `unpv` — **con esa consolidación hecha, el encabezado probablemente entre solo.**
