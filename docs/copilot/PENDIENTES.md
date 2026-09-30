@@ -248,9 +248,14 @@ Seis hallazgos, todos del mismo tipo: **el SQL ya no miente, la carga sigue inco
 
 | Qué | Cifra | De dónde sale |
 |---|---|---|
-| `/tendencia` | **43 s** · `rowcte ×2` · `obslast ×2` | BLOQUE **163.4** |
-| `/condicionmt` | **22 s** · `unpv ×3` · `hdr ×2` · `obsdet ×2` | BLOQUE **170** |
-| `/diagcompleto` | **~12 s** · `base` leído **7 veces** | pendiente puntual, más abajo |
+| ✅ `/condicionmt` | **1,4 s** (era 146 s y `FlowActionTimedOut`) — filtro abajo | BLOQUE **184** |
+| ✅ `/diagcompleto` | **6,6 s** (era ~170 s y `FlowActionTimedOut`) — filtro abajo | BLOQUE **185** |
+| ✅ P1 · `/ultimo` · metal · gráfica obs · barrido · incipiente | 1,6 · 11,9 · 9 · 16,5 · 4,3/18,7 · 10,4 s — filtro abajo | BLOQUE **186** |
+| 🟡 `/tendencia` | **35,8 s** — la de menos margen. Une varias fuentes: la cura va por su base `vw_TendenciaElemento`, no por la vista | BLOQUE **187** |
+| ✅ `/grafica` · historial | 7,4 · 19,7 / 17,4 s en su versión previa (el filtro abajo los **empeoraba**) | BLOQUE **187** |
+
+> 🩺 **Método de diagnóstico y cura: skill `komfia-doctor`** (`.claude/skills/komfia-doctor/SKILL.md`).
+> Respaldo del DDL previo: `docs/arquitectura/respaldo/` + etiqueta `respaldo-antes-filtro-abajo-2026-09-30`.
 | **`Disponible`** | Bandera **mal planteada**: depende de la MINA, no del `CompTipo`. Nadie la consume | BLOQUE **157.4** · **142.2** |
 
 ---

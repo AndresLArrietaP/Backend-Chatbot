@@ -8076,3 +8076,9 @@ WHERE Equipo LIKE '%CA3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt
 GO
 SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
 GO
+
+-- RESULTADOS BLOQUE 187 (30/09) -- las 4 revertidas, en su version previa, TODAS bajo el corte:
+--   HistorialMD 19,7 s (LD 2 734) · HistorialEquipoMD 17,4 s · TendenciaGraficoMD 7,4 s (LD 57 541)
+--   TendenciaMD 35,8 s (LD 78 544, Workfile con lecturas fisicas) -- la de MENOS margen (2,8x bajo 100 s).
+--   ⇒ Historial estaba SANO: lo enfermo el cambio del 186. Revertir era lo correcto.
+--   ⇒ Metodo completo guardado como skill: .claude/skills/komfia-doctor/SKILL.md
