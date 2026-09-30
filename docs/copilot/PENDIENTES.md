@@ -99,7 +99,7 @@ Cada paso dice si el DDL **ya está escrito** o **hay que escribirlo**, y con qu
 | **5l** | **V** · typo `MOTORO DE TRACCION RH` | ✅ **normalizado** (declarado) · la **carga** sigue → Carlos | **165.3** | dato |
 | **6** | **B** · `/tendencia` sin tabla de límites | ✅ **CERRADO** (165, aviso verificado) | **163**–**165** | determinista |
 | **6b** | ⏱ `/tendencia` en **43 s** — la vista más cara del sistema | ⏸ aparcado tras el 02/10 | **163.4** | rendimiento |
-| **7** | **E** · encabezado de muestra | ✅ `/diagcompleto` · ⏳ `/condicionmt` **cura aplicada** — falta medir | **166** · **170** | determinista |
+| **7** | **E** · encabezado de muestra | ✅ **CERRADO** — los dos módulos (170: +4 %) | **166** · **170** | determinista |
 | **8** | **A** · `/grafica` absorbe `/tendenciametal` | ✅ **SQL escrito** — el resto es Copilot | **166** | determinista |
 
 **El orden importa:** el **1** primero porque hasta que `vw_DiagnosticoMD` no baje de 7 scans, cualquier
@@ -1770,3 +1770,20 @@ Lleva `ISNULL` sobre el resultado: un agregado sobre 0 filas devuelve NULL y **a
 
 ⛔ **Criterio de corte, fijado de antemano:** línea base **21 315 ms**. Si el 170.1 no baja de ~25 s,
 **se revierte y no se insiste** — el encabezado espera a que se consoliden las 3 lecturas de `unpv`.
+
+## ✅ Paso 7 (E) CERRADO — la cura funcionó
+
+**170.1: 22 177 ms** contra 21 315 de línea base = **+862 ms (+4 %)**, con el corte en ~25 s. El **mismo**
+encabezado dentro de `hdr` **no terminaba en 17 minutos**.
+
+**170.2:** renderiza, y confirma el diseño — `Hrs Comp` **16 571 contra 15 002** en el mismo equipo. Una
+línea única arriba habría tenido que elegir una de las dos y mentir.
+
+### La lección, que vale más que el encabezado
+
+**El coste de un agregado no depende de lo que agrega, sino de cuántas veces se ejecuta.** Los mismos
+cuatro `STRING_AGG` cuestan **+4 %** en un `OUTER APPLY` correlacionado y **cuelgan la vista** dentro de un
+CTE leído dos veces.
+
+⇒ **Antes de añadir cualquier agregado, mirar el radar de `check_ddl`: si el CTE está listado, va por
+`OUTER APPLY`.**

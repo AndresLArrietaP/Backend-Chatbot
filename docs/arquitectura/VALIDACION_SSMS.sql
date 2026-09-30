@@ -7474,3 +7474,21 @@ GO
 SELECT LEFT(MD, 700) AS Inicio
 FROM [dbo].[vw_CondicionMT_MD] WITH (NOLOCK) WHERE Equipo = N'CA3160';
 GO
+
+-- RESULTADOS BLOQUE 170 (30/09) -- ✅ LA CURA FUNCIONA. Paso 7 (E) CERRADO.
+--   170.1  22 177 ms contra 21 315 de linea base = +862 ms (+4%). El corte estaba en ~25 s.
+--          Compilacion 9 375 ms (era ~7 900): el plan es mas grande, la ejecucion casi igual.
+--          El MISMO encabezado dentro de 'hdr' NO TERMINABA en 17 minutos.
+--   170.2  Renderiza:
+--            | **Muestra** |  |  |
+--            | Fecha | 15-Sep-26 | 15-Sep-26 |
+--            | Grado | SHELL OMALA S4 GXV 680 | SHELL OMALA S4 GXV 680 |
+--            | Hrs Comp | 16571 | 15002 |
+--            | T. muestra | ADI | ADI |
+--          ⭐ 'Hrs Comp' 16 571 contra 15 002 en el MISMO equipo: es justo por lo que el
+--            encabezado va POR FILA. Una linea unica arriba habria tenido que elegir una y mentir.
+--
+-- ⇒ LA LECCION, que vale mas que el encabezado: el coste de un agregado no depende de lo que
+--   agrega sino de CUANTAS VECES SE EJECUTA. Los mismos 4 STRING_AGG cuestan +4% en un OUTER
+--   APPLY correlacionado y cuelgan la vista dentro de un CTE leido dos veces. Antes de anadir
+--   cualquier agregado, mirar el radar de check_ddl: si el CTE esta listado, va por OUTER APPLY.
