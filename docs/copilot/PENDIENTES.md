@@ -15,7 +15,157 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, correr el **BLOQUE 89** (s
 
 ---
 
-# ▶ EMPIEZA AQUÍ
+
+# ▶ EMPIEZA AQUÍ — **FASE 2: COPILOT STUDIO**
+
+> **Estado al 2026-09-30.** La **Fase 1 (SQL) está cerrada y desplegada**: el DDL corrió, las 50 vistas
+> responden y el BLOQUE 170 cerró verde. Todo lo de la ronda **ya se ve en Teams sin tocar Copilot**,
+> porque lo que cambió es el `MD` que devuelven las vistas — y el tópico lo imprime *verbatim*.
+
+## ⚠ Lo primero: qué **no** hay que tocar
+
+**Ninguna vista cambió su contrato de columnas** (`MD` · `Observados` · `Recomendaciones`, y
+`HeaderMD`+`Fila` en las `*FilasMD`). ⇒ **Ningún flujo de Power Automate necesita cambios por lo de hoy.**
+Lo que sigue es trabajo de Copilot que **ya venía** de la ronda del 28/09, más una cosa nueva (`/grafica`).
+
+---
+
+## PASO 0 · Ver en Teams lo ya hecho — **sin editar nada** ⏱ ~30 min
+
+Es la validación de punta a punta de la Fase 1, y no requiere ningún cambio en Copilot.
+
+| Comando | Qué tiene que verse ahora | De dónde sale |
+|---|---|---|
+| `/triage antapaccay` | **11 columnas**: `Desgaste · Aditivos · Contaminación · Salud · Cód. Limpieza`, cada parámetro **con su valor**. ⚠ El contador salta a **«48 de 54 (41 críticos)»** | BLOQUE **155** (J) + **162** (5c) |
+| `/diagcompleto CA3160` | 4 filas nuevas bajo `**Muestra**`: `Fecha · Grado · Hrs Comp · T. muestra`, una columna por componente | BLOQUE **166** (E) |
+| `/condicionmt CA3160` | lo mismo, para MT LH y MT RH | BLOQUE **170** (E) |
+| `/tendencia CA3160 mt lh` | **sin** tabla de límites. Si el componente no tiene límites de desgaste → línea `⚠ Sin límites (LP/LC) cargados` | BLOQUE **163** · **165** (B) |
+| `/grafica CA3160 mt lh Fe` | sin columna `Spark`; el resumen baja a **lista de texto** con `Prom.` · `σ` · `Nº fuera de límite` · `Acum`, cada uno con su lógica | BLOQUE **166** (A) |
+
+### ⚠ El salto del triage: prepáralo antes de que alguien lo vea
+
+Pasa de **6 a 48 observados** en Antapaccay MT. **No es un error**: el contador dejó de mirar 9 metales y
+pasó a mirar las **mismas celdas que imprime**, respetando la bandera `Inf`. Y el salto lo explica **un solo
+parámetro**: `ISO>6` aporta 38 críticos + 10 precauciones = **las 48**. Sin él serían ~9.
+
+⇒ Si el área decide que el código de limpieza **no** debe disparar el triage, es **un valor**:
+`ISO>4/6/14` → `Inf = 1` en `vw_FormatoParametro`. Se siguen viendo, dejan de contar.
+*(Medido en BLOQUE **162.2b**. Detalle en la sección «Resultado del BLOQUE 162».)*
+
+---
+
+## PASO 1 · **C1** — `‹modelo›` no llega al flujo ⭐ **bloqueante**
+
+**Temas 16 (Barrido resumen) y 17 (Barrido detalle).** Revisar en este orden:
+
+1. ¿`modelo` está como **Entrada del tema**, o quedó **fijo en la Acción**? Es el mismo patrón que
+   `vista`/`columna`, que **sí** van fijas a propósito — por eso es fácil habérselo puesto igual sin querer.
+2. Tema **00**, nodo «Ir a otro tema»: ¿está mapeado `modelo ← p2`?
+3. En la **Acción** del tema: ¿`modelo` se pasa al flujo?
+
+**Cómo verificarlo sin SSMS:** `/barrido antapaccay d475` → **«1 equipo»** · `/barrido antapaccay 980` →
+**«16 equipos»**. Si los dos dicen **18**, sigue llegando `(todos)`.
+
+**De dónde sale:** BLOQUE **147** probó que el **SQL filtra bien** por modelo (728 / 2 397 / 2 601
+caracteres de `MD` según el modelo pedido) ⇒ **el bug es de Copilot, no de SQL.** Eso ahorró tocar 9 vistas.
+
+---
+
+## PASO 2 · **C2** — el fallback y el análisis **dibujan tablas** ⭐ **el más grave**
+
+Dos sitios, un solo vicio:
+
+- **[prompts/analisis_prompts.md](prompts/analisis_prompts.md)** — hoy prohíbe *inventar datos*, pero **no
+  prohíbe re-emitir la tabla**. Añadir explícito: *el análisis comenta, **nunca** re-dibuja la tabla ni una
+  versión «filtrada» de ella.*
+  **Caso medido:** `/barridodet antapaccay 980` imprimió la tabla y el análisis **la volvió a dibujar**.
+- **[KomfIA_SQL_MD.docx](KomfIA_SQL_MD.docx)** (instrucciones del sub-agente) — que **no arme tablas con
+  formato de módulo**. Cuando un comando no encuentre su tema, **debe decirlo**, no improvisar.
+  **Casos medidos:** `/conteo Antapaccay 797` y `/conteo Antapaccay d11` devolvieron tablas **fabricadas**,
+  con modelos que **no existen** en ese proyecto.
+- 🔑 **[prompts/formateo_fallback.md](prompts/formateo_fallback.md)** — y aquí está la raíz que faltaba
+  nombrar: ese prompt **tiene escrito** «Salida = texto markdown (**tabla** + viñetas)». O sea que el
+  fallback **no se desvía: hace lo que se le pidió**. Por eso su salida es indistinguible de la
+  determinista. ⇒ No basta con prohibir en el `.docx`: hay que **cambiarle el contrato a este prompt**
+  (p. ej. viñetas + cifra, y que la tabla quede reservada a los módulos).
+
+**Por qué es el más grave:** el fallback produce tablas **indistinguibles** de las deterministas. La única
+señal a simple vista es la insignia «Generado por la IA» de Teams.
+**De dónde sale:** ronda **28/09**; H3/H4/H5/H7 colapsan en esta causa.
+
+---
+
+## PASO 3 · **C3** — descripciones y firmas
+
+| Tema | Qué hacer | De dónde sale |
+|---|---|---|
+| **06 Gráfica** | Absorbe `/tendenciametal`. Firma nueva: `/grafica ‹equipo› ‹componente› ‹metal›`, **los tres obligatorios**. La vista ya acepta los tres | paso **8 (A)**, BLOQUE **166** |
+| **08 Tendencia de un metal** | **Desactivar.** ⛔ Desactivar, **no** borrar el nodo (ley 8: se va todo el `else` de la cascada) | paso **8 (A)** |
+| **22 Ranking** | Firma `/ranking ‹proj› ‹comp› ‹metal› [modelo] [top]` + descripción | **L4**, BLOQUE **152** |
+| **20 Incipiente** | Descripción: «Equipos que **todavía no pasan el límite** pero vienen subiendo fuerte. Si un parámetro **ya superó el límite**, no aparece aquí: sale en `/triage` y en `/barrido`.» | ronda 28/09 |
+| **27/28 Acumulados** | Decir **en la descripción** que solo existe para Antapaccay (hoy sale como aviso al final) | ronda 28/09 |
+
+⚠ **`/ranking` no necesita SQL:** `vw_RankingMD` **ya expone** `Modelo` y el flujo `MD_ranking` **ya filtra**
+por él (`AND Modelo LIKE '%‹modelo›%'`). Lo único que falta es que **el comando lo pase**. *(BLOQUE 152.)*
+
+---
+
+## PASO 4 · **C4** — la tarjeta: **los tres archivos juntos**
+
+[CONFIG_COMANDOS.md](CONFIG_COMANDOS.md) + [../../tools/gen_comandos_card.py](../../tools/gen_comandos_card.py) +
+[tarjetas/comandos_card.json](tarjetas/comandos_card.json).
+
+Cambian: `/ranking` (+`modelo`) · `/grafica` (3 obligatorios) · se va `/tendenciametal`.
+**De 20 comandos a 19.**
+
+⚠ Placeholders `‹obligatorio›` / `[opcional]`, **nunca** `< >` — la Adaptive Card se los come (ley 9).
+**Depende del PASO 3:** hacerlo después, o se escribe dos veces.
+
+---
+
+## PASO 5 · **C5** — los bugs sueltos
+
+- **H1** · `/ranking` a secas responde «Tas a una» → sin parámetros debe **pedirlos** o mandar a `/comandos`.
+- **H2** · `/ayuda` responde **dos cosas distintas** → la aleatoriedad del 17/09 sigue abierta.
+- **H6** · `/triage mtrh` con columnas descuadradas — **solo** esa variante.
+- **L6** · «0 observados» se lee como error cuando es la **respuesta correcta** → mensaje sin-datos que
+  distinga *«no hay observados»* de *«no encontré el equipo»*. *(BLOQUE 151.)*
+
+⚠ **H5 ya no aplica** tal como estaba escrito: el `nan` de `/conteo` es `Compartimiento` nulo, y `G2` hizo
+que ahora salga etiquetado como `(sin componente)` en vez de tumbar el mensaje. *(BLOQUE 161.)*
+
+---
+
+## PASO 6 · Lo de **Carlos** — no es Copilot, pero va en la misma sesión
+
+Seis hallazgos, todos del mismo tipo: **el SQL ya no miente, la carga sigue incompleta.**
+
+| # | Hallazgo | Cifra | De dónde sale |
+|---|---|---|---|
+| 1 | **Ruedas de Antapaccay con límite de otro aceite** | Corren `SHELL SPIRAX S5 CFD M 60`; el límite se escribió para `Mobiltrans HD`. El **máximo** de la flota está **6,8× bajo** el piso crítico | BLOQUE **157.2** · **158.4** |
+| 2 | **885 componentes sin ningún límite** | Antamina 930E **441** · Cerro Verde 930E **216** · … Salen **verdes pase lo que pase** | BLOQUE **164.3** |
+| 3 | **347 componentes con `ISO` en `0`** | Leídos como *limpios sin medirse*. Incluye **los 158 motores de Antamina** | BLOQUE **159.2** |
+| 4 | **1 579 muestras de Cerro Verde sin componente** | 62 equipos, **6 meses seguidos** | BLOQUE **161.1** |
+| 5 | **`Ca_LP` de Antamina en NULL** | Causaba **164 falsos críticos** (ya corregido en SQL, pero el límite sigue sin cargar) | BLOQUE **160.1** |
+| 6 | **Typo `MOTORO DE TRACCION RH`** | 72 equipos, 215 muestras, **sigue entrando**. Convive con el nombre correcto → esos camiones muestran **3** motores de tracción | BLOQUE **165.3** |
+
+⚠ **El typo NO se normaliza en SQL.** Se intentó y costó **17 minutos** de cuelgue: envolver
+`Compartimiento` en un `CASE` lo vuelve **columna calculada** y bloquea el push-down (ley 3). *(BLOQUE 168.)*
+
+---
+
+## Deuda aparcada — **después del 02/10**
+
+| Qué | Cifra | De dónde sale |
+|---|---|---|
+| `/tendencia` | **43 s** · `rowcte ×2` · `obslast ×2` | BLOQUE **163.4** |
+| `/condicionmt` | **22 s** · `unpv ×3` · `hdr ×2` · `obsdet ×2` | BLOQUE **170** |
+| `/diagcompleto` | **~12 s** · `base` leído **7 veces** | pendiente puntual, más abajo |
+| **`Disponible`** | Bandera **mal planteada**: depende de la MINA, no del `CompTipo`. Nadie la consume | BLOQUE **157.4** · **142.2** |
+
+---
+
+# Contexto de la ronda 28/09 (lo de abajo es el detalle, ya ejecutado)
 
 ## Dónde estamos
 
