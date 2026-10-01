@@ -21,7 +21,7 @@ POR-EQUIPO
 /condicionmt <equipo>                        → 02 Condición MT   (antes /condicion; ver §alias)
 /diagcompleto <equipo>                       → 04 Diagnóstico completo   (alias: /diagnostico)
 /tendencia <equipo> <componente>             → 06 Tendencia             (alias: /tendenciadet)
-/tendenciametal <equipo> <metal>             → 08 Tendencia de un metal (todos los comp)
+/tendenciametal                              → ⛔ retirado (30/09): mensaje que manda a /grafica
 /grafica <equipo> <componente> <metal>       → 09 Gráfica de un metal
 /historial <equipo> <componente> [rango]     → 11 Historial de componente  (rango: «2 años», «5 meses», «14 días»)
 /historialeq <equipo> [rango]                → 12 Historial general del equipo
@@ -34,7 +34,7 @@ POR-FLOTA
 /triage <componente> <proyecto> [modelo]     → 19 Triage de un componente en la flota
 /incipiente <proyecto> [componente]          → 20 Tendencia incipiente (comp default: tracción)
 /conteo <proyecto> [modelo]                  → 21 Conteo de flota
-/ranking <proyecto> <componente> <metal> [top]      → 22 Ranking de un metal
+/ranking <proyecto> <componente> <metal> [modelo] [top] → 22 Ranking de un metal
 /metalflota <proyecto> <componente> <metal(es)> [modelo] → 25 Último por metal en la flota  (metales: coma-sin-espacio Fe,Cu)
 /historialflota <proyecto> [rango]           → 15 Historial de observados de flota
 /rankingacum <proyecto>                      → 27 Ranking de acumulados (motor diésel)
@@ -349,8 +349,8 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/diagcompleto` | 04 Diagnóstico completo | equipo=p1 |
 | `/tendencia` · **alias `/tendenciadet`** | **06 Tendencia** (fusionado 25/09) | equipo=p1 · compartimiento=**resto2** ⟵ comp compuesto |
 
-| `/tendenciametal` | 08 Tendencia de un metal | equipo=p1 · parametro=p2 |
-| `/grafica` | 09 Gráfica | equipo=p1 · compartimiento=p2 · parametro=p3 ⚠ comp de 1 token (metal va después) |
+| `/tendenciametal` | ⛔ **retirado (30/09)** — la rama se queda (ley 8); su «Ir a tema 08» se cambia por un **Mensaje**: «`/tendenciametal` se unió a `/grafica`: usa `/grafica ‹equipo› ‹componente› ‹metal›`.» | — |
+| `/grafica` | 09 Gráfica | equipo=p1 · **parametro = el ÚLTIMO token** · **compartimiento = lo de en medio** (admite `mt lh`) — fórmulas en §`/grafica` |
 | `/historial` | 11 Historial componente | equipo=p1 · compartimiento=**resto2** · **rango=`Topic.rango`** (extraído por patrón, ver §Rango) |
 | `/historialeq` | 12 Historial equipo | equipo=p1 · **rango=`Topic.rango`** |
 | `/historialmetal` | 13/14 Historial de un metal | equipo=p1 · parametro=p2 · compartimiento=**`Topic.comp3`** · **rango=`Topic.rango`** · la Condición 13-vs-14 pasa a mirar **`Topic.resto3` está en blanco** (ya no `p3`) |
@@ -360,7 +360,7 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/triage` | 19 Triage | compartimiento=`If(p1="","tracción",p1)` · proyecto=`If(p2="","Antapaccay",p2)` · modelo=`If(p3="","(todos)",p3)` |
 | `/incipiente` | 20 Tendencia incipiente | proyecto=`If(p1="","Antapaccay",p1)` · **compartimiento=`If(Topic.resto2="","tracción",Topic.resto2)`** ⟵ 2º input |
 | `/conteo` | 21 Conteo | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
-| `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · top=`If(p4="","10",p4)` |
+| `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · **modelo y top desde p4/p5** — fórmulas en §`/ranking` |
 | `/metalflota` | 25 Último por metal flota | proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(p2="","tracción",p2)` · parametros=p3 · **modelo=`If(p4="","(todos)",p4)`** ⟵ 4º input |
 | `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` · **rango=`Topic.rango`** |
 | `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` |
@@ -376,6 +376,28 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 > (`/triage ‹comp› ‹proj›`), el compartimiento debe ser de **UN solo token** (ej. `tracción`, no `MT RH`) — el lado RH/LH
 > ahí lo resuelve el propio tema (agrega/pregunta). Si más adelante se necesita lado en esos, se hará detección explícita del
 > sufijo `RH|LH` (`IsMatch(Last(toks).Value,"(?i)^(RH|LH)$")`), no está implementado aún.
+
+### 3b) Fórmulas de `/grafica` y `/ranking` (C3, 30/09)
+
+**`/grafica ‹equipo› ‹componente› ‹metal›`** — el metal es siempre el ÚLTIMO token y el componente lo que
+queda en medio, así `/grafica 3160 mt lh Fe` llega con `compartimiento = "mt lh"`:
+```
+equipo         = Topic.p1
+parametro      = If(CountRows(Topic.toks) >= 4, Last(Topic.toks).Value, "")
+compartimiento = If(CountRows(Topic.toks) >= 4,
+                    Trim(Concat(FirstN(LastN(Topic.toks, CountRows(Topic.toks) - 2), CountRows(Topic.toks) - 3), Value, " ")),
+                    Topic.p2)
+```
+Con menos de 4 tokens el metal llega vacío y el tema lo **pregunta** (los tres son obligatorios en el Tema 09).
+
+**`/ranking ‹proyecto› ‹componente› ‹metal› [modelo] [top]`** — `p4` puede ser modelo o top. Regla: **1-2
+dígitos = top**; cualquier otra cosa = modelo. Así `980` (3 dígitos) es modelo y `5` es top:
+```
+Topic.p5 = If(CountRows(Topic.toks) >= 6, Index(Topic.toks, 6).Value, "")      // variable nueva
+modelo   = If(Topic.p4 = "" || IsMatch(Topic.p4, "^\d{1,2}$"), "todos", Topic.p4)
+top      = If(IsMatch(Topic.p4, "^\d{1,2}$"), Topic.p4, If(IsMatch(Topic.p5, "^\d{1,2}$"), Topic.p5, "10"))
+```
+`/ranking antapaccay tracción Fe 5` → todos, 5 · `… Fe 980` → 980, 10 · `… Fe 980 5` → 980, 5.
 
 ### 4) `/comandos` y `/ayuda` → **«Enviar un mensaje»** con TARJETA ADAPTABLE (tabla completa)
 **Opción A (recomendada): Adaptive Card en un nodo «Enviar un mensaje».** ⚠ **NO** uses el **«Nodo de tarjeta adaptable»**

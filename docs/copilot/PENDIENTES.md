@@ -268,7 +268,18 @@ señal a simple vista es la insignia «Generado por la IA» de Teams.
 
 ---
 
-## PASO 3 · **C3** — descripciones y firmas
+## PASO 3 · **C3** — descripciones y firmas — ✍ **escrito (30/09)**, falta aplicar en Copilot
+
+> **Verificado antes de empezar (30/09):** temas 18 y 21 OK en Teams — `/barrido antapaccay 980` → «solo
+> los críticos» trae solo CA; «cuántos equipos hay en Antapaccay» = una tabla (36 · 12 obs), sin duplicar.
+> ⚠ Dos efectos visibles a explicar: **(1)** el conteo sigue listando un componente `nan` — es el **texto**
+> `'nan'` cargado en `Compartimiento` (G2 solo cubrió el NULL) → Carlos. **(2)** tras el 188, el barrido de
+> Antapaccay pinta el **Ca de las ruedas** (`CA3164 RD LH Ca=173.2 🟥`): es el límite del Mobiltrans aplicado
+> al Spirax (Carlos #1). Antes no salía porque el barrido miraba hacia arriba; ahora dice lo mismo que el
+> triage y el diagnóstico. No cuenta en el Est. ni en los conteos.
+
+Textos listos: descripciones en [CONFIG_TEMAS](CONFIG_TEMAS.md) (09 · 20 · 27 · 28, todas < 1024) y
+fórmulas de `/grafica` y `/ranking` en [CONFIG_COMANDOS §3b](CONFIG_COMANDOS.md).
 
 | Tema | Qué hacer | De dónde sale |
 |---|---|---|
