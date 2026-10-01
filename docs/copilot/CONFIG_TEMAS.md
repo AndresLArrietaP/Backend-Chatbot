@@ -168,13 +168,14 @@ llama al tema. Cuando se llega por **«Ir a tema»** desde el Tema 00, las entra
 no— y el tema pasa directo a la Acción: con `""` el flujo corre vacío y sale «No encontré datos» (el N2), con
 `Blank()` el flujo responde `FlowActionBadRequest`.
 
-**Las tres piezas, y las tres tienen que estar:**
+**Las cuatro piezas, y las cuatro tienen que estar:**
 
 | # | Dónde | Qué |
 |---|---|---|
 | 1 | **Tema 00**, en la rama del comando | Lo que falta se pasa como **`Blank()`**, nunca `""`. Si la posición de un token es ambigua (¿`Fe` es metal o componente?), una variable auxiliar calculada **antes** de la cascada lo decide (`Topic.esMetal2`). |
 | 2 | **Tema destino**, entre el Desencadenador y la Acción | Por cada entrada **obligatoria**: Condición en **fórmula** `Len(Trim(Topic.‹entrada›)) = 0` → nodo **Pregunta** (Identificar: *Respuesta completa del usuario*). La rama «Todas las demás» va vacía. Los bloques van en serie. |
 | 3 | En cada **Pregunta** | **«Guardar respuesta del usuario como» = la MISMA variable de entrada.** Sin esto la pregunta se hace, se responde y se pierde. |
+| 4 | **Detalles del tema → Entrada**, en CADA variable | *Configuración adicional* → **«Se debe solicitar al usuario» DESMARCADO.** Marcado, el orquestador revisa las entradas ANTES de entrar al tema y, si cree que falta una, pregunta él con un texto inventado: el tema no llega a correr (02/10: `/ranking` respondió con la sintaxis `/ranking <metal> <componente> <proyecto>`, que no existe). |
 
 **Las trampas en que caímos (01/10), en el orden en que aparecieron:**
 1. `Blank()` sin preguntas en el tema → `FlowActionBadRequest`. *(Pieza 2 faltante.)*

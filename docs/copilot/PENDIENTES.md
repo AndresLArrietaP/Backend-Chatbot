@@ -39,7 +39,7 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 
 Cura de una vez el **N2** (el «No encontré datos» que sale antes de la respuesta) y el **H1** (`/ranking` a
 secas respondía «Tas a una»). La receta completa, con las 4 trampas del 01/10, está en
-[CONFIG_TEMAS § Receta](CONFIG_TEMAS.md). Resumen de las **3 piezas**:
+[CONFIG_TEMAS § Receta](CONFIG_TEMAS.md). Resumen de las **4 piezas**:
 
 1. **Tema 00**: lo que falta llega vacío (`""` o `Blank()`). ⛔ **«está en blanco» NO detecta `""`** (medido el
    02/10 con `/ranking`): la Condición va en **fórmula** `Len(Trim(Topic.x)) = 0`, que cubre los dos.
@@ -48,6 +48,8 @@ secas respondía «Tas a una»). La receta completa, con las 4 trampas del 01/10
    vacía. Bloques en serie, en el orden del comando.
 3. En cada Pregunta: **«Guardar respuesta del usuario como» = la misma variable de entrada.** ⛔ Sin esto la
    respuesta se pierde (trampa 2 del 01/10).
+4. En **cada** entrada del tema (*Configuración adicional*): **«Se debe solicitar al usuario» desmarcado.** Si
+   está marcado, el orquestador pregunta él, con texto inventado, y el tema ni arranca (02/10, `/ranking`).
 
 **Orden sugerido** — primero los que más se usan y el que cierra el H1:
 
