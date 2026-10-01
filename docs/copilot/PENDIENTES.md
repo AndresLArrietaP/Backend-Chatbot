@@ -225,7 +225,7 @@ limpieza (5c) y el barrido no. Es la decisión **T** (5j) pendiente con Carlos, 
 dos módulos. Y el análisis del triage marcó `Si 39.1` del `6116` como 🟥 cuando el barrido lo da 🟨
 (LP 30 · LC 60).
 
-### 🔴 → ✍ Antamina: el barrido y el triage dan semáforos distintos — DDL escrito, **BLOQUE 188**
+### ✅ Antamina: el barrido y el triage daban semáforos distintos — **CERRADO** (BLOQUE 188)
 
 Con la salida completa de `/barridodet antamina` y del triage de hidráulicos:
 
@@ -236,6 +236,9 @@ Con la salida completa de `/barridodet antamina` y del triage de hidráulicos:
    ⇒ Las 3 vistas pasan a leer `Estado_Ca/Zn/Mg` (chip y tabla de límites). Conteos sin cambio.
 2. **El triage no pintaba 🟨**: solo 🟥. `Cu(2.6)` en precaución salía como un valor sin marca, y el
    análisis le inventaba la severidad (así salió el `Si 39.1` 🟥 del `6116`). ⇒ chip 🟨 en la celda.
+**188:** barrido 13,8 s · triage 3,2 s (sin costo). La regla vieja marcaba 54-91 críticos por parámetro;
+`Estado_*` marca 0-1. Tras el cambio quedan 5 `Ca=` en el detalle: los 4 de MT (contaminante, legítimos) y
+el único crítico real de ruedas. Triage: 106 chips 🟨 (antes 0).
 3. 🟡 **Para Carlos:** `V100` 🟥 en casi todas las ruedas de Antamina (~18 cSt) y `HT301 RD LH`
    `V100=77.2` (¿un V40 cargado como V100?). No se toca: es dato o límite.
 
@@ -312,7 +315,7 @@ Seis hallazgos, todos del mismo tipo: **el SQL ya no miente, la carga sigue inco
 | 2 | **885 componentes sin ningún límite** | Antamina 930E **441** · Cerro Verde 930E **216** · … Salen **verdes pase lo que pase** | BLOQUE **164.3** |
 | 3 | **347 componentes con `ISO` en `0`** | Leídos como *limpios sin medirse*. Incluye **los 158 motores de Antamina** | BLOQUE **159.2** |
 | 4 | **1 579 muestras de Cerro Verde sin componente** | 62 equipos, **6 meses seguidos** | BLOQUE **161.1** |
-| 5 | **`Ca_LP` de Antamina en NULL** | Causaba **164 falsos críticos** (ya corregido en SQL, pero el límite sigue sin cargar) | BLOQUE **160.1** |
+| 5 | **`Ca_LP`, `Zn_LP` y `Mg_LP` de Antamina en NULL** (hidráulico y ruedas: 100 %) | Sin LP, la **precaución** de un aditivo no puede dispararse nunca: solo existe el crítico. Causaba falsos críticos en la fundación (160) y en el barrido (188), ya corregidos en SQL | BLOQUE **160.1** · **188.1** |
 | 6 | **Typo `MOTORO DE TRACCION RH`** | 72 equipos, 215 muestras, **sigue entrando**. Convive con el nombre correcto → esos camiones muestran **3** motores de tracción | BLOQUE **165.3** |
 
 ⚠ **El typo NO se normaliza en SQL.** Se intentó y costó **17 minutos** de cuelgue: envolver

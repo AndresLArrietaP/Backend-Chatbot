@@ -8146,3 +8146,13 @@ FROM (SELECT DetalleTodosMD AS MD FROM vw_ObservadosBarridoMD
 CROSS JOIN (SELECT MD FROM dbo.vw_TriageMD
       WHERE Proyecto LIKE '%antamina%' AND Modelo LIKE '%todos%' AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%hidraulico%') t;
 GO
+
+-- RESULTADOS BLOQUE 188 (30/09) -- todo verde, el cambio queda.
+--   188.0 barrido detalle Antamina 13,8 s (LD 127 883) · triage hidraulicos 3,2 s (LD 18 269). Sin costo.
+--   188.1 Antamina, ultima muestra: Ca/Zn/Mg tienen LP en NULL en el 100% (158 hidr, 129 ruedas) y solo LC
+--         (Ca 2 187/2 250 · Zn 620/661 · Mg 7). La regla vieja marcaba 54-91 criticos por parametro; Estado_*
+--         marca 0 (hidr) y 1 (ruedas). ⇒ El barrido estaba MAL: comparaba un LC de aditivo hacia arriba.
+--         ⚠ Con LP en NULL la PRECAUCION de un aditivo invertido no puede dispararse nunca -> Carlos.
+--   188.2 quedan nCa=5 · nZn=2 · nMg=0 en el detalle = los 4 Ca de MT (contaminante, legitimo: HT304,
+--         HT313, HT362, HT364) + el Zn de HT364 + el unico critico real de ruedas en Ca y en Zn. Cuadra exacto.
+--         Triage: 106 chips ') 🟨' (antes 0).
