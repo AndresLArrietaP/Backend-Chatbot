@@ -161,53 +161,59 @@ El tema PARTE del flujo (ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md)); el/los Promp
 > - **⚠️ en el valor:** el view marca con ⚠️ los valores del metal que dan **0.0** (muestras no-DDI que suelen ser falso positivo; el área lo revisa aparte). No es una alerta de límite, es un aviso de dato sospechoso.
 > Tema 26 (Ayuda / Glosario) = **tipo Prompt, SIN flujo ni SQL**: Disparo (descripción) → **Solicitud** `Ayuda KomfIA` (entrada `pregunta` = el mensaje del usuario, p.ej. `System.Activity.Text`) → Mensaje `{ayuda.text}` → Finalizar. El glosario va DENTRO del prompt (sin conocimiento externo). Ver [prompts/ayuda_glosario.md](prompts/ayuda_glosario.md). Es el hogar de las consultas simples/conceptuales (antes caían al fallback y se sobre-explicaban).
 
-## 🧩 Receta: el tema pregunta lo que falta (probada en el Tema 09, 01/10)
+## 🧩 Receta: el tema pregunta lo que falta — **6 piezas** (probada en 09 y 22, 01-02/10)
 
-**Por qué hace falta:** la casilla «si falta, pregúntalo» de una entrada solo actúa cuando el **orquestador**
-llama al tema. Cuando se llega por **«Ir a tema»** desde el Tema 00, las entradas ya vienen fijadas —vacías o
-no— y el tema pasa directo a la Acción: con `""` el flujo corre vacío y sale «No encontré datos» (el N2), con
-`Blank()` el flujo responde `FlowActionBadRequest`.
+**Por qué hace falta:** cuando se llega a un tema por **«Ir a tema»** desde el Tema 00, las entradas vienen
+fijadas y el tema **no pregunta** nada por sí solo. Y si se deja que pregunte el **orquestador**, pregunta con
+textos inventados y se lleva la conversación a otro lado. ⇒ Las preguntas son **nuestras**, en nodos propios,
+y el orquestador queda fuera de las tres puertas por donde se cuela (piezas 4, 5 y 6).
 
-**Las cuatro piezas, y las cuatro tienen que estar:**
+| # | Dónde | Qué | Si falta |
+|---|---|---|---|
+| 1 | **Tema 00**, rama del comando | Lo que falta va como **`Blank()`, nunca `""`**: `If(Topic.pN = "", Blank(), Topic.pN)`. Si un token es ambiguo (¿`Fe` es metal o componente?), una variable auxiliar calculada **antes** de la cascada lo decide (`Topic.esMetal2`) | con `""` el tema **ni entra**: responde el orquestador |
+| 2 | **Tema destino**, entre Desencadenador y Acción | Por cada entrada obligatoria: **Condición en fórmula** `Len(Trim(Topic.x)) = 0` → **Pregunta** (Identificar: *Respuesta completa del usuario*). Rama «Todas las demás» vacía. Bloques en serie, en el orden del comando | `FlowActionBadRequest`, o «No encontré datos» |
+| 3 | Cada **Pregunta** | **«Guardar respuesta del usuario como» = la misma variable de entrada** | la respuesta se pierde |
+| 4 | **Detalles del tema → Entrada**, cada variable | *Configuración adicional* → **«Se debe solicitar al usuario» desmarcado** | el orquestador pregunta él con una sintaxis inventada y el tema no corre |
+| 5 | Cada Pregunta → *Propiedades* → **Interrupciones** | **«Permitir el cambio a otro tema» desmarcado** | una respuesta corta (`Fe`) se toma como mensaje nuevo: el tema se corta antes de la Acción y cae en «Remitir a un superior» |
+| 6 | Cada Pregunta → *Propiedades* → **Reconocimiento de entidades** | **«Acción si no se encuentra ninguna entidad»: dejar la variable vacía**, no «Remitir» | «La remisión a un representante no está configurada» |
 
-| # | Dónde | Qué |
-|---|---|---|
-| 1 | **Tema 00**, en la rama del comando | Lo que falta se pasa como **`Blank()`**, nunca `""` — con `""` el tema **ni entra**: responde el orquestador (02/10, `/ranking`). Si la posición de un token es ambigua (¿`Fe` es metal o componente?), una variable auxiliar calculada **antes** de la cascada lo decide (`Topic.esMetal2`). |
-| 2 | **Tema destino**, entre el Desencadenador y la Acción | Por cada entrada **obligatoria**: Condición en **fórmula** `Len(Trim(Topic.‹entrada›)) = 0` → nodo **Pregunta** (Identificar: *Respuesta completa del usuario*). La rama «Todas las demás» va vacía. Los bloques van en serie. |
-| 3 | En cada **Pregunta** | **«Guardar respuesta del usuario como» = la MISMA variable de entrada.** Sin esto la pregunta se hace, se responde y se pierde. |
-| 4 | **Detalles del tema → Entrada**, en CADA variable | *Configuración adicional* → **«Se debe solicitar al usuario» DESMARCADO.** Marcado, el orquestador revisa las entradas ANTES de entrar al tema y, si cree que falta una, pregunta él con un texto inventado: el tema no llega a correr (02/10: `/ranking` respondió con la sintaxis `/ranking <metal> <componente> <proyecto>`, que no existe). |
+*(Omitir pregunta se deja en «Permitir que se omita»: así se salta si la variable ya trae valor.)*
 
-**Las trampas en que caímos (01/10), en el orden en que aparecieron:**
-1. `Blank()` sin preguntas en el tema → `FlowActionBadRequest`. *(Pieza 2 faltante.)*
-2. Preguntas con «Seleccionar una variable» sin elegir → la respuesta no llega a la Acción. *(Pieza 3.)*
-3. Fórmulas pegadas en la entrada equivocada del nodo «Tema» (`equipo` con la del componente) → preguntó el
-   equipo que sí venía.
-4. Fórmula de una **versión vieja**: las dos empezaban igual y solo cambiaba el final → componente = `Fe`.
-5. **(02/10) «está en blanco» NO detecta el texto vacío `""`** — Copilot usa Power Fx moderno, donde
-   `IsBlank("")` es *falso*. `/ranking` a secas pasó `""`, las preguntas no saltaron y el flujo corrió con
-   `LIKE '%%'`: todos los metales y componentes a la vez («Ranking Sn — Transmisión», todas en posición 1).
-   ⇒ La Condición va en **fórmula**: `Len(Trim(Topic.x)) = 0`, que es verdadera con `""` y con `Blank()`.
-6. **(02/10) El orquestador manda acentos como entidad HTML**: `hidr&#225;ulico`. Un `LIKE` contra eso no casa.
-   ⇒ Traducir en el flujo con los Redactar `comp_in`/`comp_tipo` (buscan `hidr`, `tracc`… sin tilde).
+**Las trampas, en el orden en que aparecieron (01-02/10):**
+1. `Blank()` sin preguntas en el tema → `FlowActionBadRequest`. *(Pieza 2.)*
+2. Preguntas sin «Guardar como» → la respuesta no llega a la Acción. *(Pieza 3.)*
+3. Fórmulas pegadas en la entrada equivocada del nodo «Tema» → preguntó el equipo que sí venía.
+4. Fórmula de una versión vieja que empezaba igual → componente = `Fe`.
+5. **«está en blanco» no detecta `""`**: Copilot usa Power Fx moderno, donde `IsBlank("")` es falso →
+   `/ranking` corrió con `LIKE '%%'` («Ranking Sn — Transmisión», todas en posición 1). *(Pieza 2 en fórmula.)*
+6. **`""` desde el Tema 00 → el tema ni entra** y el orquestador inventa la sintaxis del comando. *(Pieza 1.)*
+7. **«Se debe solicitar al usuario» marcado** → lo mismo, aun con `Blank()`. *(Pieza 4.)*
+8. **Interrupciones permitidas** → tras `traccion` respondió `Fe`, el orquestador se llevó la conversación y
+   `MD_ranking` no tuvo ninguna ejecución. *(Piezas 5 y 6.)*
+9. **El orquestador manda acentos como entidad HTML** (`hidr&#225;ulico`) → el flujo traduce con los Redactar
+   `comp_in`/`comp_tipo` (buscan `hidr`, `tracc`… sin tilde). Aplica a todo flujo que reciba un componente.
 
-**Cómo depurar sin adivinar:** el **historial de ejecuciones del flujo** muestra la consulta tal como llegó.
-Ahí se ve qué valor tuvo cada entrada (`REPLACE('Fe',…)` delató la trampa 4 en un minuto).
+**Cómo depurar sin adivinar** — tres miradas, en este orden:
+1. **Panel de actividad** del chat de prueba: ¿aparece el tema destino después de **00 Comandos**? Si no, el
+   orquestador lo interceptó (piezas 1 y 4).
+2. **Historial de ejecuciones del flujo**: ¿hubo ejecución? Si no, el tema se cortó antes de la Acción
+   (piezas 5 y 6).
+3. **La consulta que llegó**, en esa ejecución: qué valor tuvo cada entrada (piezas 1-3, trampas 3 y 4).
 
-**Temas que la necesitan** (entradas obligatorias que el Tema 00 puede dejar vacías) — seguimiento en
-[PENDIENTES](PENDIENTES.md) C5:
+**Temas que la necesitan** — seguimiento en [PENDIENTES](PENDIENTES.md) C5:
 
 | Tema | Comando | Entradas obligatorias |
 |---|---|---|
-| ✅ 09 Gráfica | `/grafica` | equipo · compartimiento · parametro |
+| ✅ 09 Gráfica | `/grafica` | equipo · compartimiento · parametro *(revisar piezas 4-6)* |
+| ✅ **22 Ranking** — la plantilla | `/ranking` | compartimiento · parametro *(proyecto con default Antapaccay)* |
 | 01 Último análisis | `/ultimo` | equipo · compartimiento |
-| 02 Condición MT | `/condicionmt` | equipo |
-| 04 Diagnóstico completo | `/diagcompleto` · `/diagnostico` | equipo |
 | 06 Tendencia | `/tendencia` · `/tendenciadet` | equipo · compartimiento |
 | 11 Historial componente | `/historial` | equipo · compartimiento |
-| 12 Historial equipo | `/historialeq` | equipo |
 | 13/14 Historial de un metal | `/historialmetal` | equipo · parametro |
-| 22 Ranking | `/ranking` | proyecto · compartimiento · parametro ← **es el H1** («Tas a una») |
 | 25 Metal en flota | `/metalflota` | parametros |
+| 02 Condición MT | `/condicionmt` | equipo |
+| 04 Diagnóstico completo | `/diagcompleto` · `/diagnostico` | equipo |
+| 12 Historial equipo | `/historialeq` | equipo |
 | 28 Acumulados equipo | `/acumulados` | equipo |
 
 Los de flota con default (`/barrido`, `/triage`, `/conteo`, `/incipiente`, `/historialflota`, `/rankingacum`,

@@ -35,31 +35,21 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 
 ## PASO 5 · **C5** — paso a paso
 
-### 5.1 · La receta «el tema pregunta lo que falta» en los otros 10 temas ⭐ **primero**
+### 5.1 · La receta «el tema pregunta lo que falta» en los otros temas ⭐ **primero**
 
-Cura de una vez el **N2** (el «No encontré datos» que sale antes de la respuesta) y el **H1** (`/ranking` a
-secas respondía «Tas a una»). La receta completa, con las 4 trampas del 01/10, está en
-[CONFIG_TEMAS § Receta](CONFIG_TEMAS.md). Resumen de las **4 piezas**:
-
-1. **Tema 00**: lo que falta se pasa como **`Blank()`, nunca `""`** — `If(Topic.pN = "", Blank(), Topic.pN)`.
-   Con `""` el orquestador responde él (sintaxis inventada) y el tema **no entra** (confirmado 02/10, `/ranking`).
-   La Condición del tema, igual, en fórmula `Len(Trim(Topic.x)) = 0` (cubre `""` del lenguaje natural).
-2. **Tema destino**, entre el Desencadenador y la Acción: por cada entrada obligatoria, **Condición**
-   `‹entrada› está en blanco` → **Pregunta** (*Respuesta completa del usuario*). Rama «Todas las demás»
-   vacía. Bloques en serie, en el orden del comando.
-3. En cada Pregunta: **«Guardar respuesta del usuario como» = la misma variable de entrada.** ⛔ Sin esto la
-   respuesta se pierde (trampa 2 del 01/10).
-4. En **cada** entrada del tema (*Configuración adicional*): **«Se debe solicitar al usuario» desmarcado.** Si
-   está marcado, el orquestador pregunta él, con texto inventado, y el tema ni arranca (02/10, `/ranking`).
-5. ⏳ **Por confirmar (02/10):** en cada Pregunta → Propiedades → Interrupciones → **«Permitir el cambio de
-   tema» desactivado**. Tras responder `Fe` a la pregunta del metal, el orquestador se llevó la conversación a
-   «Remitir a un superior».
+Cura de una vez el **N2** (el «No encontré datos» que sale antes de la respuesta) y el **H1**.
+✅ **Tema 22 Ranking terminado (02/10)** — `/ranking` → `traccion` → `Fe` = top 10 de Fe en tracción, con
+ejecución correcta del flujo. **Es la plantilla:** copiar sus bloques a cada tema de la tabla.
+La receta son **6 piezas** y las 6 tienen que estar → [CONFIG_TEMAS § Receta](CONFIG_TEMAS.md): `Blank()` en el
+Tema 00 · Condición `Len(Trim(...)) = 0` + Pregunta · «Guardar como» la misma variable · «Se debe solicitar»
+desmarcado · Interrupciones desmarcadas · «sin entidad» ≠ Remitir.
+⚠ Revisar también el **Tema 09**: funciona, pero aún no tiene las piezas 4-6 verificadas.
 
 **Orden sugerido** — primero los que más se usan y el que cierra el H1:
 
 | # | Tema | Comando | Bloques a agregar (en este orden) | Prueba |
 |---|---|---|---|---|
-| 1 | **22 Ranking** | `/ranking` | proyecto · compartimiento · parametro | `/ranking` → pregunta los 3 · `/ranking antapaccay` → comp y metal |
+| ✅ | **22 Ranking** | `/ranking` | compartimiento · parametro (proyecto con default) | hecho 02/10 |
 | 2 | **01 Último análisis** | `/ultimo` | equipo · compartimiento | `/ultimo` · `/ultimo 3160` |
 | 3 | **06 Tendencia** | `/tendencia` | equipo · compartimiento | `/tendencia 3160` |
 | 4 | **11 Historial componente** | `/historial` | equipo · compartimiento | `/historial 3160` |
