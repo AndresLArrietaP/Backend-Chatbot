@@ -101,7 +101,7 @@ flujo muestra **dos ejecuciones** para una sola consulta.
 Solo esa variante (`mtrh` pegado). Traer la captura y el `md` del historial del flujo `MD_triage`: ver si el
 descuadre está en la tabla (vista) o en un mensaje que se coló entre filas.
 
-### 5.3 · L6 — «0 observados» se lee como error
+### 5.3 · L6 — «0 observados» se lee como error — ✅ **CERRADO (02/10)** en temas 16 y 17: «No hay equipos observados con esos criterios…»
 
 `/barrido antapaccay 930E` no devuelve filas porque el 930E no tiene observados (y además no tiene límites):
 el tema dice «No encontré datos». Se arregla **en el tema**, no en SQL (cambiar la cardinalidad de la vista
@@ -121,13 +121,23 @@ El mapa de actividad lo mostró: el orquestador elige el tema por su descripció
 lea el `/`. Funciona, pero se salta los defaults del comando. Mirar si la descripción del 00 ancla bien
 «mensaje que empieza con `/`».
 
-### 5.6 · N4 — `T3160` (código de Cummins) no encuentra el camión
+### 5.6 · N4 — `T3160` (código de Cummins) no encuentra el camión — ✅ **CERRADO (02/10)**
+
+Redactar `eq in`/`eq` en los 5 flujos por equipo ([CONFIG_FLUJOS § N4](CONFIG_FLUJOS.md)). Verificado en Teams:
+`/ultimo T3160 mt lh` · `/condicionmt T3160` · `/grafica T3160 mt lh Fe` · `/historial T3160 mt lh` ·
+`/acumulados T3162` → todos al CA correspondiente; `/ultimo 3161 mt lh` sin cambios.
+⏳ Falta la regresión de `/historialflota antapaccay` (llama a `MD_historial` con equipo vacío).
+
+<details><summary>Plan original</summary>
+
 
 Probado en SQL (BLOQUE 176.3): quitar la `T` **solo si le siguen 4+ dígitos** → `T3160` → `CA3160`;
 `T1`/`T11`/`HT079` quedan intactos. **Falta ponerlo en los flujos por equipo** (`MD_equipo`,
 `MD_equipo_comp`, `MD_metal`), como acción **Redactar** antes de la consulta (ley 3: traducir es del flujo).
 
-### 5.7 · Retoque — el mensaje de `/tendenciametal` muestra `**` literales
+</details>
+
+### 5.7 · Retoque — el mensaje de `/tendenciametal` muestra `**` literales — ✅ **CERRADO (02/10)**
 
 Dejarlo en texto plano: *«/tendenciametal se unió a /grafica. Usa /grafica ‹equipo› ‹componente› ‹metal›,
 por ejemplo /grafica 3160 mt lh Fe.»*
