@@ -427,7 +427,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/barrido ‹proj› [modelo]",
+                  "text": "/panel ‹proj› [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -666,7 +666,7 @@
     },
     {
       "type": "TextBlock",
-      "text": "También funcionan **/diagnostico** (= /diagcompleto), **/tendenciadet** (= /tendencia) y **/conteo** (= /barrido).",
+      "text": "También funcionan **/diagnostico** (= /diagcompleto), **/tendenciadet** (= /tendencia), **/barrido** y **/conteo** (= /panel).",
       "wrap": true,
       "isSubtle": true,
       "size": "Small",
