@@ -305,9 +305,8 @@ Nuevo tema → nombre **`00 Comandos`**. Desencadenador → **«El agente elige�
 los demás temas — convive limpio, no intercepta todo). ⛔ NO uses «Se recibe un mensaje» (se dispara en CADA mensaje;
 solo es Plan B si «El agente elige» no rutea los `/`). «Se produce una actividad»/«Se invoca» = eventos/botones de Teams (después).
 Pega esta **descripción** (anclada a la BARRA PEGADA a una palabra-comando, no a cualquier `/`):
-> "Se activa SOLO cuando el mensaje empieza con una BARRA pegada a un comando conocido (sin espacio): `/barrido`,
-> `/triage`, `/ultimo`, `/tendencia`, `/acumulados`, `/rankingacum`, `/comandos`… Ejecuta el atajo directo al módulo.
-> ⛔ NO si es lenguaje natural aunque contenga `/` (ej. «/ ¿qué equipos…?» con espacio tras la barra) → eso es una consulta normal."
+> **(02/10, 612 UTF-16)** — reescrita porque el orquestador mandaba `/barrido` al 17 y `/conteo` al 21 sin pasar por aquí:
+> "⚑ TODO mensaje que EMPIEZA con una BARRA pegada a una palabra (/panel, /barrido, /barridodet, /conteo, /triage, /ranking, /ultimo, /tendencia, /grafica, /historial, /acumulados, /comandos…) viene AQUÍ y SOLO AQUÍ, aunque el comando se llame igual que otro tema: este tema lee los parámetros y lo despacha a su módulo. Nunca lo mandes directo a Panel, Barrido detalle, Conteo, Triage, Ranking ni a ningún otro tema. «/barrido Antapaccay 980», «/conteo Antamina», «/triage rueda Antamina», «/tendencia CA3177 MT LH». ⛔ NO si es lenguaje natural aunque contenga / (ej. «/ ¿qué equipos…?» con espacio tras la barra)."
 
 ### 1) Nodo Condición — GATE no-invasivo (1º nodo)
 Condición (Power Fx): `IsMatch(Trim(System.Activity.Text), "^/[A-Za-z]")`  ← barra **pegada a una letra**.

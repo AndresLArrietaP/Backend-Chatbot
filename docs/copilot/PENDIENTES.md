@@ -120,6 +120,12 @@ glosario queda para las preguntas en lenguaje natural.
 
 ### 5.5 · N3 — `/triage` entra por el tema 19 directo, no por el Tema 00 — ✍ **reinterpretado y escrito (02/10)**
 
+⚠ **Volvió (02/10, con el panel):** `/barrido antapaccay 980` → 17 y `/conteo antamina` → 21, **directo**, sin el 00. El
+orquestador empareja la palabra del comando con la descripción de un tema, y la central decía «lo resuelve SIEMPRE
+**su tema**» (lo leía como «el que se llama igual»). Cura en 4 textos: descripción del **00** («TODO mensaje con «/»
+viene AQUÍ y SOLO aquí»), del **16** y **17** («un mensaje con «/» → 00 Comandos»; 17 solo con DETALLE), y la
+**central** («va SIEMPRE al tema «00 Comandos»»). + desactivar el **21**.
+
 La raíz era otra: `/triage antapaccay` (mina primero) mandaba `CompTipo = 'antapaccay'` → 0 filas → «No encontré
 datos» + una ayuda improvisada por la IA. Arreglo: el Tema 00 reconoce si `p1` es componente o mina
 (`esComp1`) → [CONFIG_COMANDOS](CONFIG_COMANDOS.md), fila `/triage`.
