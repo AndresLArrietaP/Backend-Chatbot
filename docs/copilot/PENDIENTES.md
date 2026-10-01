@@ -202,6 +202,29 @@ Y el prompt del fallback aún rotulaba `Ca/Zn/K/Na/Mg/B/P` como `'inf'`.
 | «qué hidráulicos necesitan atención en Antapaccay» | fallback: empieza con **🔎**, en viñetas, sin `\|` |
 | tras un barrido, «solo los críticos» | tema **18** (determinista), no una tabla re-filtrada |
 
+### Resultado en Teams (30/09, tarde) — 4 de 5, y una fuga nueva
+
+| Consulta | Resultado |
+|---|---|
+| `/barridodet antapaccay 980` | ✅ tabla una sola vez |
+| `/conteo Antapaccay 797` | ✅ sin tabla ni «797F». ⚠ la central nombra modelos de memoria («980E, 930E, D475A, PC1250») |
+| `/rankingacum antamina` | ✅ «disponible para Antapaccay», sin la tabla de Antapaccay |
+| «qué hidráulicos necesitan atención» | ✅ **mejor de lo esperado**: fue al **Triage** (determinista), no al fallback. La central aún decía «no tienen tema propio» → corregido |
+| «ahora solo los críticos» (tras `/barridodet antamina`) | ✅ tema 18 |
+
+🔴 **Fuga nueva:** tras `/barridodet antamina` y tras el tema 18, la **central** añadió **una tabla de resumen
+propia** («Resumen Antamina — Flota observada», «Resumen de CRÍTICOS» con total 144) + «hallazgos
+principales». No sale de ninguna vista (grep: 0 coincidencias en el DDL). Con Antapaccay se quedó en
+una línea; con la flota grande se desbordó. Su origen son los **CIERRES** de la central, que se
+aplicaban también tras un tema. ⇒ Central: tras un tema, como mucho **una** línea de cierre, sin cifras
+nuevas, ⛔ nunca tabla de resumen (6 190 UTF-16).
+
+🟡 **El triage de hidráulicos vs el barrido:** el triage cuenta **4** hidráulicos 980E observados y el
+barrido **3**. La diferencia es `CA3163`, observado **solo por `ISO>6`**: el triage cuenta el código de
+limpieza (5c) y el barrido no. Es la decisión **T** (5j) pendiente con Carlos, ahora **visible** entre
+dos módulos. Y el análisis del triage marcó `Si 39.1` del `6116` como 🟥 cuando el barrido lo da 🟨
+(LP 30 · LC 60): **por confirmar** mirando la sección D475A de esa misma tabla.
+
 Dos sitios, un solo vicio:
 
 - **[prompts/analisis_prompts.md](prompts/analisis_prompts.md)** — hoy prohíbe *inventar datos*, pero **no
