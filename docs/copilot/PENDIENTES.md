@@ -223,7 +223,21 @@ nuevas, ⛔ nunca tabla de resumen (6 190 UTF-16).
 barrido **3**. La diferencia es `CA3163`, observado **solo por `ISO>6`**: el triage cuenta el código de
 limpieza (5c) y el barrido no. Es la decisión **T** (5j) pendiente con Carlos, ahora **visible** entre
 dos módulos. Y el análisis del triage marcó `Si 39.1` del `6116` como 🟥 cuando el barrido lo da 🟨
-(LP 30 · LC 60): **por confirmar** mirando la sección D475A de esa misma tabla.
+(LP 30 · LC 60).
+
+### 🔴 → ✍ Antamina: el barrido y el triage dan semáforos distintos — DDL escrito, **BLOQUE 188**
+
+Con la salida completa de `/barridodet antamina` y del triage de hidráulicos:
+
+1. **El barrido pinta Ca/Zn/Mg 🟥 en el 100 % de ruedas e hidráulicos** de Antamina (Ca ~3 400); el
+   triage, sobre las mismas muestras, no marca ninguno. **Causa:** la familia del barrido
+   (`vw_ObservadosFlota`, `vw_ObservadosBarridoMD`, `vw_ObservadosResumenMD`) **recalcula** el chip con
+   `ppm > LC`, siempre hacia arriba: **nunca recibió G1 ni G0**. El triage lee `Estado_*` de la fundación.
+   ⇒ Las 3 vistas pasan a leer `Estado_Ca/Zn/Mg` (chip y tabla de límites). Conteos sin cambio.
+2. **El triage no pintaba 🟨**: solo 🟥. `Cu(2.6)` en precaución salía como un valor sin marca, y el
+   análisis le inventaba la severidad (así salió el `Si 39.1` 🟥 del `6116`). ⇒ chip 🟨 en la celda.
+3. 🟡 **Para Carlos:** `V100` 🟥 en casi todas las ruedas de Antamina (~18 cSt) y `HT301 RD LH`
+   `V100=77.2` (¿un V40 cargado como V100?). No se toca: es dato o límite.
 
 Dos sitios, un solo vicio:
 

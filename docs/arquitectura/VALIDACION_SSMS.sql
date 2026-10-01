@@ -8082,3 +8082,67 @@ GO
 --   TendenciaMD 35,8 s (LD 78 544, Workfile con lecturas fisicas) -- la de MENOS margen (2,8x bajo 100 s).
 --   ⇒ Historial estaba SANO: lo enfermo el cambio del 186. Revertir era lo correcto.
 --   ⇒ Metodo completo guardado como skill: .claude/skills/komfia-doctor/SKILL.md
+
+
+-- ==== BLOQUE 188 - El barrido lee el semaforo de la fundacion (Ca/Zn/Mg) + chip 🟨 en el triage ====
+-- Hallazgo en Teams (30/09, /barridodet antamina vs triage de hidraulicos): el barrido pinta Ca/Zn/Mg 🟥
+--   en el 100% de las ruedas y los hidraulicos de Antamina (Ca ~3 400, Zn ~1 000, Mg ~10); el triage, sobre
+--   las mismas muestras, no marca ninguno. Causa (leida en el DDL): la familia del barrido
+--   (vw_ObservadosFlota, vw_ObservadosBarridoMD, vw_ObservadosResumenMD) RECALCULA el chip con
+--   'ppm > LC', siempre hacia arriba: nunca recibio G1 (inversion por grupo) ni G0. El triage lee Estado_*.
+--   Sospecha concreta: Ca_LP de Antamina en NULL (BLOQUE 160.1) -> la fila de limite no aparece y el chip
+--   compara contra un LC de aditivo como si fuera de contaminante.
+-- CAMBIO (DDL ya escrito): esas 3 vistas usan Estado_Ca/Zn/Mg de vw_MuestrasEstado para el chip y para la
+--   tabla de limites. K/Na no se tocan (nunca son invertidos). Conteos y Est. no cambian: Ca/Zn/Mg ya eran
+--   informativos en el barrido.
+--   + vw_TriageMD: la celda pinta 🟨 en precaucion (antes solo 🟥: el analisis inventaba la severidad,
+--   el Si 39.1 del 6116 salio 🟥 en el texto).
+-- ⚑ ORDEN: desplegar el DDL completo, luego este bloque. La MEDICION va primero (ley 2, corolario).
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   188.0 barrido > 25 s o triage > 10 s  -> revertir ESA vista (el cambio es en la misma fila, no deberia).
+--   188.1 si Estado_* marca ~0 y la regla vieja ~todos -> el barrido estaba MAL; queda el cambio.
+--         si Estado_* TAMBIEN marca ~todos -> el limite cargado esta mal (dato, Carlos), el cambio igual queda.
+--   188.2 'Ca=' en el MD de Antamina baja a lo que dice 188.1 (Estado observado); el triage pasa de 0
+--         chips ') 🟨' a varios (HT333 y HT363: Cu 2.6).
+
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 188.0 ⭐ medicion primero: consultas EXACTAS de los flujos (MD_flota, MD_triage)
+SELECT LEN(DetalleTodosMD) AS L FROM vw_ObservadosBarridoMD
+WHERE Proyecto LIKE '%antamina%' AND Modelo LIKE '%todos%';
+GO
+SELECT LEN(MD) AS L FROM dbo.vw_TriageMD
+WHERE Proyecto LIKE '%antamina%' AND Modelo LIKE '%todos%' AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%hidraulico%';
+GO
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+GO
+
+-- 188.1 la evidencia: ultima muestra de Antamina, ruedas e hidraulico. Una pasada, filtro por columna real.
+SELECT CASE WHEN Compartimiento LIKE '%HIDRAUL%' THEN 'HIDR' ELSE 'RUEDA' END AS Comp,
+       p.Par, COUNT(*) AS N,
+       MIN(p.v) AS vMin, MAX(p.v) AS vMax,
+       MIN(p.lp) AS LP_min, MAX(p.lp) AS LP_max, SUM(CASE WHEN p.lp IS NULL THEN 1 ELSE 0 END) AS LP_nulos,
+       MIN(p.lc) AS LC_min, MAX(p.lc) AS LC_max,
+       SUM(CASE WHEN p.v > ISNULL(p.lc,9999) THEN 1 ELSE 0 END)      AS Crit_regla_vieja,
+       SUM(CASE WHEN p.est = 'CRITICO' THEN 1 ELSE 0 END)            AS Crit_Estado,
+       SUM(CASE WHEN p.est = 'PRECAUCION' THEN 1 ELSE 0 END)         AS Prec_Estado
+FROM dbo.vw_MuestrasEstado
+CROSS APPLY (VALUES (N'Ca', Ca_ppm, Ca_LP, Ca_LC, Estado_Ca),
+                    (N'Zn', Zn_ppm, Zn_LP, Zn_LC, Estado_Zn),
+                    (N'Mg', Mg_ppm, Mg_LP, Mg_LC, Estado_Mg)) p(Par, v, lp, lc, est)
+WHERE Proyecto LIKE '%antamina%' AND EsDDI = 0 AND rn_recencia = 1
+  AND (Compartimiento LIKE '%HIDRAUL%' OR Compartimiento LIKE '%RUEDA%')
+GROUP BY CASE WHEN Compartimiento LIKE '%HIDRAUL%' THEN 'HIDR' ELSE 'RUEDA' END, p.Par
+ORDER BY 1, 2;
+GO
+
+-- 188.2 despues del DDL: cuantos 'Ca=' / 'Zn=' / 'Mg=' quedan en el detalle, y el 🟨 del triage
+SELECT (LEN(d.MD) - LEN(REPLACE(d.MD, N'Ca=', N''))) / 3 AS nCa,
+       (LEN(d.MD) - LEN(REPLACE(d.MD, N'Zn=', N''))) / 3 AS nZn,
+       (LEN(d.MD) - LEN(REPLACE(d.MD, N'Mg=', N''))) / 3 AS nMg,
+       -- ') 🟨' = chip pegado a un valor; el 🟨 suelto de la columna Estado ya existia y no prueba nada
+       (LEN(t.MD) - LEN(REPLACE(t.MD, N') 🟨', N''))) / LEN(N') 🟨') AS chips_amarillos_triage
+FROM (SELECT DetalleTodosMD AS MD FROM vw_ObservadosBarridoMD
+      WHERE Proyecto LIKE '%antamina%' AND Modelo LIKE '%todos%') d
+CROSS JOIN (SELECT MD FROM dbo.vw_TriageMD
+      WHERE Proyecto LIKE '%antamina%' AND Modelo LIKE '%todos%' AND CompTipo COLLATE Latin1_General_CI_AI LIKE '%hidraulico%') t;
+GO

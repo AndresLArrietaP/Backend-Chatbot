@@ -931,11 +931,11 @@ WITH b AS (
         ), 1, 1, '') AS Mets_Obs,
         /* INFORMATIVOS fuera de umbral (Ca/Zn/K/Mg): se muestran, NO disparan observado */
         STUFF(CONCAT(
-            CASE WHEN Ca_ppm > ISNULL(Ca_LC,9999) THEN ',Ca:C' WHEN Ca_ppm > ISNULL(Ca_LP,9999) THEN ',Ca:P' ELSE '' END,
-            CASE WHEN Zn_ppm > ISNULL(Zn_LC,9999) THEN ',Zn:C' WHEN Zn_ppm > ISNULL(Zn_LP,9999) THEN ',Zn:P' ELSE '' END,
+            CASE WHEN Estado_Ca = 'CRITICO' THEN ',Ca:C' WHEN Estado_Ca = 'PRECAUCION' THEN ',Ca:P' ELSE '' END,
+            CASE WHEN Estado_Zn = 'CRITICO' THEN ',Zn:C' WHEN Estado_Zn = 'PRECAUCION' THEN ',Zn:P' ELSE '' END,
             CASE WHEN K_ppm  > ISNULL(K_LC,9999)  THEN ',K:C'  WHEN K_ppm  > ISNULL(K_LP,9999)  THEN ',K:P'  ELSE '' END,
             CASE WHEN Na_ppm > ISNULL(Na_LC,9999) THEN ',Na:C' WHEN Na_ppm > ISNULL(Na_LP,9999) THEN ',Na:P' ELSE '' END,
-            CASE WHEN Mg_ppm > ISNULL(Mg_LC,9999) THEN ',Mg:C' WHEN Mg_ppm > ISNULL(Mg_LP,9999) THEN ',Mg:P' ELSE '' END,
+            CASE WHEN Estado_Mg = 'CRITICO' THEN ',Mg:C' WHEN Estado_Mg = 'PRECAUCION' THEN ',Mg:P' ELSE '' END,
             /* SALUD del aceite: viscosidad. Solo dispara donde los limites VISC estan aterrizados (Antapaccay); V100=0/NULL -> SIN DATO (nada). Informativo: NO cuenta como metal observado */
             CASE WHEN Estado_V100 = 'CRITICO' THEN ',V100:C' WHEN Estado_V100 = 'PRECAUCION' THEN ',V100:P' ELSE '' END
         ), 1, 1, '') AS Infs_Obs,
@@ -970,11 +970,11 @@ WITH b AS (
             CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb='+CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Pb_LC AS decimal(18,1))),'')+')'+CASE WHEN Pb_ppm>ISNULL(Pb_LC,9999) THEN ':C' ELSE ':P' END ELSE '' END,
             CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn='+CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Sn_LC AS decimal(18,1))),'')+')'+CASE WHEN Sn_ppm>ISNULL(Sn_LC,9999) THEN ':C' ELSE ':P' END ELSE '' END,
             CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN='+CONVERT(varchar(20),CAST(TBN AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(TBN_LP AS decimal(18,1))),'')+')'+':P' ELSE '' END,
-            CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'')+')'+':C' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END,
-            CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'')+')'+':C' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END,
+            CASE WHEN Estado_Ca = 'CRITICO' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'')+')'+':C' WHEN Estado_Ca = 'PRECAUCION' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END,
+            CASE WHEN Estado_Zn = 'CRITICO' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'')+')'+':C' WHEN Estado_Zn = 'PRECAUCION' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(K_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(K_LC AS decimal(18,1))),'')+')'+':C' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(K_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(K_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END,
             CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'')+')'+':C' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END,
-            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'')+')'+':C' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END
+            CASE WHEN Estado_Mg = 'CRITICO' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'')+')'+':C' WHEN Estado_Mg = 'PRECAUCION' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+'('+ISNULL('LP'+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1))),'')+ISNULL('/LC'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'')+')'+':P' ELSE '' END
         ),1,3,'') AS Detalle,
         STUFF(CONCAT(
             CASE WHEN Fe_ppm>ISNULL(Fe_LP,9999) THEN ' · Fe '+CONVERT(varchar(20),CAST(Fe_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Fe_LC AS decimal(18,1))),'') ELSE '' END,
@@ -987,16 +987,16 @@ WITH b AS (
             CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb '+CONVERT(varchar(20),CAST(Pb_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Pb_LC AS decimal(18,1))),'') ELSE '' END,
             CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn '+CONVERT(varchar(20),CAST(Sn_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Sn_LC AS decimal(18,1))),'') ELSE '' END,
             CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN '+CONVERT(varchar(20),CAST(TBN_LP AS decimal(18,1))) ELSE '' END,
-            CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca '+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'') ELSE '' END,
-            CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn '+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Estado_Ca IN ('CRITICO','PRECAUCION') THEN ' · Ca '+CONVERT(varchar(20),CAST(Ca_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Ca_LC AS decimal(18,1))),'') ELSE '' END,
+            CASE WHEN Estado_Zn IN ('CRITICO','PRECAUCION') THEN ' · Zn '+CONVERT(varchar(20),CAST(Zn_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Zn_LC AS decimal(18,1))),'') ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K '+CONVERT(varchar(20),CAST(K_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(K_LC AS decimal(18,1))),'') ELSE '' END,
             CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na '+CONVERT(varchar(20),CAST(Na_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Na_LC AS decimal(18,1))),'') ELSE '' END,
-            CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg '+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'') ELSE '' END
+            CASE WHEN Estado_Mg IN ('CRITICO','PRECAUCION') THEN ' · Mg '+CONVERT(varchar(20),CAST(Mg_LP AS decimal(18,1)))+ISNULL('/'+CONVERT(varchar(20),CAST(Mg_LC AS decimal(18,1))),'') ELSE '' END
         ),1,3,'') AS LimObs,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC,
         Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC,
-        K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP, Estado_V100
+        K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC, Estado_Ca, Estado_Zn, Estado_Mg, B_ppm, P_ppm, V100, TBN, TBN_LP, Estado_V100
     FROM [dbo].[vw_MuestrasEstado]
     WHERE EsDDI = 0 AND rn_recencia = 1
 ),
@@ -1686,11 +1686,11 @@ FROM (
             CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb='+CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn='+CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN='+CONVERT(varchar(20),CAST(TBN AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Ca = 'CRITICO' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C' WHEN Estado_Ca = 'PRECAUCION' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Zn = 'CRITICO' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C' WHEN Estado_Zn = 'PRECAUCION' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':C' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':C' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Mg = 'CRITICO' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C' WHEN Estado_Mg = 'PRECAUCION' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P' ELSE '' END,
             /* SALUD del aceite: viscosidad V100 (informativo, no dispara Estado_General; solo aparece en equipos ya observados) */
             CASE WHEN Estado_V100='CRITICO' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':C salud' WHEN Estado_V100='PRECAUCION' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':P salud' ELSE '' END
         ),1,3,'') AS chipsCell
@@ -1698,7 +1698,7 @@ FROM (
     SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Equipo, o.Estado_General, o.Grado, o.FechaMuestreo, o.HorasComponente, o.HorasDeAceite, o.CM, o.Estado_V100, o.V100,
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
-        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
+        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC, o.Estado_Ca, o.Estado_Zn, o.Estado_Mg
     FROM (SELECT * FROM [dbo].[vw_ObservadosFlota] WHERE Proyecto = mp.[Name]) o CROSS APPLY (SELECT o.Modelo AS ModeloG
              UNION ALL
              SELECT N'(todos)' WHERE EXISTS (
@@ -1750,7 +1750,7 @@ JOIN (
     SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Equipo, o.Estado_General, o.Grado, o.FechaMuestreo, o.HorasComponente, o.HorasDeAceite, o.CM, o.Estado_V100, o.V100,
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
-        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
+        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC, o.Estado_Ca, o.Estado_Zn, o.Estado_Mg
     FROM (SELECT * FROM [dbo].[vw_ObservadosFlota] WHERE Proyecto = mp.[Name]) o CROSS APPLY (SELECT o.Modelo AS ModeloG
              UNION ALL
              SELECT N'(todos)' WHERE EXISTS (
@@ -1771,11 +1771,11 @@ JOIN (
         (8, 'Pb', CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN CAST(Pb_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
         (9, 'Sn', CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN CAST(Sn_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
         (10, 'TBN', CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN CAST(TBN_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
-        (11, 'Ca', CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CAST(Ca_LP AS decimal(18,1)) END, CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CAST(Ca_LC AS decimal(18,1)) END),
-        (12, 'Zn', CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CAST(Zn_LP AS decimal(18,1)) END, CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CAST(Zn_LC AS decimal(18,1)) END),
+        (11, 'Ca', CASE WHEN Estado_Ca IN ('CRITICO','PRECAUCION') THEN CAST(Ca_LP AS decimal(18,1)) END, CASE WHEN Estado_Ca IN ('CRITICO','PRECAUCION') THEN CAST(Ca_LC AS decimal(18,1)) END),
+        (12, 'Zn', CASE WHEN Estado_Zn IN ('CRITICO','PRECAUCION') THEN CAST(Zn_LP AS decimal(18,1)) END, CASE WHEN Estado_Zn IN ('CRITICO','PRECAUCION') THEN CAST(Zn_LC AS decimal(18,1)) END),
         (13, 'K', CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN CAST(K_LP AS decimal(18,1)) END, CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN CAST(K_LC AS decimal(18,1)) END),
         (14, 'Na', CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CAST(Na_LP AS decimal(18,1)) END, CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CAST(Na_LC AS decimal(18,1)) END),
-        (15, 'Mg', CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CAST(Mg_LP AS decimal(18,1)) END, CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CAST(Mg_LC AS decimal(18,1)) END)
+        (15, 'Mg', CASE WHEN Estado_Mg IN ('CRITICO','PRECAUCION') THEN CAST(Mg_LP AS decimal(18,1)) END, CASE WHEN Estado_Mg IN ('CRITICO','PRECAUCION') THEN CAST(Mg_LC AS decimal(18,1)) END)
     ) m(ord, metal, lp, lc)
     WHERE o.Estado_General <> 'OK' AND m.lp IS NOT NULL
 ) r          -- PERF: sin JOIN a compsev; 'sev' ya viene de la ventana en obsf2
@@ -1820,11 +1820,11 @@ LEFT JOIN (
             CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb='+CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn='+CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN='+CONVERT(varchar(20),CAST(TBN AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Ca = 'CRITICO' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C' WHEN Estado_Ca = 'PRECAUCION' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Zn = 'CRITICO' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C' WHEN Estado_Zn = 'PRECAUCION' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':C' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':C' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Mg = 'CRITICO' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C' WHEN Estado_Mg = 'PRECAUCION' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P' ELSE '' END,
             /* SALUD del aceite: viscosidad V100 (informativo, no dispara Estado_General; solo aparece en equipos ya observados) */
             CASE WHEN Estado_V100='CRITICO' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':C salud' WHEN Estado_V100='PRECAUCION' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':P salud' ELSE '' END
         ),1,3,'') AS chipsCell
@@ -1832,7 +1832,7 @@ LEFT JOIN (
     SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Equipo, o.Estado_General, o.Grado, o.FechaMuestreo, o.HorasComponente, o.HorasDeAceite, o.CM, o.Estado_V100, o.V100,
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
-        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
+        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC, o.Estado_Ca, o.Estado_Zn, o.Estado_Mg
     FROM (SELECT * FROM [dbo].[vw_ObservadosFlota] WHERE Proyecto = mp.[Name]) o CROSS APPLY (SELECT o.Modelo AS ModeloG
              UNION ALL
              SELECT N'(todos)' WHERE EXISTS (
@@ -1885,11 +1885,11 @@ LEFT JOIN (
             CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN ' · Pb='+CONVERT(varchar(20),CAST(Pb_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN ' · Sn='+CONVERT(varchar(20),CAST(Sn_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN ' · TBN='+CONVERT(varchar(20),CAST(TBN AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Ca_ppm>ISNULL(Ca_LC,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C' WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Zn_ppm>ISNULL(Zn_LC,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C' WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Ca = 'CRITICO' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':C' WHEN Estado_Ca = 'PRECAUCION' THEN ' · Ca='+CONVERT(varchar(20),CAST(Ca_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Zn = 'CRITICO' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':C' WHEN Estado_Zn = 'PRECAUCION' THEN ' · Zn='+CONVERT(varchar(20),CAST(Zn_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN K_ppm>ISNULL(K_LC,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':C' WHEN K_ppm>ISNULL(K_LP,9999) THEN ' · K='+CONVERT(varchar(20),CAST(K_ppm AS decimal(18,1)))+':P' ELSE '' END,
             CASE WHEN Na_ppm>ISNULL(Na_LC,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':C' WHEN Na_ppm>ISNULL(Na_LP,9999) THEN ' · Na='+CONVERT(varchar(20),CAST(Na_ppm AS decimal(18,1)))+':P' ELSE '' END,
-            CASE WHEN Mg_ppm>ISNULL(Mg_LC,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C' WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P' ELSE '' END,
+            CASE WHEN Estado_Mg = 'CRITICO' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':C' WHEN Estado_Mg = 'PRECAUCION' THEN ' · Mg='+CONVERT(varchar(20),CAST(Mg_ppm AS decimal(18,1)))+':P' ELSE '' END,
             /* SALUD del aceite: viscosidad V100 (informativo, no dispara Estado_General; solo aparece en equipos ya observados) */
             CASE WHEN Estado_V100='CRITICO' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':C salud' WHEN Estado_V100='PRECAUCION' THEN ' · V100='+CONVERT(varchar(20),CAST(V100 AS decimal(18,1)))+':P salud' ELSE '' END
         ),1,3,'') AS chipsCell
@@ -1897,7 +1897,7 @@ LEFT JOIN (
     SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Equipo, o.Estado_General, o.Grado, o.FechaMuestreo, o.HorasComponente, o.HorasDeAceite, o.CM, o.Estado_V100, o.V100,
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
-        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
+        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC, o.Estado_Ca, o.Estado_Zn, o.Estado_Mg
     FROM (SELECT * FROM [dbo].[vw_ObservadosFlota] WHERE Proyecto = mp.[Name]) o CROSS APPLY (SELECT o.Modelo AS ModeloG
              UNION ALL
              SELECT N'(todos)' WHERE EXISTS (
@@ -2035,7 +2035,7 @@ JOIN (
     SELECT mg.ModeloG AS Modelo, o.Proyecto, o.Compartimiento, o.Estado_General,
         o.Fe_ppm,o.Fe_LP,o.Fe_LC, o.Indice_PQ,o.PQ_LP,o.PQ_LC, o.Cr_ppm,o.Cr_LP,o.Cr_LC, o.Ni_ppm,o.Ni_LP,o.Ni_LC,
         o.Cu_ppm,o.Cu_LP,o.Cu_LC, o.Al_ppm,o.Al_LP,o.Al_LC, o.Si_ppm,o.Si_LP,o.Si_LC, o.Pb_ppm,o.Pb_LP, o.Sn_ppm,o.Sn_LP,
-        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC
+        o.TBN,o.TBN_LP, o.Ca_ppm,o.Ca_LP,o.Ca_LC, o.Zn_ppm,o.Zn_LP,o.Zn_LC, o.K_ppm,o.K_LP,o.K_LC, o.Na_ppm,o.Na_LP,o.Na_LC, o.Mg_ppm,o.Mg_LP,o.Mg_LC, o.Estado_Ca, o.Estado_Zn, o.Estado_Mg
     FROM (SELECT * FROM [dbo].[vw_ObservadosFlota] WHERE Proyecto = mp.[Name]) o CROSS APPLY (SELECT o.Modelo AS ModeloG
              UNION ALL
              SELECT N'(todos)' WHERE EXISTS (
@@ -2056,11 +2056,11 @@ JOIN (
         (8, 'Pb', CASE WHEN Pb_ppm>ISNULL(Pb_LP,9999) THEN CAST(Pb_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
         (9, 'Sn', CASE WHEN Sn_ppm>ISNULL(Sn_LP,9999) THEN CAST(Sn_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
         (10, 'TBN', CASE WHEN TBN_LP IS NOT NULL AND TBN>0 AND TBN<TBN_LP THEN CAST(TBN_LP AS decimal(18,1)) END, CAST(NULL AS decimal(18,1))),
-        (11, 'Ca', CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CAST(Ca_LP AS decimal(18,1)) END, CASE WHEN Ca_ppm>ISNULL(Ca_LP,9999) THEN CAST(Ca_LC AS decimal(18,1)) END),
-        (12, 'Zn', CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CAST(Zn_LP AS decimal(18,1)) END, CASE WHEN Zn_ppm>ISNULL(Zn_LP,9999) THEN CAST(Zn_LC AS decimal(18,1)) END),
+        (11, 'Ca', CASE WHEN Estado_Ca IN ('CRITICO','PRECAUCION') THEN CAST(Ca_LP AS decimal(18,1)) END, CASE WHEN Estado_Ca IN ('CRITICO','PRECAUCION') THEN CAST(Ca_LC AS decimal(18,1)) END),
+        (12, 'Zn', CASE WHEN Estado_Zn IN ('CRITICO','PRECAUCION') THEN CAST(Zn_LP AS decimal(18,1)) END, CASE WHEN Estado_Zn IN ('CRITICO','PRECAUCION') THEN CAST(Zn_LC AS decimal(18,1)) END),
         (13, 'K', CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN CAST(K_LP AS decimal(18,1)) END, CASE WHEN K_ppm>ISNULL(K_LP,9999) THEN CAST(K_LC AS decimal(18,1)) END),
         (14, 'Na', CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CAST(Na_LP AS decimal(18,1)) END, CASE WHEN Na_ppm>ISNULL(Na_LP,9999) THEN CAST(Na_LC AS decimal(18,1)) END),
-        (15, 'Mg', CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CAST(Mg_LP AS decimal(18,1)) END, CASE WHEN Mg_ppm>ISNULL(Mg_LP,9999) THEN CAST(Mg_LC AS decimal(18,1)) END)
+        (15, 'Mg', CASE WHEN Estado_Mg IN ('CRITICO','PRECAUCION') THEN CAST(Mg_LP AS decimal(18,1)) END, CASE WHEN Estado_Mg IN ('CRITICO','PRECAUCION') THEN CAST(Mg_LC AS decimal(18,1)) END)
     ) m(ord, metal, lp, lc)
     WHERE o.Estado_General <> 'OK' AND m.lp IS NOT NULL
 ) r2          -- PERF: sin JOIN a compsev; 'sev' ya viene de la ventana en obsf2
@@ -4170,7 +4170,8 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
           Inf=1 se sigue imprimiendo con su valor y sin ninguna marca que lo distinga. Ver la
           REGLA PERMANENTE DE 'Inf' en la cabecera de vw_FormatoParametro.
        Cada parametro sale con su VALOR (antes la columna Salud mostraba 'V100' a secas, sin
-       numero) y con 🟥 si es critico. */
+       numero) y con su chip 🟥/🟨. Sin el 🟨, la precaucion se leia como un valor sin marca y el
+       analisis le inventaba la severidad. */
     OUTER APPLY (
         SELECT MIN(g.peorFam) AS peor,
                MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
@@ -4189,7 +4190,7 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
                             ELSE 3 END) AS peorFam,
                    STRING_AGG(CONVERT(nvarchar(max),
                        v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
-                     + CASE WHEN v.est = 'CRITICO' THEN N' 🟥' ELSE N'' END), N', ')
+                     + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N', ')
                        WITHIN GROUP (ORDER BY ff.Orden) AS txt
             FROM (VALUES
                 (N'Fe',   m.Fe_ppm,      m.Estado_Fe),
