@@ -53,8 +53,8 @@ desmarcado · Interrupciones desmarcadas · «sin entidad» ≠ Remitir.
 | ✅ | **01 Último análisis** | `/ultimo` | equipo · compartimiento | hecho 02/10 |
 | ✅ | **06 Tendencia** | `/tendencia` | equipo · compartimiento | hecho 02/10 |
 | ✅ | **11 Historial componente** | `/historial` | equipo · compartimiento | hecho 02/10 — preguntas ANTES de los «Establecer valor» de `rango`; `5 meses` sigue filtrando |
-| 5 | **13 y 14 Historial de un metal** | `/historialmetal` | 13: equipo · parametro — 14: equipo · compartimiento · parametro | `/historialmetal 3160` |
-| 6 | **25 Metal en flota** | `/metalflota` | parametros | `/metalflota antapaccay tracción` |
+| ✅ | **13 y 14 Historial de un metal** | `/historialmetal` | 13: equipo · parametro — 14: equipo · compartimiento · parametro | hecho 02/10 |
+| ✅ | **25 Metal en flota** | `/metalflota` | parametros (+ defaults en la Acción) | hecho 02/10 |
 | ✅ | **02 Condición MT** | `/condicionmt` | equipo | hecho 02/10 |
 | ✅ | **04 Diagnóstico completo** | `/diagcompleto` | equipo | hecho 02/10 |
 | ✅ | **12 Historial equipo** | `/historialeq` | equipo | hecho 02/10 — `rango` sigue filtrando (`5 meses`) |
@@ -71,6 +71,30 @@ desmarcado · Interrupciones desmarcadas · «sin entidad» ≠ Remitir.
 **nunca** aparece «No encontré datos» antes de la pregunta. Con todo completo, responde directo.
 ⚠ Si algo sale raro: el **historial de ejecuciones del flujo** muestra la consulta con los valores que
 llegaron. Mirarlo antes de teorizar (así se encontró la trampa 4).
+
+**✅ 5.1 CERRADO (02/10): los 11 temas tienen la receta.** Ver el mapa de abajo para lo que puede rebrotar.
+
+### 5.1b · Mapa de propagación — flujos que reciben un componente
+
+La trampa 9 (el componente llega en otro vocabulario: `MT`, `tracción`, `hidr&#225;ulico`) ya mordió dos veces
+(`MD_ranking`, `MD_ultmetalflota`). Estado de **cada** flujo que filtra por componente:
+
+| Flujo | Temas | Filtra por | Traduce en el flujo | Estado |
+|---|---|---|---|---|
+| `MD_ranking` | 22 | `CompTipo` | ✅ Redactar (02/10) | sano |
+| `MD_ultmetalflota` | 25 | `CompTipo` | ✅ Redactar (02/10) | sano |
+| `MD_triage` | 19 | `CompTipo` | ❓ el § FIX CANÓNICO (25/09) dice que sí; la query documentada más abajo aún muestra el `LIKE` | **verificar** en el editor |
+| `MD_incipiente` | 20 | `CompTipo` | ❓ igual que el triage | **verificar** |
+| `MD_equipo_comp` | 01 · 06 · 07 · 10 | `compAbbr` (`REPLACE … LIKE`) | ✗ — tolera `mt lh`/`mtlh`, **no** `hidráulico` ni la entidad HTML | riesgo por lenguaje natural |
+| `MD_metal` | 09 | `compAbbr` | ✗ | riesgo por lenguaje natural |
+| `MD_historial` | 11 · 13 · 14 | `compAbbr` (`COLLATE CI_AI`) | ✗ — tolera tildes, no la entidad HTML | riesgo por lenguaje natural |
+| `MD_tendmetalflota` · `MD_condcomp` | 23 · 24 | `CompTipo` | ✗ | temas **desactivados** |
+
+**Del lado del Tema 00:** las fórmulas `comp1`/`comp2`/`comp3` (heredado, nunca confirmadas) traducen a la
+abreviatura. `comp2` le mandó `MT` a un flujo de `CompTipo`. ⇒ Revisar **qué rama usa cuál** y que cada una
+vaya a un flujo del mismo vocabulario.
+**Síntoma a reconocer:** el tema responde **dos veces** (la primera vacía, con un `•` suelto) o el historial del
+flujo muestra **dos ejecuciones** para una sola consulta.
 
 ### 5.2 · H6 — `/triage mtrh antapaccay 980` sale con columnas descuadradas
 
