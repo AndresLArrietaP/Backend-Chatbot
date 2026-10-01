@@ -41,8 +41,9 @@ Cura de una vez el **N2** (el «No encontré datos» que sale antes de la respue
 secas respondía «Tas a una»). La receta completa, con las 4 trampas del 01/10, está en
 [CONFIG_TEMAS § Receta](CONFIG_TEMAS.md). Resumen de las **4 piezas**:
 
-1. **Tema 00**: lo que falta llega vacío (`""` o `Blank()`). ⛔ **«está en blanco» NO detecta `""`** (medido el
-   02/10 con `/ranking`): la Condición va en **fórmula** `Len(Trim(Topic.x)) = 0`, que cubre los dos.
+1. **Tema 00**: lo que falta se pasa como **`Blank()`, nunca `""`** — `If(Topic.pN = "", Blank(), Topic.pN)`.
+   Con `""` el orquestador responde él (sintaxis inventada) y el tema **no entra** (confirmado 02/10, `/ranking`).
+   La Condición del tema, igual, en fórmula `Len(Trim(Topic.x)) = 0` (cubre `""` del lenguaje natural).
 2. **Tema destino**, entre el Desencadenador y la Acción: por cada entrada obligatoria, **Condición**
    `‹entrada› está en blanco` → **Pregunta** (*Respuesta completa del usuario*). Rama «Todas las demás»
    vacía. Bloques en serie, en el orden del comando.
@@ -50,6 +51,9 @@ secas respondía «Tas a una»). La receta completa, con las 4 trampas del 01/10
    respuesta se pierde (trampa 2 del 01/10).
 4. En **cada** entrada del tema (*Configuración adicional*): **«Se debe solicitar al usuario» desmarcado.** Si
    está marcado, el orquestador pregunta él, con texto inventado, y el tema ni arranca (02/10, `/ranking`).
+5. ⏳ **Por confirmar (02/10):** en cada Pregunta → Propiedades → Interrupciones → **«Permitir el cambio de
+   tema» desactivado**. Tras responder `Fe` a la pregunta del metal, el orquestador se llevó la conversación a
+   «Remitir a un superior».
 
 **Orden sugerido** — primero los que más se usan y el que cierra el H1:
 
