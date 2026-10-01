@@ -197,7 +197,7 @@ en la 2.ª tanda (paso 8).
 | ⛔ 05 Tendencia p1 — **DESACTIVADO** | — | 19 Triage | `/triage` |
 | **06 Tendencia** (fusionado) | `/tendencia` · `/tendenciadet` | 20 Incipiente | `/incipiente` |
 | 07 Tend. relevantes | — *(continuación de 05/06)* | 21 Conteo | `/conteo` |
-| 08 Tend. de un metal | `/tendenciametal` | 22 Ranking | `/ranking` |
+| ⛔ 08 Tend. de un metal — **DESACTIVADO** (30/09) | — *(`/tendenciametal` → mensaje a `/grafica`)* | 22 Ranking | `/ranking` |
 | 09 Gráfica | `/grafica` | 23/24 flota | — *(DESACTIVADOS; los cubre el fallback)* |
 | 10 Gráficas obs. | — *(continuación de 09)* | 25 Metal en flota | `/metalflota` |
 | 11 Historial comp. | `/historial` | 26 Ayuda/Glosario | — *(NL; `/comandos` da la ayuda de comandos)* |
@@ -388,7 +388,17 @@ compartimiento = If(CountRows(Topic.toks) >= 4,
                     Trim(Concat(FirstN(LastN(Topic.toks, CountRows(Topic.toks) - 2), CountRows(Topic.toks) - 3), Value, " ")),
                     Topic.p2)
 ```
-Con menos de 4 tokens el metal llega vacío y el tema lo **pregunta** (los tres son obligatorios en el Tema 09).
+**Ajuste (01/10):** pasar `""` cuenta como «ya respondido» y el tema **no pregunta**: corre el flujo vacío y
+sale «No encontré datos» antes de la pregunta (N2). Lo que falta se pasa como **`Blank()`**, y con 3 tokens se
+mira si `p2` es un metal para saber qué falta:
+```
+Topic.esMetal2 = IsMatch(Lower(Topic.p2), "^(fe|cu|cr|ni|pb|sn|al|si|pq|ca|zn|mg|k|na|b|p|mo|v100|v40|tbn|tan|hierro|cobre|cromo|niquel|plomo|estaño|aluminio|silicio|sodio|potasio)$")
+parametro      = If(CountRows(Topic.toks) >= 4, Last(Topic.toks).Value, If(Topic.esMetal2, Topic.p2, Blank()))
+compartimiento = If(CountRows(Topic.toks) >= 4,
+                    Trim(Concat(FirstN(LastN(Topic.toks, CountRows(Topic.toks) - 2), CountRows(Topic.toks) - 3), Value, " ")),
+                    If(Topic.esMetal2 || Topic.p2 = "", Blank(), Topic.p2))
+```
+`/grafica 3160 Fe` → pregunta el componente · `/grafica 3160 mtlh` → pregunta el metal.
 
 **`/ranking ‹proyecto› ‹componente› ‹metal› [modelo] [top]`** — `p4` puede ser modelo o top. Regla: **1-2
 dígitos = top**; cualquier otra cosa = modelo. Así `980` (3 dígitos) es modelo y `5` es top:
@@ -409,11 +419,11 @@ Así solo se MUESTRA y el tema termina → el usuario puede lanzar otro comando 
 ```
 **Comandos** (escribe `/` + módulo + parámetros). Componente = tracción/hidráulico/rueda/mando/transmisión/motor.
 POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicionmt ‹eq› · /diagcompleto ‹eq›
-             /tendencia ‹eq› ‹comp› · /tendenciametal ‹eq› ‹metal›
+             /tendencia ‹eq› ‹comp›
              /grafica ‹eq› ‹comp› ‹metal› · /historial ‹eq› ‹comp› [rango] · /historialeq ‹eq›
              /historialmetal ‹eq› ‹metal› [comp] · /acumulados ‹eq›
 POR-FLOTA:   /barrido ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
-             /incipiente ‹proj› [comp] · /conteo ‹proj› [modelo] · /ranking ‹proj› ‹comp› ‹metal› [top]
+             /incipiente ‹proj› [comp] · /conteo ‹proj› [modelo] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
              /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj› · /rankinggraf ‹proj›
 ```
 

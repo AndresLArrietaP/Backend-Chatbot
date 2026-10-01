@@ -5,8 +5,7 @@ EQUIPO = [
  ("/condicionmt <eq>", "Condición de los MT del equipo"),
  ("/diagcompleto <eq>", "Diagnóstico del equipo: todos sus componentes"),
  ("/tendencia <eq> <comp>", "Tendencia de un componente: contexto + parámetros × fechas"),
- ("/tendenciametal <eq> <metal>", "Tendencia de un metal en todos los comp."),
- ("/grafica <eq> <comp> <metal>", "Gráfica de un metal"),
+ ("/grafica <eq> <comp> <metal>", "Tendencia y gráfica de un metal en un componente"),
  ("/historial <eq> <comp> [rango]", "Historial (bitácora) de un componente"),
  ("/historialeq <eq> [rango]", "Historial de todo el equipo"),
  ("/historialmetal <eq> <metal> [comp] [rango]", "Historial de un metal"),
@@ -18,7 +17,7 @@ FLOTA = [
  ("/triage <comp> <proj> [modelo]", "Triage: estado de un componente en la flota"),
  ("/incipiente <proj> [comp]", "Tendencia incipiente (alerta temprana)"),
  ("/conteo <proj> [modelo]", "Conteo de la flota"),
- ("/ranking <proj> <comp> <metal> [top]", "Ranking de un metal"),
+ ("/ranking <proj> <comp> <metal> [modelo] [top]", "Ranking de un metal"),
  ("/metalflota <proj> <comp> <metal(es)> [modelo]", "Último de un metal en la flota"),
  ("/historialflota <proj> [rango]", "Historial de observados de la flota"),
  ("/rankingacum <proj>", "Ranking de acumulados (motor diésel)"),
@@ -49,7 +48,7 @@ card={
            {"title":"‹metal›","value":"metal — Fe, Cu, Cr, Ni, Pb, Sn, Si, PQ, Na, K… (o su nombre)"},
            {"title":"[modelo]","value":"modelo — ej. 980E (por defecto: todos)"},
            {"title":"[rango]","value":"ventana de tiempo — ej. «2 años», «5 meses», «14 días» (por defecto: todo)"},
-           {"title":"[top]","value":"cuántos mostrar (por defecto: 10)"}
+           {"title":"[top]","value":"cuántos mostrar, 1 o 2 dígitos (por defecto: 10)"}
        ]}
    ]},
    {"type":"TextBlock","text":"🔧 Por equipo","weight":"Bolder","spacing":"Medium","color":"Accent"},

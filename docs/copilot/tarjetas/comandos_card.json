@@ -68,7 +68,7 @@
             },
             {
               "title": "[top]",
-              "value": "cuántos mostrar (por defecto: 10)"
+              "value": "cuántos mostrar, 1 o 2 dígitos (por defecto: 10)"
             }
           ]
         }
@@ -240,33 +240,6 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/tendenciametal ‹eq› ‹metal›",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            },
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "Tendencia de un metal en todos los comp.",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "TableRow",
-          "cells": [
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
                   "text": "/grafica ‹eq› ‹comp› ‹metal›",
                   "wrap": true,
                   "size": "Small"
@@ -278,7 +251,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "Gráfica de un metal",
+                  "text": "Tendencia y gráfica de un metal en un componente",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -589,7 +562,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/ranking ‹proj› ‹comp› ‹metal› [top]",
+                  "text": "/ranking ‹proj› ‹comp› ‹metal› [modelo] [top]",
                   "wrap": true,
                   "size": "Small"
                 }

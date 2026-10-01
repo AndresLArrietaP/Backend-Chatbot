@@ -294,7 +294,15 @@ por él (`AND Modelo LIKE '%‹modelo›%'`). Lo único que falta es que **el co
 
 ---
 
-## PASO 4 · **C4** — la tarjeta: **los tres archivos juntos**
+## PASO 4 · **C4** — la tarjeta: **los tres archivos juntos** — ✅ **regenerada (01/10)**, falta pegarla
+
+> **C3 verificado en Teams (01/10):** `/grafica 3160 mt lh Fe` ✅ · `/tendenciametal` → mensaje ✅ ·
+> `/ranking antapaccay tracción Fe 980 5` → top 5 de 980E ✅ · «qué hidráulicos se están disparando» → incipiente ✅.
+> ⚠ `/grafica 3160 Fe` sacó «No encontré datos» **antes** de preguntar el componente: el Tema 00 pasaba `""`
+> y eso cuenta como respondido. Cura con `Blank()` en [CONFIG_COMANDOS §3b](CONFIG_COMANDOS.md). Es el mismo
+> mecanismo que **N2** — revisar las demás ramas que pasan `""` a una entrada obligatoria.
+
+19 filas en `comandos_card.json` (sin `< >`); `CONFIG_COMANDOS`, `docs/README.md` y `CLAUDE.md` dicen 19.
 
 [CONFIG_COMANDOS.md](CONFIG_COMANDOS.md) + [../../tools/gen_comandos_card.py](../../tools/gen_comandos_card.py) +
 [tarjetas/comandos_card.json](tarjetas/comandos_card.json).
