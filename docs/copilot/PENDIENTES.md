@@ -136,6 +136,9 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 
 ## PASO 6 · Para **Carlos** — no es Copilot, es carga y límites
 
+> ⏸ **Aplazado (decisión de Andrés, 02/10):** se lleva en el **siguiente feedback**, no ahora.
+> **Orden de trabajo vigente:** terminar **C5** → **N1** → **I** → **F**.
+
 **El SQL ya no miente; la carga sigue incompleta.** Llevar esta tabla tal cual.
 
 | # | Hallazgo | Cifra / caso | Origen |
