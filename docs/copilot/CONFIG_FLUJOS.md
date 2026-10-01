@@ -64,6 +64,9 @@ Query (pégalo como expresión `fx`; cada nombre en ‹› = ficha de contenido 
 ```
 concat('SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM dbo.vw_RankingMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Metal LIKE ''%', ‹parametro›, '%'' AND pos <= ', if(empty(‹top›),'10',‹top›))
 ```
+**(02/10) Traducción del componente:** antes del SQL, los dos Redactar `comp_in` / `comp_tipo` (ver «Cómo queda»
+más abajo, los mismos de `MD_triage`), y en el query `CompTipo = '‹comp_tipo›'` en vez del `LIKE`. Sin esto, el
+orquestador manda `hidr&#225;ulico` (entidad HTML) o `mt` y no casa nada.
 Salidas: `md` (=`first(...)?['MD']`), `observados` (NULL), `recomendaciones` (NULL).
 En el Tema 22: la Acción fija nada de vista/columna (el query ya apunta a vw_RankingMD); la IA llena
 `proyecto`, `compartimiento`, `parametro`, `top`; `modelo` = `(todos)` por defecto.

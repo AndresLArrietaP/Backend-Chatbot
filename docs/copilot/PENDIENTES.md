@@ -41,8 +41,8 @@ Cura de una vez el **N2** (el «No encontré datos» que sale antes de la respue
 secas respondía «Tas a una»). La receta completa, con las 4 trampas del 01/10, está en
 [CONFIG_TEMAS § Receta](CONFIG_TEMAS.md). Resumen de las **3 piezas**:
 
-1. **Tema 00**: lo que falta llega vacío. Con `""` o `Blank()` sirve igual: la Condición «está en blanco»
-   detecta los dos. *(Solo `/grafica` necesitó `Blank()` + `esMetal2`, por la ambigüedad metal/componente.)*
+1. **Tema 00**: lo que falta llega vacío (`""` o `Blank()`). ⛔ **«está en blanco» NO detecta `""`** (medido el
+   02/10 con `/ranking`): la Condición va en **fórmula** `Len(Trim(Topic.x)) = 0`, que cubre los dos.
 2. **Tema destino**, entre el Desencadenador y la Acción: por cada entrada obligatoria, **Condición**
    `‹entrada› está en blanco` → **Pregunta** (*Respuesta completa del usuario*). Rama «Todas las demás»
    vacía. Bloques en serie, en el orden del comando.
