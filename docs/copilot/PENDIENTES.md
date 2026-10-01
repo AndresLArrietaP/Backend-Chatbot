@@ -183,6 +183,7 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | | Qué | Nota |
 |---|---|---|
 | **N1** ✍ DDL escrito (02/10), validar con **BLOQUE 189** · respaldo: etiqueta `respaldo-antes-N1-2026-10-02` | `/tendencia` y `/grafica` en **una sola tabla**: una cabecera de fechas y todas las filas debajo; en `/grafica`, **la fila del metal primero** | SQL. ⚠ `/tendencia` es la vista más cara (35,8 s): medir con `LIKE` antes de darlo por bueno |
+| **D1** ✍ DDL escrito (01/10), **BLOQUE 190** | `/diagcompleto` y `/diagnostico`: SMR en texto bajo el título + grupo «Muestra» (Fec. últ. · H. Comp. · T. muestra) sobre «Salud» — pedido de gerencia de último momento | Solo columnas en las copias que ya existían; ninguna referencia nueva |
 | **I** | `/barrido` → **Panel de flota**, absorbe `/conteo` (`/conteo` queda como alias; luego se desactiva el 21) | Vista nueva `vw_PanelFlotaMD`, una sola lectura. Si no convence: se desactiva `/barrido` y `/barridodet` pasa a llamarse `/barrido`. Diseño completo en el archivo de legado, «Bloque I» |
 | **F** | Historial **vertical** con todos los parámetros del formato | Se prueba al llegar |
 | **G** | Acumulados por componente (MT, ruedas, hidráulico) + renombre `/rankingacum` → `/rankingmod` | Depende de C (cerrado) |
