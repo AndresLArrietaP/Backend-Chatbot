@@ -50,9 +50,9 @@ desmarcado · Interrupciones desmarcadas · «sin entidad» ≠ Remitir.
 | # | Tema | Comando | Bloques a agregar (en este orden) | Prueba |
 |---|---|---|---|---|
 | ✅ | **22 Ranking** | `/ranking` | compartimiento · parametro (proyecto con default) | hecho 02/10 |
-| 2 | **01 Último análisis** | `/ultimo` | equipo · compartimiento | `/ultimo` · `/ultimo 3160` |
-| 3 | **06 Tendencia** | `/tendencia` | equipo · compartimiento | `/tendencia 3160` |
-| 4 | **11 Historial componente** | `/historial` | equipo · compartimiento | `/historial 3160` |
+| ✅ | **01 Último análisis** | `/ultimo` | equipo · compartimiento | hecho 02/10 |
+| ✅ | **06 Tendencia** | `/tendencia` | equipo · compartimiento | hecho 02/10 |
+| ✅ | **11 Historial componente** | `/historial` | equipo · compartimiento | hecho 02/10 — preguntas ANTES de los «Establecer valor» de `rango`; `5 meses` sigue filtrando |
 | 5 | **13 y 14 Historial de un metal** | `/historialmetal` | 13: equipo · parametro — 14: equipo · compartimiento · parametro | `/historialmetal 3160` |
 | 6 | **25 Metal en flota** | `/metalflota` | parametros | `/metalflota antapaccay tracción` |
 | 7 | **02 Condición MT** | `/condicionmt` | equipo | `/condicionmt` |
