@@ -125,6 +125,8 @@ orquestador empareja la palabra del comando con la descripción de un tema, y la
 **su tema**» (lo leía como «el que se llama igual»). Cura en 4 textos: descripción del **00** («TODO mensaje con «/»
 viene AQUÍ y SOLO aquí»), del **16** y **17** («un mensaje con «/» → 00 Comandos»; 17 solo con DETALLE), y la
 **central** («va SIEMPRE al tema «00 Comandos»»). + desactivar el **21**.
+✅ **N3 CERRADO (02/10):** `/barrido 980`, `/conteo antamina` y `/barridodet` pasan por el **00**; el lenguaje natural
+«barrido de…» y «cuántos…» va al 16 y «detalle del barrido…» al 17.
 
 La raíz era otra: `/triage antapaccay` (mina primero) mandaba `CompTipo = 'antapaccay'` → 0 filas → «No encontré
 datos» + una ayuda improvisada por la IA. Arreglo: el Tema 00 reconoce si `p1` es componente o mina
@@ -189,8 +191,8 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | | Qué | Nota |
 |---|---|---|
 | **N1** ✅ **CERRADO (01/10)** — BLOQUES 189-190; visto en Teams | `/tendencia` y `/grafica` en **una sola tabla**: una cabecera de fechas y todas las filas debajo; en `/grafica`, **la fila del metal primero** | SQL. ⚠ `/tendencia` es la vista más cara (35,8 s): medir con `LIKE` antes de darlo por bueno |
-| **D1** ✅ SQL validado (BLOQUE 190: 11,0 s, forma OK) — falta verlo en Teams | `/diagcompleto` y `/diagnostico`: SMR en texto bajo el título + grupo «Muestra» (Fec. últ. · H. Comp. · T. muestra) sobre «Salud» — pedido de gerencia de último momento | Solo columnas en las copias que ya existían; ninguna referencia nueva |
-| **I** ✅ SQL validado (BLOQUE 191: 2,9/5,1 s, cuadra con /conteo) — falta Copilot: Tema 16 → `vw_PanelFlotaMD`, /conteo → 16, luego desactivar el 21 · observado = `Estado_General` (como /conteo y /barridodet) · reemplaza a /barrido cambiando la vista del Tema 16 | `/barrido` → **Panel de flota**, absorbe `/conteo` (`/conteo` queda como alias; luego se desactiva el 21) | Vista nueva `vw_PanelFlotaMD`, una sola lectura. Si no convence: se desactiva `/barrido` y `/barridodet` pasa a llamarse `/barrido`. Diseño completo en el archivo de legado, «Bloque I» |
+| **D1** ✅ **CERRADO (02/10)** — BLOQUE 190 + visto en Teams | `/diagcompleto` y `/diagnostico`: SMR en texto bajo el título + grupo «Muestra» (Fec. últ. · H. Comp. · T. muestra) sobre «Salud» — pedido de gerencia de último momento | Solo columnas en las copias que ya existían; ninguna referencia nueva |
+| **I** ✅ **CERRADO (02/10)** — BLOQUE 191 + Teams: `/panel` (alias `/barrido`, `/conteo`), Tema 21 desactivado, el lenguaje natural «barrido»/«cuántos» → panel y «detalle» → 17 · observado = `Estado_General` (como /conteo y /barridodet) · reemplaza a /barrido cambiando la vista del Tema 16 | `/barrido` → **Panel de flota**, absorbe `/conteo` (`/conteo` queda como alias; luego se desactiva el 21) | Vista nueva `vw_PanelFlotaMD`, una sola lectura. Si no convence: se desactiva `/barrido` y `/barridodet` pasa a llamarse `/barrido`. Diseño completo en el archivo de legado, «Bloque I» |
 | **F** | Historial **vertical** con todos los parámetros del formato | Se prueba al llegar |
 | **G** | Acumulados por componente (MT, ruedas, hidráulico) + renombre `/rankingacum` → `/rankingmod` | Depende de C (cerrado) |
 
