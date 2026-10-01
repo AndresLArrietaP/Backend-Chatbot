@@ -55,10 +55,10 @@ desmarcado · Interrupciones desmarcadas · «sin entidad» ≠ Remitir.
 | ✅ | **11 Historial componente** | `/historial` | equipo · compartimiento | hecho 02/10 — preguntas ANTES de los «Establecer valor» de `rango`; `5 meses` sigue filtrando |
 | 5 | **13 y 14 Historial de un metal** | `/historialmetal` | 13: equipo · parametro — 14: equipo · compartimiento · parametro | `/historialmetal 3160` |
 | 6 | **25 Metal en flota** | `/metalflota` | parametros | `/metalflota antapaccay tracción` |
-| 7 | **02 Condición MT** | `/condicionmt` | equipo | `/condicionmt` |
-| 8 | **04 Diagnóstico completo** | `/diagcompleto` | equipo | `/diagcompleto` |
-| 9 | **12 Historial equipo** | `/historialeq` | equipo | `/historialeq` |
-| 10 | **28 Acumulados equipo** | `/acumulados` | equipo | `/acumulados` |
+| ✅ | **02 Condición MT** | `/condicionmt` | equipo | hecho 02/10 |
+| ✅ | **04 Diagnóstico completo** | `/diagcompleto` | equipo | hecho 02/10 |
+| ✅ | **12 Historial equipo** | `/historialeq` | equipo | hecho 02/10 — `rango` sigue filtrando (`5 meses`) |
+| ✅ | **28 Acumulados equipo** | `/acumulados` | equipo | hecho 02/10 |
 
 **Textos de las preguntas** (los mismos en todos los temas):
 - equipo → «¿De qué equipo? Por ejemplo: 3160 o CA3160»
