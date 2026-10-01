@@ -8224,3 +8224,60 @@ SELECT SUM(CASE WHEN value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
 FROM STRING_SPLIT(@x, NCHAR(10));
 SELECT @x AS MD;
 GO
+
+-- RESULTADOS BLOQUE 189 (01/10)
+--   189.0 ✅ /tendencia 32,7 s (LD 42 038, base 78 544) · /grafica 7,4 s (LD 57 589, igual que la base).
+--   189.1 ✗ NO VALIDO: se corrio separado del 189.0 -> las variables llegaron NULL (las variables solo viven
+--         en la misma ejecucion). Fallo del bloque, no de la vista.
+--   189.3 anchos_distintos = 4 ✗ NO VALIDO: LEN() descarta los espacios finales, y al borrar los '|' de una
+--         fila que termina en ' |  |  |' quedan espacios al final -> la cuenta se infla. A ojo, las filas de la
+--         salida tienen todas 10 '|'. ⇒ se repite con DATALENGTH en el BLOQUE 190.
+--   189.2 candidatos con < 6 muestras: 3111 / 3110 / 3112 · RD LH (1 muestra cada uno).
+
+
+-- ==== BLOQUE 190 - /diagcompleto y /diagnostico: SMR en el titulo + grupo «Muestra» · y el 189 bien hecho ====
+-- Pedido de gerencia (01/10): en el diagnostico, el SMR (horometro) en texto arriba, y sobre «Salud» las filas
+--   Fec. ult. · H. Comp. · T. muestra de cada componente. «Puro visual.»
+-- CAMBIO (DDL ya escrito): vw_DiagnosticoMD agrega COLUMNAS a las copias que ya existian (g, ha, ho):
+--   FechaMuestreo/Horometro/HorasComponente/CM de vw_DiagnosticoEquipo -> MAX por componente -> STRING_AGG en
+--   el mismo orden (compOrd) que la cabecera. NINGUNA referencia nueva: el encabezado de E que colgo el 29/09
+--   vivia en CTE leidos 2 veces; aqui todo va en la misma fila, sobre el camion ya filtrado (filtro abajo).
+-- Linea base (BLOQUE 185): /diagcompleto 6,6 s.
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   190.0 /diagcompleto > 15 s -> revertir vw_DiagnosticoMD (etiqueta respaldo-antes-N1-2026-10-02).
+--   190.1 separadores = 1 · anchos = 1 · pos_fec < pos_salud · tiene_smr = 1 -> queda.
+--   190.2 (189 bien hecho) separadores = 1 y anchos = 1 en /tendencia (CA3160 y el 3111 de 1 muestra) y en
+--         /grafica; y en /grafica pos_metal < pos_SMR.
+-- ⚑ CORRER CADA SECCION ENTERA DE UNA VEZ (de DECLARE a GO): las variables no sobreviven entre ejecuciones.
+
+-- 190.0 + 190.1 ⭐ medicion primero (consulta EXACTA de MD_equipo, columna MD_Completo / MD), luego la forma
+DECLARE @c nvarchar(max), @o nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT @c = MD_Completo, @o = MD FROM vw_DiagnosticoMD WHERE Equipo LIKE '%3160%';
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT v.vista,
+       SUM(CASE WHEN s.value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(CHARINDEX(N'| Fec. últ. |', v.md)) AS pos_fec, MAX(CHARINDEX(N'| **Salud** |', v.md)) AS pos_salud,
+       MAX(CASE WHEN v.md LIKE N'%SMR (horómetro)%' THEN 1 ELSE 0 END) AS tiene_smr
+FROM (VALUES (N'completo', @c), (N'observados', @o)) v(vista, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
+GROUP BY v.vista;
+SELECT @c AS MD_Completo, @o AS MD;
+GO
+
+-- 190.2 (el 189 bien hecho) /tendencia en CA3160 MT LH y en un componente de 1 sola muestra, y /grafica
+DECLARE @t1 nvarchar(max), @t2 nvarchar(max), @g nvarchar(max);
+SELECT @t1 = MD FROM vw_TendenciaMD WHERE Equipo LIKE '%3160%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%';
+SELECT @t2 = MD FROM vw_TendenciaMD WHERE Equipo LIKE '%3111%' AND REPLACE(compAbbr,' ','') LIKE '%RDLH%';
+SELECT @g  = MD FROM vw_TendenciaGraficoMD WHERE Equipo LIKE '%3160%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%' AND Parametro = 'Fe';
+SET @g = LEFT(@g, CHARINDEX(N'```', @g + N'```') - 1);   -- la grafica ASCII tambien empieza sus lineas con '|'
+SELECT v.caso,
+       SUM(CASE WHEN s.value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(CHARINDEX(N'| Fe |', v.md)) AS pos_metal, MAX(CHARINDEX(N'| SMR |', v.md)) AS pos_SMR
+FROM (VALUES (N'tendencia CA3160', @t1), (N'tendencia 3111 (1 muestra)', @t2), (N'grafica CA3160 Fe', @g)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
+GROUP BY v.caso;
+SELECT @t2 AS tendencia_1_muestra, @g AS grafica_sin_ascii;
+GO

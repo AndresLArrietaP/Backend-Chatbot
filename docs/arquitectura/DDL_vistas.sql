@@ -2092,6 +2092,7 @@ SELECT
     g.Equipo, g.Proyecto, g.Modelo, g.NumCompObs, g.NumCompTotal, oa.Observados, ISNULL(rb.Recomendaciones, N'**🔧 Recomendaciones Técnicas**' + NCHAR(10) + N'Las recomendaciones técnicas hoy solo están definidas para Motor de Tracción, y sus MT no tienen parámetros fuera de límite. Lo observado en los demás componentes aparece marcado en la tabla.') AS Recomendaciones,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' — ' + CAST(g.NumCompObs AS nvarchar(10)) + N' de ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes observados**' + NCHAR(10) + NCHAR(10)
+      + N'_SMR (horómetro) ' + ISNULL(CONVERT(nvarchar(20), CAST(g.SMR AS decimal(18,0))), N'—') + N' · última muestra ' + ISNULL(FORMAT(g.FecUlt,'dd-MMM-yy'), N'—') + N'_' + NCHAR(10) + NCHAR(10)
       + CASE WHEN bo.bodyMD IS NULL THEN
              /* Equipo SANO: 0 componentes observados. Antes la tabla quedaba vacia y todo el MD se volvia
                 NULL -> el flujo respondia 'no encontre datos', que suena a que el equipo no existe. La
@@ -2100,19 +2101,23 @@ SELECT
         ELSE
              N'| Par. | ' + ho.cols + N' |' + NCHAR(10)
            + N'|---|' + REPLICATE(N'---|', ho.N) + NCHAR(10)
+           + N'| **Muestra** |' + REPLICATE(N' |', ho.N) + NCHAR(10) + N'| Fec. últ. | ' + ho.fecs + N' |' + NCHAR(10) + N'| H. Comp. | ' + ho.hcs + N' |' + NCHAR(10) + N'| T. muestra | ' + ho.cms + N' |' + NCHAR(10)
            + bo.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
         END
     AS nvarchar(max)) AS MD,
     CAST(
         N'**Diagnóstico ' + g.Equipo + N' (completo) — ' + CAST(g.NumCompTotal AS nvarchar(10)) + N' componentes**' + NCHAR(10) + NCHAR(10)
+      + N'_SMR (horómetro) ' + ISNULL(CONVERT(nvarchar(20), CAST(g.SMR AS decimal(18,0))), N'—') + N' · última muestra ' + ISNULL(FORMAT(g.FecUlt,'dd-MMM-yy'), N'—') + N'_' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ha.cols + N' |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', ha.N) + NCHAR(10)
+      + N'| **Muestra** |' + REPLICATE(N' |', ha.N) + NCHAR(10) + N'| Fec. últ. | ' + ha.fecs + N' |' + NCHAR(10) + N'| H. Comp. | ' + ha.hcs + N' |' + NCHAR(10) + N'| T. muestra | ' + ha.cms + N' |' + NCHAR(10)
       + ba.bodyMD + NCHAR(10) + NCHAR(10) + N'_`Ca`, `Mg`, `Mo` y `Zn` cambian de sentido según la columna: en **Motor de Tracción** (MT LH / MT RH) son **contaminantes** y la alerta es por **ENCIMA** del límite; en **los demás componentes** son **aditivos** y la alerta es por **DEBAJO** (el aditivo se agota)._'
     AS nvarchar(max)) AS MD_Completo
 FROM (
     SELECT Equipo, MAX(Proyecto) AS Proyecto, MAX(Modelo) AS Modelo,
         SUM(CASE WHEN CompMarcado = 1 THEN 1 ELSE 0 END) AS NumCompObs,
-        COUNT(*) AS NumCompTotal
+        COUNT(*) AS NumCompTotal,
+        MAX(Hor) AS SMR, MAX(Fec) AS FecUlt
     FROM (   /* 1 fila por equipo+componente, DERIVADA de unpv.
                Antes hdr_all, hdr_obs y g leian 'base' por su cuenta (3 lecturas de una cadena de
                4 vistas). unpv ya trae cada componente 31 veces: agrupar aqui sale gratis. */
@@ -2121,10 +2126,11 @@ FROM (
            MAX(Modelo)      AS Modelo,
            MAX(compOrd)     AS compOrd,
            MAX(compAbbr)    AS compAbbr,
-           MAX(CompMarcado) AS CompMarcado
+           MAX(CompMarcado) AS CompMarcado,
+           MAX(FechaMuestreo) AS Fec, MAX(Horometro) AS Hor, MAX(HorasComponente) AS HC, MAX(CM) AS CMc
     FROM (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 parametros): esta tabla es
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
-    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
+    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado, b.FechaMuestreo, b.Horometro, b.HorasComponente, b.CM,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
            v.cell,
            /* El valor CRUDO, antes de sustituir ':C'/':P' por los cuadros de color.
@@ -2213,7 +2219,10 @@ FROM (
 ) g
 JOIN (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+        STRING_AGG(ISNULL(FORMAT(Fec,'dd-MMM'), N'—'), N' | ') WITHIN GROUP (ORDER BY compOrd) AS fecs,
+        STRING_AGG(ISNULL(CONVERT(nvarchar(20), CAST(HC AS decimal(18,0))), N'—'), N' | ') WITHIN GROUP (ORDER BY compOrd) AS hcs,
+        STRING_AGG(ISNULL(CONVERT(nvarchar(20), CMc), N'—'), N' | ') WITHIN GROUP (ORDER BY compOrd) AS cms
     FROM (   /* 1 fila por equipo+componente, DERIVADA de unpv.
                Antes hdr_all, hdr_obs y g leian 'base' por su cuenta (3 lecturas de una cadena de
                4 vistas). unpv ya trae cada componente 31 veces: agrupar aqui sale gratis. */
@@ -2222,10 +2231,11 @@ JOIN (
            MAX(Modelo)      AS Modelo,
            MAX(compOrd)     AS compOrd,
            MAX(compAbbr)    AS compAbbr,
-           MAX(CompMarcado) AS CompMarcado
+           MAX(CompMarcado) AS CompMarcado,
+           MAX(FechaMuestreo) AS Fec, MAX(Horometro) AS Hor, MAX(HorasComponente) AS HC, MAX(CM) AS CMc
     FROM (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 parametros): esta tabla es
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
-    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
+    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado, b.FechaMuestreo, b.Horometro, b.HorasComponente, b.CM,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
            v.cell,
            /* El valor CRUDO, antes de sustituir ':C'/':P' por los cuadros de color.
@@ -2510,7 +2520,10 @@ JOIN (
 ) ba ON ba.Equipo=g.Equipo
 LEFT JOIN (
     SELECT Equipo, COUNT(DISTINCT Compartimiento) AS N,
-        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols
+        STRING_AGG(compAbbr, N' | ') WITHIN GROUP (ORDER BY compOrd) AS cols,
+        STRING_AGG(ISNULL(FORMAT(Fec,'dd-MMM'), N'—'), N' | ') WITHIN GROUP (ORDER BY compOrd) AS fecs,
+        STRING_AGG(ISNULL(CONVERT(nvarchar(20), CAST(HC AS decimal(18,0))), N'—'), N' | ') WITHIN GROUP (ORDER BY compOrd) AS hcs,
+        STRING_AGG(ISNULL(CONVERT(nvarchar(20), CMc), N'—'), N' | ') WITHIN GROUP (ORDER BY compOrd) AS cms
     FROM (   /* 1 fila por equipo+componente, DERIVADA de unpv.
                Antes hdr_all, hdr_obs y g leian 'base' por su cuenta (3 lecturas de una cadena de
                4 vistas). unpv ya trae cada componente 31 veces: agrupar aqui sale gratis. */
@@ -2519,10 +2532,11 @@ LEFT JOIN (
            MAX(Modelo)      AS Modelo,
            MAX(compOrd)     AS compOrd,
            MAX(compAbbr)    AS compAbbr,
-           MAX(CompMarcado) AS CompMarcado
+           MAX(CompMarcado) AS CompMarcado,
+           MAX(FechaMuestreo) AS Fec, MAX(Horometro) AS Hor, MAX(HorasComponente) AS HC, MAX(CM) AS CMc
     FROM (   /* Las filas salen del formato CRUZADO (union de las 4 hojas, 31 parametros): esta tabla es
                parametros x COMPONENTES, asi que no puede seguir el formato de un solo componente. */
-    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado,
+    SELECT b.Equipo, b.Proyecto, b.Modelo, b.Compartimiento, b.compOrd, b.compAbbr, b.CompMarcado, b.FechaMuestreo, b.Horometro, b.HorasComponente, b.CM,
            f.Orden AS ord, f.Grupo AS grp, f.Parametro AS nombre,
            v.cell,
            /* El valor CRUDO, antes de sustituir ':C'/':P' por los cuadros de color.
