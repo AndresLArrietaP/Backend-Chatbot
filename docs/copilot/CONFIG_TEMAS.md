@@ -192,6 +192,8 @@ y el orquestador queda fuera de las tres puertas por donde se cuela (piezas 4, 5
    `MD_ranking` no tuvo ninguna ejecución. *(Piezas 5 y 6.)*
 9. **El orquestador manda acentos como entidad HTML** (`hidr&#225;ulico`) → el flujo traduce con los Redactar
    `comp_in`/`comp_tipo` (buscan `hidr`, `tracc`… sin tilde). Aplica a todo flujo que reciba un componente.
+   Caso 2 (02/10): `MD_ultmetalflota` recibía `MT` desde el Tema 00 (`comp2`) → 0 filas → `•` suelto y el
+   orquestador re-llamó al tema: **dos ejecuciones** del flujo. Síntoma a reconocer: el tema responde dos veces.
 
 **Cómo depurar sin adivinar** — tres miradas, en este orden:
 1. **Panel de actividad** del chat de prueba: ¿aparece el tema destino después de **00 Comandos**? Si no, el
