@@ -67,6 +67,13 @@ concat('SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GR
 **(02/10) Traducción del componente:** antes del SQL, los dos Redactar `comp_in` / `comp_tipo` (ver «Cómo queda»
 más abajo, los mismos de `MD_triage`), y en el query `CompTipo = '‹comp_tipo›'` en vez del `LIKE`. Sin esto, el
 orquestador manda `hidr&#225;ulico` (entidad HTML) o `mt` y no casa nada.
+Query tal como queda en el editor (sintaxis de Power Automate: las entradas son `triggerBody()?['text_N']`):
+```
+concat('SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM dbo.vw_RankingMD WHERE Proyecto LIKE ''%', triggerBody()?['text_2'], '%'' AND Modelo LIKE ''%', triggerBody()?['text_3'], '%'' AND CompTipo = ''', outputs('comp_tipo'), ''' AND Metal LIKE ''%', triggerBody()?['text_5'], '%'' AND pos <= ', if(empty(triggerBody()?['text']),'10',triggerBody()?['text']))
+```
+⚠ **Las tres comillas** alrededor de `outputs('comp_tipo')`: sin ellas el SQL queda `CompTipo = TRACCION` o
+`CompTipo =  AND` → `Incorrect syntax near the keyword 'AND'` (medido 02/10).
+⚠ `comp_in` se arma con la **ficha** `compartimiento` de Contenido dinámico, no escribiendo `text_N` a mano.
 Salidas: `md` (=`first(...)?['MD']`), `observados` (NULL), `recomendaciones` (NULL).
 En el Tema 22: la Acción fija nada de vista/columna (el query ya apunta a vw_RankingMD); la IA llena
 `proyecto`, `compartimiento`, `parametro`, `top`; `modelo` = `(todos)` por defecto.
