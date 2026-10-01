@@ -80,7 +80,7 @@ más riesgo que la línea que ahorra.
 | Ranking de acumulados (flota) | proyecto | MD_acumflota · vista=vw_AcumuladosFlotaMD (fija) | no |
 | Acumulados de un equipo | equipo | MD_acumequipo · vista=vw_AcumuladosEquipoMD (fija) | no |
 
-> **`modelo` opcional (16/17, conectado el 30/09):** Entrada del tema con «Rellenar dinámicamente» y **sin**
+> **`modelo` opcional (16/17/18 y 21, conectado el 30/09):** Entrada del tema con «Rellenar dinámicamente» y **sin**
 > pregunta si falta; en la Acción, `If(IsBlank(Topic.modelo) || Topic.modelo = "", "todos", Topic.modelo)`.
 > Estaba documentado pero en Copilot la Acción llevaba `todos` fijo: el filtro lo hacía el LLM (ley 1).
 > Verificado en Teams: `/barrido antapaccay 980` → 10 · `d475` → `6116` · `pc1250` → `8108` · sin modelo → 12.

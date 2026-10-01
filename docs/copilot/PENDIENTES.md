@@ -153,8 +153,10 @@ Entrada; el Tema 00 tampoco pasaba `p2`. Lo que se veía «filtrado» en Teams l
 [CONFIG_TEMAS](CONFIG_TEMAS.md).
 **Verificado en Teams**, las dos variantes: `980` → 10 equipos (sin `6116`/`8108`) · `d475` → `6116` ·
 `pc1250` → `8108` · sin modelo → 12. La tabla determinista ya sale filtrada.
-⚠ **Quedan por revisar con el mismo ojo:** tema **18** (Barrido filtrado) y **21** (Conteo), que también
-dicen «Rellena proyecto y modelo»; y en el Tema 00, `/barridodet` pasa `proyecto = Topic.p1` **sin**
+⚠ **Revisados (30/09):** tema **18** (Barrido filtrado) tenía el mismo `modelo = todos` fijo → misma cura
+(sin tocar el Tema 00: no tiene comando, entra como continuación). Tema **21** (Conteo) ya pasa `Topic.modelo`;
+solo falta la fórmula del vacío en la Acción (en lenguaje natural llega vacío → `LIKE '%%'` duplica por modelo).
+Prueba: `/barrido antapaccay 980` → «solo los críticos» = solo CA. y en el Tema 00, `/barridodet` pasa `proyecto = Topic.p1` **sin**
 default a Antapaccay (vacío → `LIKE '%%'` = todas las minas).
 
 <details><summary>Plan original</summary>
@@ -239,8 +241,10 @@ Con la salida completa de `/barridodet antamina` y del triage de hidráulicos:
 **188:** barrido 13,8 s · triage 3,2 s (sin costo). La regla vieja marcaba 54-91 críticos por parámetro;
 `Estado_*` marca 0-1. Tras el cambio quedan 5 `Ca=` en el detalle: los 4 de MT (contaminante, legítimos) y
 el único crítico real de ruedas. Triage: 106 chips 🟨 (antes 0).
-3. 🟡 **Para Carlos:** `V100` 🟥 en casi todas las ruedas de Antamina (~18 cSt) y `HT301 RD LH`
-   `V100=77.2` (¿un V40 cargado como V100?). No se toca: es dato o límite.
+3. 🟡 **Para Carlos:** `V100` 🟥 en casi todas las ruedas de Antamina (~18 cSt). Y `HT301 RD LH` (10-Sep)
+   trae `V100=77.2` con Ca 47.9 / Zn 17.4 (las demás ruedas: ~3 400 / ~1 000): es la firma del aceite del
+   **motor de tracción** (Mobilgear SHC 680), no de un Mobiltrans HD 60 → probable **muestra mal rotulada**
+   de componente. No se toca: es dato.
 
 Dos sitios, un solo vicio:
 
