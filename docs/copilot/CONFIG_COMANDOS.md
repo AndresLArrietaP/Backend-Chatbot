@@ -29,11 +29,11 @@ POR-EQUIPO
 /acumulados <equipo>                         → 28 Acumulados de un equipo (motor diésel)
 
 POR-FLOTA
-/barrido <proyecto> [modelo]                 → 16 Barrido resumen
+/barrido <proyecto> [modelo]                 → 16 Panel de flota (I, 02/10)
 /barridodet <proyecto> [modelo]              → 17 Barrido detalle
 /triage <componente> <proyecto> [modelo]     → 19 Triage de un componente en la flota
 /incipiente <proyecto> [componente]          → 20 Tendencia incipiente (comp default: tracción)
-/conteo <proyecto> [modelo]                  → 21 Conteo de flota
+/conteo <proyecto> [modelo]                  → alias de /barrido (16 Panel de flota)
 /ranking <proyecto> <componente> <metal> [modelo] [top] → 22 Ranking de un metal
 /metalflota <proyecto> <componente> <metal(es)> [modelo] → 25 Último por metal en la flota  (metales: coma-sin-espacio Fe,Cu)
 /historialflota <proyecto> [rango]           → 15 Historial de observados de flota
@@ -359,7 +359,7 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/barridodet` | 17 Barrido detalle | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
 | `/triage` | 19 Triage | **acepta la mina primero** (02/10): `Topic.esComp1 = IsMatch(Lower(Topic.p1), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · compartimiento=`If(esComp1, p1, "tracción")` · proyecto=`If(esComp1, If(p2="","Antapaccay",p2), If(p1="","Antapaccay",p1))` · modelo=`If(esComp1, If(p3="","(todos)",p3), If(p2="","(todos)",p2))` — `/triage antapaccay` mandaba `CompTipo = 'antapaccay'` |
 | `/incipiente` | 20 Tendencia incipiente | proyecto=`If(p1="","Antapaccay",p1)` · **compartimiento=`If(Topic.resto2="","tracción",Topic.resto2)`** ⟵ 2º input |
-| `/conteo` | 21 Conteo | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
+| `/conteo` | **16 Panel de flota** (alias desde el 02/10; antes 21) | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` — en el nodo «Tema» de la rama solo cambia el destino |
 | `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · **modelo y top desde p4/p5** — fórmulas en §`/ranking` |
 | `/metalflota` | 25 Último por metal flota | proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(p2="","tracción",p2)` · parametros=p3 · **modelo=`If(p4="","(todos)",p4)`** ⟵ 4º input |
 | `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` · **rango=`Topic.rango`** |
@@ -431,7 +431,7 @@ POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicionmt ‹eq› · /diagcomple
              /grafica ‹eq› ‹comp› ‹metal› · /historial ‹eq› ‹comp› [rango] · /historialeq ‹eq›
              /historialmetal ‹eq› ‹metal› [comp] · /acumulados ‹eq›
 POR-FLOTA:   /barrido ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
-             /incipiente ‹proj› [comp] · /conteo ‹proj› [modelo] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
+             /incipiente ‹proj› [comp] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
              /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj› · /rankinggraf ‹proj›
 ```
 

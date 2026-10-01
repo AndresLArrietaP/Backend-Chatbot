@@ -24,7 +24,7 @@ docs/
 │   ├── PENDIENTES.md               BACKLOG ÚNICO Y VIVO. Nadie más lista pendientes.
 │   ├── CONFIG_TEMAS.md             28 temas: descripciones de ruteo, nodos, entradas
 │   ├── CONFIG_FLUJOS.md            Power Automate: 4 flujos reutilizables + dedicados
-│   ├── CONFIG_COMANDOS.md          Los 19 comandos «/» y el tema 00 que los despacha
+│   ├── CONFIG_COMANDOS.md          Los 18 comandos «/» y el tema 00 que los despacha
 │   ├── CONFIG_PROMPTS.md           Los nodos de IA (Solicitud / AI Builder)
 │   ├── CONFIG_TIMEOUT.md           Las 3 capas contra el corte del conector
 │   ├── KomfIA_central_MD.docx      Instrucción DESPLEGADA del orquestador (tope 8000 UTF-16)

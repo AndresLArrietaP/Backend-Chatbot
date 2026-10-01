@@ -8313,3 +8313,19 @@ GO
 SELECT Modelo, MD FROM vw_PanelFlotaMD
 WHERE Proyecto LIKE '%antapaccay%' AND (Modelo LIKE '%980%' OR Modelo LIKE '%930E%');
 GO
+
+-- RESULTADOS BLOQUE 190 (01/10) -- queda.
+--   190.0 /diagcompleto 11,0 s (LD 94 159, Scan 7; base ~77 000) -- bajo el corte de 15 s, +22 % de lecturas.
+--         La primera corrida gasto 12 s COMPILANDO (vista desplegada enorme); con el plan en cache no se repite.
+--   190.1 completo y observados: separadores 1 · anchos 1 · Fec. ult. antes que Salud · SMR presente. ✅
+--   190.2 (el 189 bien hecho) tendencia CA3160 1/1 · tendencia 3111 con 1 muestra 1/1 (el relleno '—' por la
+--         izquierda cae bajo su fecha) · grafica 1/1 con Fe (162) antes que SMR (255). ✅ N1 CERRADO.
+
+-- RESULTADOS BLOQUE 191 (01/10) -- queda, con dos ajustes de texto ya aplicados al DDL.
+--   191.0 Antapaccay 2,9 s · Antamina 5,1 s · LaboratoryData Scan 1 (una sola lectura, como se diseno). ✅
+--   191.1 cuadra EXACTO con /conteo: Antapaccay 36·12(4·8)·24, Antamina 67·59(56·3)·8, y todas las filas por
+--         componente iguales. ✅
+--   191.2 980 -> 27·10(4·6), sin «Por modelo» ✅ · 930E -> aviso ✅, PERO decia «la flota esta dentro de
+--         limites» bajo «no tiene limites cargados» -> ahora «Sin limites cargados: no hay con que evaluar».
+--         Y «lo que mas se repite» mostraba «Cr en 1 equipo» (empate a 1, gana el alfabetico) -> ahora solo con
+--         2+ equipos; si no, «ninguno se repite».

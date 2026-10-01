@@ -4609,10 +4609,7 @@ SELECT a.ModeloG AS Modelo,
       + CAST(a.nEq AS nvarchar(10)) + N' equipos · **' + CAST(a.nObs AS nvarchar(10)) + N' observados** ('
       + CAST(a.nCrit AS nvarchar(10)) + N' con crítico · ' + CAST(a.nObs - a.nCrit AS nvarchar(10)) + N' solo precaución) · '
       + CAST(a.nEq - a.nObs AS nvarchar(10)) + N' sin novedad' + NCHAR(10) + NCHAR(10)
-      + CASE WHEN a.ModeloG <> N'(todos)'
-                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
-                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(mp.[Name])))
-                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(a.ModeloG))))
+      + CASE WHEN l.conLim = 0
              THEN N'⚠ **' + a.ModeloG + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
              ELSE N'' END
       + N'**Por componente**' + NCHAR(10) + NCHAR(10)
@@ -4626,7 +4623,9 @@ SELECT a.ModeloG AS Modelo,
            + a.modMD + NCHAR(10) + NCHAR(10)
              ELSE N'' END
       + N'**Dónde empezar**' + NCHAR(10) + NCHAR(10)
-      + ISNULL(a.eqMD, N'_Ningún equipo observado: la flota está dentro de límites._') + NCHAR(10) + NCHAR(10)
+      /* sin limites, 0 observados no es «sano»: es «sin evaluar» (L6) */
+      + ISNULL(a.eqMD, CASE WHEN l.conLim = 0 THEN N'_Sin límites cargados: no hay con qué evaluar a estos equipos._'
+                            ELSE N'_Ningún equipo observado: la flota está dentro de límites._' END) + NCHAR(10) + NCHAR(10)
       + N'_Equipo por equipo: **/barridodet** ' + mp.[Name] + CASE WHEN a.ModeloG <> N'(todos)' THEN N' ' + a.ModeloG ELSE N'' END
       + N'. Observado = algún metal de desgaste (Fe, PQ, Cr, Ni, Cu, Pb, Sn, Al, Si) o el TBN fuera de límite, en la última muestra de cada componente._'
     AS nvarchar(max)) AS MD
@@ -4640,7 +4639,9 @@ FROM (
         STRING_AGG(CASE WHEN gid = 25 THEN CAST(
             N'| ' + compAbbr + N' | ' + CAST(nEq AS nvarchar(10)) + N' | ' + CAST(nEqObs AS nvarchar(10))
           + N' | ' + CAST(nEqCrit AS nvarchar(10)) + N' | ' + CAST(nEqObs - nEqCrit AS nvarchar(10)) + N' | '
-          + CASE WHEN topN > 0 THEN topMet + N' en ' + CAST(topN AS nvarchar(10)) + CASE WHEN topN = 1 THEN N' equipo' ELSE N' equipos' END
+          /* «lo que mas se repite» solo si se repite: con un metal por equipo, el primero alfabetico no dice nada */
+          + CASE WHEN topN >= 2 THEN topMet + N' en ' + CAST(topN AS nvarchar(10)) + N' equipos'
+                 WHEN topN = 1 THEN N'ninguno se repite'
                  ELSE N'—' END + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS compMD,
         STRING_AGG(CASE WHEN gid = 15 THEN CAST(
             N'| ' + ISNULL(RealModelo, N'—') + N' | ' + CAST(nEq AS nvarchar(10)) + N' | ' + CAST(nEqObs AS nvarchar(10))
@@ -4721,6 +4722,10 @@ FROM (
     ) w
     GROUP BY ModeloG
 ) a
+CROSS APPLY (SELECT CASE WHEN a.ModeloG = N'(todos)' OR EXISTS (
+                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(mp.[Name])))
+                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(a.ModeloG)))) THEN 1 ELSE 0 END AS conLim) l
 ) x;
 GO
 

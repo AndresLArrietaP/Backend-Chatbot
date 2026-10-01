@@ -438,7 +438,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "Barrido: equipos observados de la flota",
+                  "text": "Panel de la flota: cuántos, qué componentes y por dónde empezar",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -520,33 +520,6 @@
                 {
                   "type": "TextBlock",
                   "text": "Tendencia incipiente (alerta temprana)",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "TableRow",
-          "cells": [
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "/conteo ‹proj› [modelo]",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            },
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "Conteo de la flota",
                   "wrap": true,
                   "size": "Small"
                 }
@@ -693,7 +666,7 @@
     },
     {
       "type": "TextBlock",
-      "text": "También funcionan **/diagnostico** (= /diagcompleto) y **/tendenciadet** (= /tendencia).",
+      "text": "También funcionan **/diagnostico** (= /diagcompleto), **/tendenciadet** (= /tendencia) y **/conteo** (= /barrido).",
       "wrap": true,
       "isSubtle": true,
       "size": "Small",

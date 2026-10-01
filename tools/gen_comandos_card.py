@@ -12,11 +12,10 @@ EQUIPO = [
  ("/acumulados <eq>", "Acumulados del motor diésel del equipo"),
 ]
 FLOTA = [
- ("/barrido <proj> [modelo]", "Barrido: equipos observados de la flota"),
+ ("/barrido <proj> [modelo]", "Panel de la flota: cuántos, qué componentes y por dónde empezar"),
  ("/barridodet <proj> [modelo]", "Barrido detalle por componente"),
  ("/triage <comp> <proj> [modelo]", "Triage: estado de un componente en la flota"),
  ("/incipiente <proj> [comp]", "Tendencia incipiente (alerta temprana)"),
- ("/conteo <proj> [modelo]", "Conteo de la flota"),
  ("/ranking <proj> <comp> <metal> [modelo] [top]", "Ranking de un metal"),
  ("/metalflota <proj> <comp> <metal(es)> [modelo]", "Último de un metal en la flota"),
  ("/historialflota <proj> [rango]", "Historial de observados de la flota"),
@@ -55,7 +54,7 @@ card={
    table(EQUIPO),
    {"type":"TextBlock","text":"🚛 Por flota","weight":"Bolder","spacing":"Medium","color":"Accent"},
    table(FLOTA),
-   {"type":"TextBlock","text":"También funcionan **/diagnostico** (= /diagcompleto) y **/tendenciadet** (= /tendencia).","wrap":True,"isSubtle":True,"size":"Small","spacing":"Medium"},
+   {"type":"TextBlock","text":"También funcionan **/diagnostico** (= /diagcompleto), **/tendenciadet** (= /tendencia) y **/conteo** (= /barrido).","wrap":True,"isSubtle":True,"size":"Small","spacing":"Medium"},
    {"type":"TextBlock","text":"Si falta un dato requerido, te lo pido en el chat. El `/` solo actúa pegado a un comando; tu lenguaje natural sigue igual.","wrap":True,"isSubtle":True,"size":"Small","spacing":"None"}
  ]
 }
