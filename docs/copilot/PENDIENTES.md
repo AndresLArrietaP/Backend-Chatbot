@@ -301,6 +301,9 @@ por él (`AND Modelo LIKE '%‹modelo›%'`). Lo único que falta es que **el co
 > ⚠ `/grafica 3160 Fe` sacó «No encontré datos» **antes** de preguntar el componente: el Tema 00 pasaba `""`
 > y eso cuenta como respondido. Cura con `Blank()` en [CONFIG_COMANDOS §3b](CONFIG_COMANDOS.md). Es el mismo
 > mecanismo que **N2** — revisar las demás ramas que pasan `""` a una entrada obligatoria.
+> ⛔ **Corrección (01/10):** con `Blank()` el flujo da `FlowActionBadRequest`: un tema **redirigido** no
+> pregunta nada. Cura: nodos **Pregunta** dentro del Tema 09 (Condición «está en blanco» por entrada).
+> **C5/N2:** aplicar lo mismo en cada tema destino con entradas obligatorias que el Tema 00 pueda dejar vacías.
 
 19 filas en `comandos_card.json` (sin `< >`); `CONFIG_COMANDOS`, `docs/README.md` y `CLAUDE.md` dicen 19.
 

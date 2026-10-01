@@ -400,6 +400,14 @@ compartimiento = If(CountRows(Topic.toks) >= 4,
 ```
 `/grafica 3160 Fe` → pregunta el componente · `/grafica 3160 mtlh` → pregunta el metal.
 
+⛔ **Pero `Blank()` solo no basta (01/10, medido):** un tema **redirigido** con «Ir a tema» NO pregunta sus
+entradas vacías — eso lo hace el orquestador solo cuando él llama al tema. Con `Blank()` la Acción corre
+igual y el flujo responde `FlowActionBadRequest` («el parámetro necesario … tiene un valor en blanco»).
+⇒ **El Tema 09 lleva sus propias preguntas** antes de la Acción: por cada entrada obligatoria, Condición
+«está en blanco» → nodo **Pregunta** (Respuesta completa del usuario) que guarda en esa misma variable.
+Sirve para comando y para lenguaje natural. **Toda rama del Tema 00 que deje una entrada obligatoria vacía
+necesita lo mismo en su tema destino** (revisar en C5 / N2).
+
 **`/ranking ‹proyecto› ‹componente› ‹metal› [modelo] [top]`** — `p4` puede ser modelo o top. Regla: **1-2
 dígitos = top**; cualquier otra cosa = modelo. Así `980` (3 dígitos) es modelo y `5` es top:
 ```
