@@ -357,7 +357,7 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/acumulados` | 28 Acumulados equipo | equipo=p1 |
 | `/barrido` | 16 Barrido resumen | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
 | `/barridodet` | 17 Barrido detalle | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
-| `/triage` | 19 Triage | compartimiento=`If(p1="","tracción",p1)` · proyecto=`If(p2="","Antapaccay",p2)` · modelo=`If(p3="","(todos)",p3)` |
+| `/triage` | 19 Triage | **acepta la mina primero** (02/10): `Topic.esComp1 = IsMatch(Lower(Topic.p1), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · compartimiento=`If(esComp1, p1, "tracción")` · proyecto=`If(esComp1, If(p2="","Antapaccay",p2), If(p1="","Antapaccay",p1))` · modelo=`If(esComp1, If(p3="","(todos)",p3), If(p2="","(todos)",p2))` — `/triage antapaccay` mandaba `CompTipo = 'antapaccay'` |
 | `/incipiente` | 20 Tendencia incipiente | proyecto=`If(p1="","Antapaccay",p1)` · **compartimiento=`If(Topic.resto2="","tracción",Topic.resto2)`** ⟵ 2º input |
 | `/conteo` | 21 Conteo | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
 | `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · **modelo y top desde p4/p5** — fórmulas en §`/ranking` |

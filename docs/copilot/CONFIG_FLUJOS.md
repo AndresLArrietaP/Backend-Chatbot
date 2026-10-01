@@ -199,6 +199,8 @@ vuelve a tardar 4 s.
 ---
 
 ### Flujo `MD_incipiente` (Tema 20 — Tendencia incipiente) — entradas: proyecto, compartimiento
+> ✅ **Verificado en el editor (02/10):** lleva los Redactar `comp in`/`comp tipo` y la consulta real es
+> `CompTipo = '‹comp_tipo›'` (§ FIX CANÓNICO). El `concat` con `LIKE` de abajo es la versión anterior.
 Misma forma que `MD_triage` pero sobre `vw_TendenciaIncipienteMD`. `compartimiento` = palabra BASE
 (tracción/rueda/motor/hidráulico/mando/transmisión), default `tracción`. **Sin `modelo`**: la vista no
 desglosa por modelo (expone `Modelo='(todos)'` fijo), así que pedirlo solo daría 0 filas.
@@ -209,6 +211,8 @@ concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaIncipienteMD
 > fusionar en uno con entrada `vista` (como `MD_flota`). No se hizo ahora para no tocar el Tema 19, que funciona.
 
 ### Flujo `MD_triage` (Tema 19 EVOLUCIONADO) — entradas: proyecto, modelo, compartimiento
+> ✅ **Verificado en el editor (02/10):** lleva los Redactar `comp in`/`comp tipo` y la consulta real es
+> `CompTipo = '‹comp_tipo›'` (§ FIX CANÓNICO). El `concat` con `LIKE` de abajo es la versión anterior.
 Triage generalizado: cualquier componente, TODOS los equipos (obs o no), agrupado por modelo. `compartimiento` = palabra BASE (tracción/hidráulico/rueda/mando/transmisión/motor); default `tracción`. `modelo` lo llena la IA (honra el nombrado; `(todos)` si no) — en `(todos)` la vista agrupa por modelo con sub-títulos; con modelo, tabla única de ese modelo.
 ```
 concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TriageMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND Modelo LIKE ''%', ‹modelo›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%''')

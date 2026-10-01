@@ -83,20 +83,20 @@ La trampa 9 (el componente llega en otro vocabulario: `MT`, `tracción`, `hidr&#
 |---|---|---|---|---|
 | `MD_ranking` | 22 | `CompTipo` | ✅ Redactar (02/10) | sano |
 | `MD_ultmetalflota` | 25 | `CompTipo` | ✅ Redactar (02/10) | sano |
-| `MD_triage` | 19 | `CompTipo` | ❓ el § FIX CANÓNICO (25/09) dice que sí; la query documentada más abajo aún muestra el `LIKE` | **verificar** en el editor |
-| `MD_incipiente` | 20 | `CompTipo` | ❓ igual que el triage | **verificar** |
+| `MD_triage` | 19 | `CompTipo` | ✅ Redactar (verificado 02/10) | sano |
+| `MD_incipiente` | 20 | `CompTipo` | ✅ Redactar (verificado 02/10) | sano |
 | `MD_equipo_comp` | 01 · 06 · 07 · 10 | `compAbbr` (`REPLACE … LIKE`) | ✗ — tolera `mt lh`/`mtlh`, **no** `hidráulico` ni la entidad HTML | riesgo por lenguaje natural |
 | `MD_metal` | 09 | `compAbbr` | ✗ | riesgo por lenguaje natural |
 | `MD_historial` | 11 · 13 · 14 | `compAbbr` (`COLLATE CI_AI`) | ✗ — tolera tildes, no la entidad HTML | riesgo por lenguaje natural |
 | `MD_tendmetalflota` · `MD_condcomp` | 23 · 24 | `CompTipo` | ✗ | temas **desactivados** |
 
-**Del lado del Tema 00:** las fórmulas `comp1`/`comp2`/`comp3` (heredado, nunca confirmadas) traducen a la
-abreviatura. `comp2` le mandó `MT` a un flujo de `CompTipo`. ⇒ Revisar **qué rama usa cuál** y que cada una
+**Del lado del Tema 00:** ✅ (02/10) `comp1`/`comp2`/`comp3` traducen a la **abreviatura** (`MT LH`, `Sist. Hidr.`, `RD`, `Motor`):
+correcto para los flujos por equipo, y los de flota ya traducen `MT` → `TRACCION`. Antes: `comp2` le mandó `MT` a un flujo de `CompTipo`. ⇒ Revisar **qué rama usa cuál** y que cada una
 vaya a un flujo del mismo vocabulario.
 **Síntoma a reconocer:** el tema responde **dos veces** (la primera vacía, con un `•` suelto) o el historial del
 flujo muestra **dos ejecuciones** para una sola consulta.
 
-### 5.2 · H6 — `/triage mtrh antapaccay 980` sale con columnas descuadradas
+### 5.2 · H6 — `/triage mtrh antapaccay 980` sale con columnas descuadradas — ✅ **CERRADO (02/10)**: sale alineado; lo curó J (5 columnas, 29/09)
 
 Solo esa variante (`mtrh` pegado). Traer la captura y el `md` del historial del flujo `MD_triage`: ver si el
 descuadre está en la tabla (vista) o en un mensaje que se coló entre filas.
@@ -109,13 +109,20 @@ afecta a todas las flotas sanas): el mensaje sin-datos de los temas de flota pas
 observados con esos criterios. Si el modelo no tiene límites cargados, sus equipos no se pueden evaluar.»*
 *(Origen: BLOQUE 151.)*
 
-### 5.4 · H2 — `/ayuda` responde dos cosas distintas
+### 5.4 · H2 — `/ayuda` responde dos cosas distintas — ✍ **arreglo escrito (02/10)**
+
+Medido: la **tarjeta es idéntica** las dos veces; lo que varía es la línea que la central agrega debajo. La regla
+de CIERRES de la central ahora dice «tras la tarjeta de /comandos o /ayuda, NADA» → pegar la central de nuevo.
 
 Aleatoriedad abierta desde el 17/09. Mirar en el Tema 00 si `/ayuda` va a la tarjeta (`/comandos`) **y**
 el orquestador además dispara el Tema 26 (Ayuda/Glosario). Si es eso: `/ayuda` → solo la tarjeta, y el
 glosario queda para las preguntas en lenguaje natural.
 
-### 5.5 · N3 — `/triage` entra por el tema 19 directo, no por el Tema 00
+### 5.5 · N3 — `/triage` entra por el tema 19 directo, no por el Tema 00 — ✍ **reinterpretado y escrito (02/10)**
+
+La raíz era otra: `/triage antapaccay` (mina primero) mandaba `CompTipo = 'antapaccay'` → 0 filas → «No encontré
+datos» + una ayuda improvisada por la IA. Arreglo: el Tema 00 reconoce si `p1` es componente o mina
+(`esComp1`) → [CONFIG_COMANDOS](CONFIG_COMANDOS.md), fila `/triage`.
 
 El mapa de actividad lo mostró: el orquestador elige el tema por su descripción antes de que el Tema 00
 lea el `/`. Funciona, pero se salta los defaults del comando. Mirar si la descripción del 00 ancla bien
@@ -126,7 +133,7 @@ lea el `/`. Funciona, pero se salta los defaults del comando. Mirar si la descri
 Redactar `eq in`/`eq` en los 5 flujos por equipo ([CONFIG_FLUJOS § N4](CONFIG_FLUJOS.md)). Verificado en Teams:
 `/ultimo T3160 mt lh` · `/condicionmt T3160` · `/grafica T3160 mt lh Fe` · `/historial T3160 mt lh` ·
 `/acumulados T3162` → todos al CA correspondiente; `/ultimo 3161 mt lh` sin cambios.
-⏳ Falta la regresión de `/historialflota antapaccay` (llama a `MD_historial` con equipo vacío).
+✅ `/historialflota antapaccay` (equipo vacío) responde normal.
 
 <details><summary>Plan original</summary>
 
