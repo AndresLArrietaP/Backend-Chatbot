@@ -3261,11 +3261,18 @@ CREATE OR ALTER VIEW [dbo].[vw_TendenciaP1MD] AS
    La logica va en CROSS APPLY sobre [Mine].[MiningEquipment] y CADA lectura pesada lleva el filtro
    (Equipo = me.[Code]), asi que ninguna rama calcula mas que ese camion. Los CTE van desplegados:
    un APPLY no admite WITH y SQL Server ya los trata como macros. Misma logica y salida. Respaldo: respaldo/DDL_vistas_2026-09-30_antes_filtro_abajo.sql */
-SELECT me.[Code] AS Equipo, x.[compAbbr], x.[Observados], x.[Recomendaciones], x.[MD], x.[MD_Contexto]
+SELECT me.[Code] AS Equipo, x.[compAbbr], x.[Observados], x.[Recomendaciones], x.[MD], x.[MD_Contexto],
+       x.[CtxTitulo], x.[CtxFilasT], x.[CtxFilasG]
 FROM [Mine].[MiningEquipment] me
 CROSS APPLY (
 SELECT
     h.Equipo, h.compAbbr,
+    /* N1 (02/10): las filas de contexto SUELTAS, para que /tendencia y /grafica las metan bajo SU
+       cabecera de fechas y quede una sola tabla. Ya vienen con el ancho de cada consumidor:
+       T = 6 fechas + Acum + Spark (vw_TendenciaMD), G = 6 fechas + Acum (vw_TendenciaGraficoMD). */
+    CAST(N'**Tendencia — ' + h.Equipo + N' · ' + h.compAbbr + N'** · últimas ' + CAST(h.Ncols AS nvarchar(10)) + N' muestras' AS nvarchar(max)) AS CtxTitulo,
+    bd.bodyT AS CtxFilasT,
+    bd.bodyG AS CtxFilasG,
     CAST(NULL AS nvarchar(max)) AS Observados,      -- contrato fijo (no aplica en PASO 1)
     CAST(NULL AS nvarchar(max)) AS Recomendaciones, -- contrato fijo (no aplica en PASO 1)
     CAST(
@@ -3301,10 +3308,18 @@ FROM (
 ) h
 JOIN (
     SELECT Equipo, compAbbr,
-        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY ord) AS bodyMD
+        STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY ord) AS bodyMD,
+        STRING_AGG(rowT, NCHAR(10)) WITHIN GROUP (ORDER BY ord) AS bodyT,
+        STRING_AGG(rowG, NCHAR(10)) WITHIN GROUP (ORDER BY ord) AS bodyG
     FROM (
     SELECT Equipo, compAbbr, ord, etq,
-        CAST(N'| ' + etq + N' | ' + STRING_AGG(val, N' | ') WITHIN GROUP (ORDER BY rn_recencia DESC) + N' |' AS nvarchar(max)) AS rowMD
+        CAST(N'| ' + etq + N' | ' + STRING_AGG(val, N' | ') WITHIN GROUP (ORDER BY rn_recencia DESC) + N' |' AS nvarchar(max)) AS rowMD,
+        /* Con menos de 6 muestras, vw_TendenciaElemento deja vacias las fechas de la IZQUIERDA (d6 es la
+           mas reciente): el relleno va por ese lado para que cada valor caiga bajo su fecha. */
+        CAST(N'| ' + etq + N' | ' + REPLICATE(N'— | ', CASE WHEN COUNT(*) < 6 THEN 6 - COUNT(*) ELSE 0 END)
+           + STRING_AGG(val, N' | ') WITHIN GROUP (ORDER BY rn_recencia DESC) + N' |  |  |' AS nvarchar(max)) AS rowT,
+        CAST(N'| ' + etq + N' | ' + REPLICATE(N'— | ', CASE WHEN COUNT(*) < 6 THEN 6 - COUNT(*) ELSE 0 END)
+           + STRING_AGG(val, N' | ') WITHIN GROUP (ORDER BY rn_recencia DESC) + N' |  |' AS nvarchar(max)) AS rowG
     FROM (
     SELECT b.Equipo, b.compAbbr, b.rn_recencia, v.ord, v.etq, v.val
     FROM (
@@ -3423,10 +3438,13 @@ SELECT
        El contexto se EMBEBE de vw_TendenciaP1MD en vez de recalcularlo: una sola definicion.
        LEFT JOIN + ISNULL a proposito: si P1 no tuviera fila, el MD no puede quedar NULL. */
     CAST(   -- DEFAULT (columna=MD)
-        ISNULL(p1.MD_Contexto, N'**Tendencia — ' + d.Equipo + N' · ' + d.compAbbr + N'**') + NCHAR(10) + NCHAR(10)
-      + N'**Detalle por parámetro**' + NCHAR(10) + NCHAR(10)
+        /* N1 (02/10): UNA sola tabla. Antes eran dos con las mismas fechas (contexto arriba, parametros
+           abajo); ahora las filas de contexto van bajo esta cabecera, en el grupo «Muestra», como en
+           /diagcompleto. ISNULL: sin fila en P1 el MD no puede quedar NULL. */
+        ISNULL(p1.CtxTitulo, N'**Tendencia — ' + d.Equipo + N' · ' + d.compAbbr + N'**') + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + d.h1+N' | '+d.h2+N' | '+d.h3+N' | '+d.h4+N' | '+d.h5+N' | '+d.h6 + N' | Acum | Spark |' + NCHAR(10)
       + N'|---|' + REPLICATE(N'---|', 8) + NCHAR(10)
+      + ISNULL(N'| **Muestra** |' + REPLICATE(N' |', 8) + NCHAR(10) + p1.CtxFilasT + NCHAR(10), N'')
       + ba.bodyMD + NCHAR(10) + NCHAR(10)
       /* B (29/09): FUERA la tabla de limites, pedido de Carlos. Y es redundante de verdad: cada
          celda de la tabla de arriba ya trae su semaforo (':C' -> 🟥, ':P' -> 🟨), asi que repetir
@@ -3483,17 +3501,17 @@ SELECT
     CAST(NULL AS nvarchar(max)) AS Observados,
     CAST(NULL AS nvarchar(max)) AS Recomendaciones,
     CAST(
-        /* El CUADRO de /tendencia, entero y arriba de la grafica (pedido de gerencia). Se embebe
-           de vw_TendenciaP1MD -- una sola definicion, igual que en el modulo fusionado.
-           LEFT JOIN + ISNULL: si P1 no tuviera fila, el MD no puede quedar NULL. */
-        ISNULL(p1.MD_Contexto,
-               N'**Tendencia — ' + g.Equipo + N' · ' + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END + N'**')
-      + NCHAR(10) + NCHAR(10)
-      + N'**Gráfica de ' + CONVERT(nvarchar(20), g.Parametro) + N'**' + NCHAR(10) + NCHAR(10)
+        /* N1 (02/10): UNA sola tabla y la fila del METAL PRIMERO, justo bajo las fechas (pedido de
+           gerencia); debajo, el contexto de la muestra (grupo «Muestra», filas de vw_TendenciaP1MD).
+           ISNULL: si P1 no tuviera fila, la tabla queda solo con el metal y el MD no se anula. */
+        N'**Gráfica de ' + CONVERT(nvarchar(20), g.Parametro) + N' — ' + g.Equipo + N' · '
+      + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END
+      + N'** · últimas ' + CONVERT(nvarchar(10), te.NMuestras) + N' muestras' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Acum |' + NCHAR(10)
       + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
       + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
-        + N' | ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' |' + NCHAR(10) + NCHAR(10)
+        + N' | ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'—' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') END + N' |' + NCHAR(10)
+      + ISNULL(N'| **Muestra** |' + REPLICATE(N' |', 7) + NCHAR(10) + p1.CtxFilasG + NCHAR(10), N'') + NCHAR(10)
       /* A (29/09): el resumen sale como LISTA DE TEXTO y diciendo de que esta hecho cada cifra.
          Andres lo pidio asi: "como texto, pero bien detallado y mencionando la logica". En una
          tabla, 'Prom.' y 'σ' son dos numeros sin contexto; aqui cada uno lleva su regla, que es

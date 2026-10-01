@@ -8156,3 +8156,71 @@ GO
 --   188.2 quedan nCa=5 · nZn=2 · nMg=0 en el detalle = los 4 Ca de MT (contaminante, legitimo: HT304,
 --         HT313, HT362, HT364) + el Zn de HT364 + el unico critico real de ruedas en Ca y en Zn. Cuadra exacto.
 --         Triage: 106 chips ') 🟨' (antes 0).
+
+
+-- ==== BLOQUE 189 - N1: /tendencia y /grafica en UNA sola tabla (y el metal primero en /grafica) ====
+-- Pedido de gerencia (PASO 0, 30/09): hoy cada una imprime DOS tablas con las mismas fechas (contexto
+--   arriba, parametros abajo). CAMBIO (DDL ya escrito):
+--   · vw_TendenciaP1MD expone sus filas de contexto SUELTAS (CtxFilasT / CtxFilasG) y el titulo (CtxTitulo),
+--     ya con el ancho de cada consumidor y rellenas por la IZQUIERDA cuando hay < 6 muestras (asi alinea
+--     con vw_TendenciaElemento, donde d6 es la mas reciente).
+--   · vw_TendenciaMD: una cabecera de fechas; debajo el grupo «Muestra» (contexto) y luego los grupos de
+--     parametros. vw_TendenciaGraficoMD: la fila del METAL primero, luego «Muestra».
+--   · No se toca ningun CTE de vw_TendenciaMD (radar rowcte/obslast x2): solo el armado del texto final con
+--     columnas de la MISMA fila de P1 que ya se unia.
+-- Linea base (BLOQUE 187): /tendencia 35,8 s (LD 78 544) · /grafica 7,4 s (LD 57 541).
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   189.0 /tendencia > 50 s o LD > 100 000  -> revertir vw_TendenciaMD (etiqueta respaldo-antes-N1-2026-10-02)
+--         /grafica   > 15 s o LD > 80 000   -> revertir vw_TendenciaGraficoMD
+--   189.1 separadores = 1 y anchos_distintos = 1 en las dos  -> UNA tabla, bien alineada. Si no: no se publica.
+--         grafica: pos_metal < pos_SMR  -> el metal va primero.
+--   189.2/189.3 la alineacion con MENOS de 6 muestras (el relleno por la izquierda).
+-- ⚑ Desplegar el DDL completo (las 3 vistas) ANTES de correr.
+
+DECLARE @t nvarchar(max), @g nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+-- 189.0 ⭐ medicion primero, con las consultas EXACTAS de los flujos (MD_equipo_comp, MD_metal)
+SELECT @t = MD FROM vw_TendenciaMD
+WHERE Equipo LIKE '%3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%';
+SELECT @g = MD FROM vw_TendenciaGraficoMD
+WHERE Equipo LIKE '%3160%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('mt lh',' ','') + '%' AND Parametro='Fe';
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+
+-- 189.1 la forma, sobre lo YA leido (sin volver a consultar las vistas). En /grafica solo la parte antes de la
+--       grafica ASCII: sus lineas tambien empiezan con '|'.
+SELECT 'tendencia' AS vista,
+       SUM(CASE WHEN value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN value LIKE N'|%' THEN LEN(value) - LEN(REPLACE(value, N'|', N'')) END) AS anchos_distintos,
+       NULL AS pos_metal, NULL AS pos_SMR, LEN(@t) AS L
+FROM STRING_SPLIT(@t, NCHAR(10))
+UNION ALL
+SELECT 'grafica',
+       SUM(CASE WHEN value LIKE N'|---%' THEN 1 ELSE 0 END),
+       COUNT(DISTINCT CASE WHEN value LIKE N'|%' THEN LEN(value) - LEN(REPLACE(value, N'|', N'')) END),
+       CHARINDEX(N'| Fe |', @g), CHARINDEX(N'| SMR |', @g), LEN(@g)
+FROM STRING_SPLIT(LEFT(@g, CHARINDEX(N'```', @g + N'```') - 1), NCHAR(10));
+-- y las dos salidas, para mirarlas (pegar en un visor de markdown):
+SELECT @t AS tendencia_MD, LEFT(@g, CHARINDEX(N'```', @g + N'```') - 1) AS grafica_MD_sin_grafico;
+GO
+
+-- 189.2 un componente con MENOS de 6 muestras, para probar el relleno. Una pasada por la fundacion de un
+--       proyecto (como el triage, ~3 s). Si Antapaccay no tiene ninguno, cambiar a Antamina.
+SELECT TOP 5 Equipo, Compartimiento, COUNT(*) AS n_muestras
+FROM vw_MuestrasRankeadas
+WHERE Proyecto LIKE '%Antapaccay%' AND rn_recencia <= 6
+GROUP BY Equipo, Compartimiento
+HAVING COUNT(*) < 6
+ORDER BY COUNT(*);
+GO
+
+-- 189.3 el mismo chequeo de anchos sobre ese componente. Poner el equipo y la abreviatura que dio 189.2
+--       (MT LH, MT RH, RD LH, RD RH, Sist. Hidr., Motor). Esperado: separadores = 1, anchos_distintos = 1, y
+--       en la salida las fechas que faltan como '—' A LA IZQUIERDA, igual que en las filas de parametros.
+DECLARE @eq nvarchar(20) = N'CA3160', @comp nvarchar(20) = N'MT LH', @x nvarchar(max);
+SELECT @x = MD FROM vw_TendenciaMD
+WHERE Equipo LIKE '%' + @eq + '%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE(@comp,' ','') + '%';
+SELECT SUM(CASE WHEN value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN value LIKE N'|%' THEN LEN(value) - LEN(REPLACE(value, N'|', N'')) END) AS anchos_distintos
+FROM STRING_SPLIT(@x, NCHAR(10));
+SELECT @x AS MD;
+GO
