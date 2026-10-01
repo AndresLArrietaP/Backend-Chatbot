@@ -320,6 +320,11 @@ Cambian: `/ranking` (+`modelo`) · `/grafica` (3 obligatorios) · se va `/tenden
 
 ## PASO 5 · **C5** — los bugs sueltos
 
+> ✅ **`/grafica` cerrado (01/10):** `3160 Fe` pregunta el componente, `3160 mtlh` el metal, `3161 mt lh Fe`
+> directo. **Lo primero del C5 es extender esa receta** ([CONFIG_TEMAS · Receta](CONFIG_TEMAS.md)) a los 10
+> temas de su tabla: cura **N2** y **H1** de una vez. En cada tema, las 3 piezas; probar con el comando a secas
+> (`/ultimo`, `/ranking`…) y con un dato faltante.
+
 - **H1** · `/ranking` a secas responde «Tas a una» → sin parámetros debe **pedirlos** o mandar a `/comandos`.
 - **H2** · `/ayuda` responde **dos cosas distintas** → la aleatoriedad del 17/09 sigue abierta.
 - **H6** · `/triage mtrh` con columnas descuadradas — **solo** esa variante.

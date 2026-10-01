@@ -147,7 +147,9 @@ lista qué entradas consume cada flujo; el TEXTO de cada descripción vive aquí
 ## Nodos de un tema — cómo se arma (enseñar SIEMPRE, el orden importa)
 El tema PARTE del flujo (ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md)); el/los Prompt(s) son PARTE del tema. Orden de nodos:
 1. **Disparo** = por DESCRIPCIÓN (el agente elige; no hay «Frases» en el modelo de agente).
-2. **Preguntar entradas faltantes** (intuitividad): solo las REQUERIDAS que el modelo no infirió; las de default (proyecto=Antapaccay, modelo=(todos), compartimiento=tracción en Tema 25) NO se preguntan, se fijan en la Acción.
+2. **Preguntar entradas faltantes** — **con nodos propios, no confiando en la entrada** (receta abajo). Solo las
+   REQUERIDAS; las de default (proyecto=Antapaccay, modelo=todos, compartimiento=tracción) NO se preguntan, se
+   fijan en la Acción.
 3. **Acción (flujo)** — pasa las entradas; fija `vista`/`columna`/defaults. Sale `md` (+`observados`,`recomendaciones`).
 4. **Mensaje** `{md}` — imprime la tabla ya armada TAL CUAL.
 5. **CON análisis** (temas que lo llevan): Acción **Prompt** `Análisis de aceite` (`tabla={md}`) → Mensaje `{analisis.text}` → Mensaje `{recomendaciones}`. El Prompt es SIN conocimiento (ver [CONFIG_PROMPTS.md](CONFIG_PROMPTS.md)). **SIN análisis:** omite estos 3 nodos.
@@ -158,6 +160,51 @@ El tema PARTE del flujo (ver [CONFIG_FLUJOS.md](CONFIG_FLUJOS.md)); el/los Promp
 > - **Recomendaciones = SOLO MT:** el flujo solo llena `recomendaciones` cuando `CompTipo=TRACCION` y el metal salió observado (verbatim de vw_Recomendaciones); en no-MT o sin observados viene NULL → la Condición «no está en blanco» oculta ese Mensaje. Por eso la 2ª Condición.
 > - **⚠️ en el valor:** el view marca con ⚠️ los valores del metal que dan **0.0** (muestras no-DDI que suelen ser falso positivo; el área lo revisa aparte). No es una alerta de límite, es un aviso de dato sospechoso.
 > Tema 26 (Ayuda / Glosario) = **tipo Prompt, SIN flujo ni SQL**: Disparo (descripción) → **Solicitud** `Ayuda KomfIA` (entrada `pregunta` = el mensaje del usuario, p.ej. `System.Activity.Text`) → Mensaje `{ayuda.text}` → Finalizar. El glosario va DENTRO del prompt (sin conocimiento externo). Ver [prompts/ayuda_glosario.md](prompts/ayuda_glosario.md). Es el hogar de las consultas simples/conceptuales (antes caían al fallback y se sobre-explicaban).
+
+## 🧩 Receta: el tema pregunta lo que falta (probada en el Tema 09, 01/10)
+
+**Por qué hace falta:** la casilla «si falta, pregúntalo» de una entrada solo actúa cuando el **orquestador**
+llama al tema. Cuando se llega por **«Ir a tema»** desde el Tema 00, las entradas ya vienen fijadas —vacías o
+no— y el tema pasa directo a la Acción: con `""` el flujo corre vacío y sale «No encontré datos» (el N2), con
+`Blank()` el flujo responde `FlowActionBadRequest`.
+
+**Las tres piezas, y las tres tienen que estar:**
+
+| # | Dónde | Qué |
+|---|---|---|
+| 1 | **Tema 00**, en la rama del comando | Lo que falta se pasa como **`Blank()`**, nunca `""`. Si la posición de un token es ambigua (¿`Fe` es metal o componente?), una variable auxiliar calculada **antes** de la cascada lo decide (`Topic.esMetal2`). |
+| 2 | **Tema destino**, entre el Desencadenador y la Acción | Por cada entrada **obligatoria**: Condición `‹entrada› está en blanco` → nodo **Pregunta** (Identificar: *Respuesta completa del usuario*). La rama «Todas las demás» va vacía. Los bloques van en serie. |
+| 3 | En cada **Pregunta** | **«Guardar respuesta del usuario como» = la MISMA variable de entrada.** Sin esto la pregunta se hace, se responde y se pierde. |
+
+**Las trampas en que caímos (01/10), en el orden en que aparecieron:**
+1. `Blank()` sin preguntas en el tema → `FlowActionBadRequest`. *(Pieza 2 faltante.)*
+2. Preguntas con «Seleccionar una variable» sin elegir → la respuesta no llega a la Acción. *(Pieza 3.)*
+3. Fórmulas pegadas en la entrada equivocada del nodo «Tema» (`equipo` con la del componente) → preguntó el
+   equipo que sí venía.
+4. Fórmula de una **versión vieja**: las dos empezaban igual y solo cambiaba el final → componente = `Fe`.
+
+**Cómo depurar sin adivinar:** el **historial de ejecuciones del flujo** muestra la consulta tal como llegó.
+Ahí se ve qué valor tuvo cada entrada (`REPLACE('Fe',…)` delató la trampa 4 en un minuto).
+
+**Temas que la necesitan** (entradas obligatorias que el Tema 00 puede dejar vacías) — seguimiento en
+[PENDIENTES](PENDIENTES.md) C5:
+
+| Tema | Comando | Entradas obligatorias |
+|---|---|---|
+| ✅ 09 Gráfica | `/grafica` | equipo · compartimiento · parametro |
+| 01 Último análisis | `/ultimo` | equipo · compartimiento |
+| 02 Condición MT | `/condicionmt` | equipo |
+| 04 Diagnóstico completo | `/diagcompleto` · `/diagnostico` | equipo |
+| 06 Tendencia | `/tendencia` · `/tendenciadet` | equipo · compartimiento |
+| 11 Historial componente | `/historial` | equipo · compartimiento |
+| 12 Historial equipo | `/historialeq` | equipo |
+| 13/14 Historial de un metal | `/historialmetal` | equipo · parametro |
+| 22 Ranking | `/ranking` | proyecto · compartimiento · parametro ← **es el H1** («Tas a una») |
+| 25 Metal en flota | `/metalflota` | parametros |
+| 28 Acumulados equipo | `/acumulados` | equipo |
+
+Los de flota con default (`/barrido`, `/triage`, `/conteo`, `/incipiente`, `/historialflota`, `/rankingacum`,
+`/rankinggraf`) no la necesitan: su `If(p="","Antapaccay",p)` nunca deja el proyecto vacío.
 
 ## Intuitividad — plan (que el sistema NUNCA falle por un dato faltante)
 Objetivo: cero errores; si falta algo REQUERIDO, se pide en el chat; si es inferible o tiene default, se resuelve solo.
