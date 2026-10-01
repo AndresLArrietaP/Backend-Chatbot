@@ -57,6 +57,22 @@ Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada sa
 > **H3:** `MD_metal` hoy solo mapea la salida `md`. Para uniformar el contrato, agregar también las salidas
 > `observados` y `recomendaciones` (vienen NULL en sus vistas). Menor, pero deja los 4 flujos idénticos.
 
+## N4 · El equipo `T3160` (código de Cummins) — en los 5 flujos que reciben `equipo` (02/10)
+
+`MD_equipo` · `MD_equipo_comp` · `MD_metal` · `MD_historial` · `MD_acumequipo`. Dos «Redactar» antes del SQL,
+mismo patrón que el componente (ley 3: traducir es del flujo):
+
+1. **`eq in`** — `trim(coalesce(` + ficha **equipo** + `,''))`
+2. **`eq`** — texto plano:
+```
+if(and(startsWith(toUpper(outputs('eq_in')),'T'), greaterOrEquals(length(outputs('eq_in')),5), contains('0123456789', slice(outputs('eq_in'),1,2))), slice(outputs('eq_in'),1), outputs('eq_in'))
+```
+3. En la consulta, la ficha **equipo** se cambia por la salida de **`eq`** (en un `concat`: `outputs('eq')`).
+
+Regla del BLOQUE 176.3: se quita la `T` solo si sigue un dígito y el código tiene ≥5 caracteres →
+`T3160` → `3160` → `CA3160`; `T1`, `T11`, `HT079` intactos. ⚠ `slice` y no `substring`: `substring` revienta
+con textos cortos o vacíos (el historial de flota llama a `MD_historial` con equipo vacío), `slice` devuelve `''`.
+
 ## Flujo `MD_ranking` (dedicado — Ranking; honra el top N)
 Vista FIJA `vw_RankingMD` (formato largo: 1 fila por posición). El flujo ARMA la tabla y filtra `pos <= top`.
 **5 entradas** (todas Texto): `proyecto`, `modelo`, `compartimiento`, `parametro`, `top` (opcional; vacío → 10).
