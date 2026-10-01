@@ -8281,3 +8281,35 @@ CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
 GROUP BY v.caso;
 SELECT @t2 AS tendencia_1_muestra, @g AS grafica_sin_ascii;
 GO
+
+
+-- ==== BLOQUE 191 - I: vw_PanelFlotaMD (el /barrido pasa a ser el panel de la mina y absorbe /conteo) ====
+-- Decisiones de Andres (02/10): observado = Estado_General (9 metales de desgaste + TBN), IGUAL que /conteo y
+--   /barridodet; el panel REEMPLAZA a /barrido (el Tema 16 solo cambia su vista).
+-- Vista NUEVA: no reemplaza nada en la BD hasta que el Tema 16 la apunte. Si sale mal, no se apunta.
+-- UNA lectura de la fundacion por proyecto + UN GROUP BY GROUPING SETS para las 4 secciones (ley 2).
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   191.0 Antapaccay o Antamina > 20 s  -> no se apunta el Tema 16; se revisa el plan (skill komfia-doctor).
+--   191.1 la cabecera del panel (equipos · observados · con critico · solo precaucion · sin novedad) y CADA fila
+--         de «Por componente» deben dar los MISMOS numeros que /conteo: es el mismo criterio. Si no cuadran,
+--         el panel esta mal (no el conteo).
+--   191.2 con modelo: '980' -> sin seccion «Por modelo»; '930E' -> aviso de «no tiene límites cargados».
+-- ⚑ Correr cada seccion ENTERA (de DECLARE a GO).
+
+-- 191.0 + 191.1 ⭐ medicion primero (consulta EXACTA de MD_flota), luego panel y conteo lado a lado
+DECLARE @pa nvarchar(max), @pm nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT @pa = MD FROM vw_PanelFlotaMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%';
+SELECT @pm = MD FROM vw_PanelFlotaMD WHERE Proyecto LIKE '%antamina%'   AND Modelo LIKE '%todos%';
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT N'Antapaccay' AS proyecto, @pa AS panel,
+       (SELECT MD FROM vw_ConteoFlotaMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%') AS conteo
+UNION ALL
+SELECT N'Antamina', @pm,
+       (SELECT MD FROM vw_ConteoFlotaMD WHERE Proyecto LIKE '%antamina%' AND Modelo LIKE '%todos%');
+GO
+
+-- 191.2 con modelo nombrado
+SELECT Modelo, MD FROM vw_PanelFlotaMD
+WHERE Proyecto LIKE '%antapaccay%' AND (Modelo LIKE '%980%' OR Modelo LIKE '%930E%');
+GO

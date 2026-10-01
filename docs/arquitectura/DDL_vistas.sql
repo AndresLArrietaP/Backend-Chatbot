@@ -4585,6 +4585,145 @@ FROM fleet f
 LEFT JOIN body b ON b.Proyecto = f.Proyecto AND b.Modelo = f.Modelo;
 GO
 
+/* ==== vw_PanelFlotaMD (I, 02/10: /barrido pasa a ser el PANEL de la mina y absorbe /conteo) ==== */
+/* Responde «¿como esta la mina?»: cabecera, por componente (lo que daba /conteo) con lo que mas se repite,
+   por modelo y donde empezar. El detalle equipo por equipo sigue en /barridodet.
+   Observado = Estado_General: los 9 metales de desgaste + TBN, el MISMO criterio de /conteo y /barridodet
+   (decision de Andres, 02/10). El ISO no cuenta aqui mientras la decision T siga abierta.
+   UNA lectura de la fundacion por proyecto (filtro abajo por MiningProject) y UN GROUP BY GROUPING SETS
+   para las cuatro secciones: nada se lee dos veces (ley 2). Todos los STRING_AGG ordenan por la misma
+   clave 'sk', porque SQL Server rechaza ordenes distintos en la misma consulta (Msg 8711).
+   GROUPING_ID(RealModelo, Equipo, compAbbr, compOrd, metal): 31 total · 15 modelo · 25 componente ·
+   26 metal dentro del componente · 23 equipo. */
+CREATE OR ALTER VIEW [dbo].[vw_PanelFlotaMD] AS
+SELECT mp.[Name] AS Proyecto, x.Modelo,
+       CAST(NULL AS nvarchar(max)) AS Observados,
+       CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+       x.MD
+FROM [Mine].[MiningProject] mp
+CROSS APPLY (
+SELECT a.ModeloG AS Modelo,
+    CAST(
+        N'**Panel de flota — ' + mp.[Name] + CASE WHEN a.ModeloG <> N'(todos)' THEN N' · ' + a.ModeloG ELSE N'' END
+      + N'** · corte ' + ISNULL(FORMAT(a.corte, 'dd-MMM-yy'), N'—') + NCHAR(10) + NCHAR(10)
+      + CAST(a.nEq AS nvarchar(10)) + N' equipos · **' + CAST(a.nObs AS nvarchar(10)) + N' observados** ('
+      + CAST(a.nCrit AS nvarchar(10)) + N' con crítico · ' + CAST(a.nObs - a.nCrit AS nvarchar(10)) + N' solo precaución) · '
+      + CAST(a.nEq - a.nObs AS nvarchar(10)) + N' sin novedad' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN a.ModeloG <> N'(todos)'
+                  AND NOT EXISTS (SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                  WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(mp.[Name])))
+                                    AND ml.ModeloKey = UPPER(LTRIM(RTRIM(a.ModeloG))))
+             THEN N'⚠ **' + a.ModeloG + N' no tiene límites cargados** para este proyecto: los equipos salen **sin evaluar**, no sanos.' + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
+      + N'**Por componente**' + NCHAR(10) + NCHAR(10)
+      + N'| Componente | Equipos | Observ. | 🟥 | 🟨 | Lo que más se repite |' + NCHAR(10)
+      + N'|---|---|---|---|---|---|' + NCHAR(10)
+      + ISNULL(a.compMD, N'| — | | | | | |') + NCHAR(10) + NCHAR(10)
+      + CASE WHEN a.ModeloG = N'(todos)' AND a.nModelos > 1 THEN
+             N'**Por modelo**' + NCHAR(10) + NCHAR(10)
+           + N'| Modelo | Equipos | Observ. | 🟥 | 🟨 |' + NCHAR(10)
+           + N'|---|---|---|---|---|' + NCHAR(10)
+           + a.modMD + NCHAR(10) + NCHAR(10)
+             ELSE N'' END
+      + N'**Dónde empezar**' + NCHAR(10) + NCHAR(10)
+      + ISNULL(a.eqMD, N'_Ningún equipo observado: la flota está dentro de límites._') + NCHAR(10) + NCHAR(10)
+      + N'_Equipo por equipo: **/barridodet** ' + mp.[Name] + CASE WHEN a.ModeloG <> N'(todos)' THEN N' ' + a.ModeloG ELSE N'' END
+      + N'. Observado = algún metal de desgaste (Fe, PQ, Cr, Ni, Cu, Pb, Sn, Al, Si) o el TBN fuera de límite, en la última muestra de cada componente._'
+    AS nvarchar(max)) AS MD
+FROM (
+    SELECT ModeloG,
+        MAX(CASE WHEN gid = 31 THEN nEq END)    AS nEq,
+        MAX(CASE WHEN gid = 31 THEN nEqObs END) AS nObs,
+        MAX(CASE WHEN gid = 31 THEN nEqCrit END) AS nCrit,
+        MAX(CASE WHEN gid = 31 THEN corte END)  AS corte,
+        SUM(CASE WHEN gid = 15 THEN 1 ELSE 0 END) AS nModelos,
+        STRING_AGG(CASE WHEN gid = 25 THEN CAST(
+            N'| ' + compAbbr + N' | ' + CAST(nEq AS nvarchar(10)) + N' | ' + CAST(nEqObs AS nvarchar(10))
+          + N' | ' + CAST(nEqCrit AS nvarchar(10)) + N' | ' + CAST(nEqObs - nEqCrit AS nvarchar(10)) + N' | '
+          + CASE WHEN topN > 0 THEN topMet + N' en ' + CAST(topN AS nvarchar(10)) + CASE WHEN topN = 1 THEN N' equipo' ELSE N' equipos' END
+                 ELSE N'—' END + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS compMD,
+        STRING_AGG(CASE WHEN gid = 15 THEN CAST(
+            N'| ' + ISNULL(RealModelo, N'—') + N' | ' + CAST(nEq AS nvarchar(10)) + N' | ' + CAST(nEqObs AS nvarchar(10))
+          + N' | ' + CAST(nEqCrit AS nvarchar(10)) + N' | ' + CAST(nEqObs - nEqCrit AS nvarchar(10)) + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS modMD,
+        STRING_AGG(CASE WHEN gid = 23 AND sk <= 5 AND nCompCrit + nCompPrec > 0 THEN CAST(
+            N'- ' + CASE WHEN nCompCrit > 0 THEN N'🟥 **' ELSE N'🟨 **' END + Equipo + N'** — '
+          + CASE WHEN nCompCrit > 0
+                 THEN CAST(nCompCrit AS nvarchar(10)) + CASE WHEN nCompCrit = 1 THEN N' componente' ELSE N' componentes' END + N' con crítico'
+                    + ISNULL(N' (' + NULLIF(STUFF(CONCAT(
+                          CASE WHEN cMTLH = 1 THEN N' · MT LH' END, CASE WHEN cMTRH = 1 THEN N' · MT RH' END,
+                          CASE WHEN cRDLH = 1 THEN N' · RD LH' END, CASE WHEN cRDRH = 1 THEN N' · RD RH' END,
+                          CASE WHEN cMot = 1 THEN N' · Motor' END, CASE WHEN cHid = 1 THEN N' · Sist. Hidr.' END,
+                          CASE WHEN cOtro = 1 THEN N' · otros' END), 1, 3, N''), N'') + N')', N'')
+                    + CASE WHEN nCompPrec > 0 THEN N' · ' + CAST(nCompPrec AS nvarchar(10)) + N' en precaución' ELSE N'' END
+                 ELSE CAST(nCompPrec AS nvarchar(10)) + CASE WHEN nCompPrec = 1 THEN N' componente' ELSE N' componentes' END + N' en precaución' END
+            AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS eqMD
+    FROM (
+        SELECT g.*,
+            /* lo que mas se repite en el componente: la fila de metal con mas equipos, propagada a la fila
+               del componente con una ventana sobre la misma particion (sin volver a leer nada) */
+            FIRST_VALUE(CASE WHEN g.gid = 26 AND g.metal <> N'_' AND g.nMet > 0 THEN g.metal END)
+                OVER (PARTITION BY g.ModeloG, g.compAbbr
+                      ORDER BY CASE WHEN g.gid = 26 AND g.metal <> N'_' AND g.nMet > 0 THEN 0 ELSE 1 END, g.nMet DESC, g.metal) AS topMet,
+            FIRST_VALUE(CASE WHEN g.gid = 26 AND g.metal <> N'_' THEN g.nMet ELSE 0 END)
+                OVER (PARTITION BY g.ModeloG, g.compAbbr
+                      ORDER BY CASE WHEN g.gid = 26 AND g.metal <> N'_' AND g.nMet > 0 THEN 0 ELSE 1 END, g.nMet DESC, g.metal) AS topN,
+            ROW_NUMBER() OVER (PARTITION BY g.ModeloG, g.gid
+                               ORDER BY CASE WHEN g.gid = 25 THEN g.compOrd END, CASE WHEN g.gid = 25 THEN g.compAbbr END,
+                                        CASE WHEN g.gid = 15 THEN -g.nEq END, CASE WHEN g.gid = 15 THEN g.RealModelo END,
+                                        CASE WHEN g.gid = 23 THEN -g.nCompCrit END, CASE WHEN g.gid = 23 THEN -g.nCompPrec END,
+                                        CASE WHEN g.gid = 23 THEN g.Equipo END) AS sk
+        FROM (
+            SELECT b.ModeloG, b.RealModelo, b.Equipo, b.compAbbr, b.compOrd, b.metal,
+                GROUPING_ID(b.RealModelo, b.Equipo, b.compAbbr, b.compOrd, b.metal) AS gid,
+                COUNT(DISTINCT CASE WHEN b.metal = N'_' THEN b.Equipo END) AS nEq,
+                COUNT(DISTINCT CASE WHEN b.metal = N'_' AND (b.esCrit = 1 OR b.esPrec = 1) THEN b.Equipo END) AS nEqObs,
+                COUNT(DISTINCT CASE WHEN b.metal = N'_' AND b.esCrit = 1 THEN b.Equipo END) AS nEqCrit,
+                COUNT(DISTINCT CASE WHEN b.metal <> N'_' AND b.est IN ('CRITICO', 'PRECAUCION') THEN b.Equipo END) AS nMet,
+                SUM(CASE WHEN b.metal = N'_' AND b.esCrit = 1 THEN 1 ELSE 0 END) AS nCompCrit,
+                SUM(CASE WHEN b.metal = N'_' AND b.esCrit = 0 AND b.esPrec = 1 THEN 1 ELSE 0 END) AS nCompPrec,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compAbbr = N'MT LH' THEN 1 ELSE 0 END) AS cMTLH,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compAbbr = N'MT RH' THEN 1 ELSE 0 END) AS cMTRH,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compAbbr = N'RD LH' THEN 1 ELSE 0 END) AS cRDLH,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compAbbr = N'RD RH' THEN 1 ELSE 0 END) AS cRDRH,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compAbbr = N'Motor' THEN 1 ELSE 0 END) AS cMot,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compAbbr = N'Sist. Hidr.' THEN 1 ELSE 0 END) AS cHid,
+                MAX(CASE WHEN b.metal = N'_' AND b.esCrit = 1 AND b.compOrd = 9 THEN 1 ELSE 0 END) AS cOtro,
+                MAX(b.FechaMuestreo) AS corte
+            FROM (
+                SELECT mg.ModeloG, r.Modelo AS RealModelo, r.Equipo, r.FechaMuestreo,
+                    CASE WHEN r.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN r.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN r.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN r.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN r.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN r.Compartimiento = 'MOTOR' THEN N'Motor' ELSE ISNULL(r.Compartimiento, N'(sin componente)') END AS compAbbr,
+                    CASE WHEN r.Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN r.Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN r.Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN r.Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN r.Compartimiento = 'MOTOR' THEN 5 WHEN r.Compartimiento LIKE '%HIDRAUL%' THEN 6 ELSE 9 END AS compOrd,
+                    CASE WHEN r.Estado_General LIKE '%CRITIC%' THEN 1 ELSE 0 END AS esCrit,
+                    CASE WHEN r.Estado_General LIKE '%PRECAUC%' THEN 1 ELSE 0 END AS esPrec,
+                    m.metal, m.est
+                FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Proyecto = mp.[Name] AND rn_recencia = 1) r
+                CROSS APPLY (SELECT r.Modelo AS ModeloG
+                             UNION ALL
+                             SELECT N'(todos)' WHERE EXISTS (
+                                 SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                 WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(r.Proyecto)))
+                                   AND ml.ModeloKey = UPPER(LTRIM(RTRIM(r.Modelo))))) mg
+                /* '_' = la fila del componente en si (para contar equipos); el resto, un metal cada una */
+                CROSS APPLY (VALUES (N'_', CAST(NULL AS varchar(20))),
+                                    (N'Fe', r.Estado_Fe), (N'PQ', r.Estado_PQ), (N'Cr', r.Estado_Cr), (N'Ni', r.Estado_Ni),
+                                    (N'Cu', r.Estado_Cu), (N'Pb', r.Estado_Pb), (N'Sn', r.Estado_Sn), (N'Al', r.Estado_Al),
+                                    (N'Si', r.Estado_Si), (N'TBN', r.Estado_TBN)
+                ) m(metal, est)
+            ) b
+            GROUP BY GROUPING SETS (
+                (b.ModeloG),
+                (b.ModeloG, b.RealModelo),
+                (b.ModeloG, b.compAbbr, b.compOrd),
+                (b.ModeloG, b.compAbbr, b.metal),
+                (b.ModeloG, b.Equipo)
+            )
+        ) g
+    ) w
+    GROUP BY ModeloG
+) a
+) x;
+GO
+
 /* ==== vw_RankingMD (Ranking deterministico — reemplaza KomfIA SQL) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_RankingMD] AS
 WITH s AS (   -- ultima muestra por equipo+comp (sin DDI), metales normalizados, modelo real + '(todos)'
