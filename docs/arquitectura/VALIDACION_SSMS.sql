@@ -8329,3 +8329,78 @@ GO
 --         limites» bajo «no tiene limites cargados» -> ahora «Sin limites cargados: no hay con que evaluar».
 --         Y «lo que mas se repite» mostraba «Cr en 1 equipo» (empate a 1, gana el alfabetico) -> ahora solo con
 --         2+ equipos; si no, «ninguno se repite».
+
+
+-- ==== BLOQUE 192 - F: /historial y /historialeq con las 5 familias · /historialflota con valores ====
+-- Pedido (02/10): historial VERTICAL (una fila por muestra, como hoy) y, en vez de 'Met. Obs.', las 5 familias del
+--   formato (Desgaste · Aditivos · Contaminacion · Salud · Cod. Limpieza) con lo fuera de limite y su valor:
+--   «Fe (232.6) 🟥 · Zn (38.2) 🟥». El Estado de la fila sale de esas MISMAS celdas (como el triage), no de
+--   Estado_General. /historialflota: «Fe (232.6)» en Observados y el componente en MAYUSCULAS.
+-- CAMBIO (DDL ya escrito): vw_HistorialFilasMD, vw_HistorialEquipoFilasMD, vw_HistorialFlotaFilasMD. Misma base
+--   (vw_MuestrasHistorial = vw_MuestrasEstado.*, ya trae los 30 Estado_*); las familias van en un OUTER APPLY
+--   sobre la MISMA fila, como en vw_TriageMD. Ninguna lectura nueva. Respaldo: etiqueta respaldo-antes-F-2026-10-02.
+-- Consultas = la de MD_historial (CONFIG_FLUJOS) tal cual, sin el pie de recorte.
+-- ⚑ DOS FASES:
+--   192.0 ANTES de desplegar -> linea base de las vistas ACTUALES (no la tenemos de las *FilasMD).
+--   192.1 DESPUES de desplegar -> las mismas 3 + la forma.
+-- ⚑ DECISION escrita antes de ver los numeros: si una vista nueva tarda mas del DOBLE que su base o pasa de 60 s
+--   -> se revierte esa vista. Forma: separadores = 1 y anchos = 1 en las 3.
+
+-- 192.0 ⭐ ANTES DEL DDL (vistas actuales)
+DECLARE @h nvarchar(max), @e nvarchar(max), @f nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT @h = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3160%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%mt lh%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SELECT @e = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialEquipoFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3161%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SELECT @f = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFlotaFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%antapaccay%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT LEN(@h) AS L_historial, LEN(@e) AS L_historialeq, LEN(@f) AS L_flota;
+GO
+
+-- >>> desplegar el DDL_vistas.sql aqui <<<
+
+-- 192.1 ⭐ DESPUES DEL DDL (vistas nuevas): tiempo, forma y salida
+DECLARE @h nvarchar(max), @e nvarchar(max), @f nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT @h = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3160%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%mt lh%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SELECT @e = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialEquipoFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3161%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SELECT @f = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFlotaFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%antapaccay%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT v.caso,
+       SUM(CASE WHEN s.value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(LEN(v.md)) AS L
+FROM (VALUES (N'historial CA3160 MT LH', @h), (N'historialeq CA3161', @e), (N'historialflota Antapaccay', @f)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
+GROUP BY v.caso;
+SELECT @h AS historial, @e AS historialeq, @f AS historialflota;
+GO
