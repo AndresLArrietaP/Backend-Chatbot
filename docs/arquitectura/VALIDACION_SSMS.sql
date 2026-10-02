@@ -8417,3 +8417,32 @@ GO
 --   ⚠ PERO en las dos por equipo LaboratoryData pasa de 1 367 a 18 284 lecturas = la FLOTA ENTERA: con las columnas
 --   nuevas el filtro por equipo ya no baja antes de leer (la enfermedad del 30/09, aun incubando). Cura candidata:
 --   filtro abajo (CROSS APPLY sobre MiningEquipment) -- son vistas de UNA sola fuente. Pendiente, con medicion.
+
+
+-- ==== BLOQUE 193 - /historialflota con las familias del formato (como /historial y /historialeq) ====
+-- Pedido (02/10): «entran todos los parametros del formato, dependiendo del componente» y nunca una fila
+--   observada con «Observados = —» (CA3171 MOTOR 15-Sep salia 🟨 por el TBN, que la lista de 9 metales no nombraba).
+-- CAMBIO (DDL ya escrito): vw_HistorialFlotaFilasMD usa el MISMO OUTER APPLY de familias que vw_HistorialFilasMD,
+--   en una sola columna. La fila entra por esas celdas (Inf = 1 se ve pero no cuenta), no por Estado_General.
+-- ⚠ Riesgo: antes las familias no se calculaban; ahora se calculan en TODAS las filas del proyecto para decidir
+--   cuales entran. Base (BLOQUE 192.1): 5,4 s.
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   193.0 > 30 s -> revertir esta vista (etiqueta respaldo-antes-F-2026-10-02 o el commit anterior).
+--   193.1 filas_sin_observados = 0 · anchos = 1. Habra MAS filas que antes (ahora cuentan ISO, aditivos, salud).
+-- ⚑ Correr ENTERO (de DECLARE a GO).
+DECLARE @f nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+SELECT @f = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10)
+     + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFlotaFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%%' AND compAbbr COLLATE Latin1_General_CI_AI LIKE '%%' AND Parametro LIKE '%%'
+        AND Proyecto LIKE '%antapaccay%' AND FechaMuestreo >= DATEADD(MONTH, -1, CAST(GETDATE() AS date))) f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT SUM(CASE WHEN s.value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       SUM(CASE WHEN s.value LIKE N'%| — |' OR s.value LIKE N'%|  |' THEN 1 ELSE 0 END) AS filas_sin_observados,
+       SUM(CASE WHEN s.value LIKE N'|%' AND s.value NOT LIKE N'|---%' AND s.value NOT LIKE N'| Fecha%' THEN 1 ELSE 0 END) AS filas
+FROM STRING_SPLIT(@f, NCHAR(10)) s;
+SELECT @f AS historialflota_1_mes;
+GO

@@ -201,7 +201,7 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | Qué | Dónde | Cura probable |
 |---|---|---|
 | Tras los **historiales** la central agrega un resumen de varias viñetas («Patrones destacados…», «Resumen del último mes…»). Usa cifras de la tabla, no inventa, pero es la fuga del C2: tras un tema, como mucho **una** línea | `/historial`, `/historialeq`, `/historialflota` | Revisar si los temas 11/12/15 terminan con «Finalizar tema» y si la regla CIERRES de la central basta; si no, línea explícita «tras un historial, nada» |
-| `/historialflota`: una fila observada con **Observados = —** (`CA3171 MOTOR 15-Sep`, 🟨). El estado viene de `Estado_General`, que incluye el **TBN**, pero la lista solo nombra los 9 metales | `vw_HistorialFlotaFilasMD` | Agregar `TBN (x)` a la lista cuando `TBN < TBN_LP` (mismo criterio que `Estado_General`) |
+| `/historialflota`: una fila observada con **Observados = —** (`CA3171 MOTOR 15-Sep`, 🟨) | `vw_HistorialFlotaFilasMD` | ✍ **DDL escrito (02/10), BLOQUE 193**: las familias del formato según el componente, como /historial; la fila entra por esas celdas |
 
 ## Rendimiento (skill `komfia-doctor`)
 
