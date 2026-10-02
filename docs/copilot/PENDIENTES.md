@@ -193,8 +193,15 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | **N1** ✅ **CERRADO (01/10)** — BLOQUES 189-190; visto en Teams | `/tendencia` y `/grafica` en **una sola tabla**: una cabecera de fechas y todas las filas debajo; en `/grafica`, **la fila del metal primero** | SQL. ⚠ `/tendencia` es la vista más cara (35,8 s): medir con `LIKE` antes de darlo por bueno |
 | **D1** ✅ **CERRADO (02/10)** — BLOQUE 190 + visto en Teams | `/diagcompleto` y `/diagnostico`: SMR en texto bajo el título + grupo «Muestra» (Fec. últ. · H. Comp. · T. muestra) sobre «Salud» — pedido de gerencia de último momento | Solo columnas en las copias que ya existían; ninguna referencia nueva |
 | **I** ✅ **CERRADO (02/10)** — BLOQUE 191 + Teams: `/panel` (alias `/barrido`, `/conteo`), Tema 21 desactivado, el lenguaje natural «barrido»/«cuántos» → panel y «detalle» → 17 · observado = `Estado_General` (como /conteo y /barridodet) · reemplaza a /barrido cambiando la vista del Tema 16 | `/barrido` → **Panel de flota**, absorbe `/conteo` (`/conteo` queda como alias; luego se desactiva el 21) | Vista nueva `vw_PanelFlotaMD`, una sola lectura. Si no convence: se desactiva `/barrido` y `/barridodet` pasa a llamarse `/barrido`. Diseño completo en el archivo de legado, «Bloque I» |
-| **F** ✅ SQL validado (BLOQUE 192: 34,5/34,1/5,4 s, forma OK) — falta verlo en Teams · **vertical confirmado** (Teams no hace scroll horizontal: aprieta columnas) | Historial **vertical** con las 5 familias del formato (`Fe (232.6) 🟥`); `/historialflota` con valores y componente en mayúsculas | `/historialmetal` no cambia |
+| **F** ✅ **CERRADO (02/10)** — BLOQUE 192 + visto en Teams (`/historial`, `/historialeq`, `/historialflota`) · **vertical confirmado** (Teams no hace scroll horizontal: aprieta columnas) | Historial **vertical** con las 5 familias del formato (`Fe (232.6) 🟥`); `/historialflota` con valores y componente en mayúsculas | `/historialmetal` no cambia |
 | **G** | Acumulados por componente (MT, ruedas, hidráulico) + renombre `/rankingacum` → `/rankingmod` | Depende de C (cerrado) |
+
+## Detalles vistos en Teams al cerrar el F (02/10)
+
+| Qué | Dónde | Cura probable |
+|---|---|---|
+| Tras los **historiales** la central agrega un resumen de varias viñetas («Patrones destacados…», «Resumen del último mes…»). Usa cifras de la tabla, no inventa, pero es la fuga del C2: tras un tema, como mucho **una** línea | `/historial`, `/historialeq`, `/historialflota` | Revisar si los temas 11/12/15 terminan con «Finalizar tema» y si la regla CIERRES de la central basta; si no, línea explícita «tras un historial, nada» |
+| `/historialflota`: una fila observada con **Observados = —** (`CA3171 MOTOR 15-Sep`, 🟨). El estado viene de `Estado_General`, que incluye el **TBN**, pero la lista solo nombra los 9 metales | `vw_HistorialFlotaFilasMD` | Agregar `TBN (x)` a la lista cuando `TBN < TBN_LP` (mismo criterio que `Estado_General`) |
 
 ## Rendimiento (skill `komfia-doctor`)
 
