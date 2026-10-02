@@ -8404,3 +8404,9 @@ CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
 GROUP BY v.caso;
 SELECT @h AS historial, @e AS historialeq, @f AS historialflota;
 GO
+
+-- RESULTADOS BLOQUE 192.0 (01/10, vistas ANTES del F) -- linea base:
+--   historial CA3160 MT LH 20,5 s (CPU 2,7 s · LD 1 367 · Worktable 64 169) · historialeq CA3161 19,9 s (CPU 2,4 s)
+--   · historialflota Antapaccay 5,4 s (CPU 0,5 s). L = 2 488 / 10 295 / 8 617.
+--   El transcurrido es ~8x la CPU: espera del tier, no trabajo. En el 192.1 comparar tambien la CPU.
+--   Cortes (el doble): 41 s · 40 s · 11 s.
