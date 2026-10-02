@@ -193,7 +193,7 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | **N1** ✅ **CERRADO (01/10)** — BLOQUES 189-190; visto en Teams | `/tendencia` y `/grafica` en **una sola tabla**: una cabecera de fechas y todas las filas debajo; en `/grafica`, **la fila del metal primero** | SQL. ⚠ `/tendencia` es la vista más cara (35,8 s): medir con `LIKE` antes de darlo por bueno |
 | **D1** ✅ **CERRADO (02/10)** — BLOQUE 190 + visto en Teams | `/diagcompleto` y `/diagnostico`: SMR en texto bajo el título + grupo «Muestra» (Fec. últ. · H. Comp. · T. muestra) sobre «Salud» — pedido de gerencia de último momento | Solo columnas en las copias que ya existían; ninguna referencia nueva |
 | **I** ✅ **CERRADO (02/10)** — BLOQUE 191 + Teams: `/panel` (alias `/barrido`, `/conteo`), Tema 21 desactivado, el lenguaje natural «barrido»/«cuántos» → panel y «detalle» → 17 · observado = `Estado_General` (como /conteo y /barridodet) · reemplaza a /barrido cambiando la vista del Tema 16 | `/barrido` → **Panel de flota**, absorbe `/conteo` (`/conteo` queda como alias; luego se desactiva el 21) | Vista nueva `vw_PanelFlotaMD`, una sola lectura. Si no convence: se desactiva `/barrido` y `/barridodet` pasa a llamarse `/barrido`. Diseño completo en el archivo de legado, «Bloque I» |
-| **F** ✍ DDL escrito (02/10), **BLOQUE 192** (2 fases) · respaldo `respaldo-antes-F-2026-10-02` | Historial **vertical** con las 5 familias del formato (`Fe (232.6) 🟥`); `/historialflota` con valores y componente en mayúsculas | `/historialmetal` no cambia |
+| **F** ✅ SQL validado (BLOQUE 192: 34,5/34,1/5,4 s, forma OK) — falta verlo en Teams · **vertical confirmado** (Teams no hace scroll horizontal: aprieta columnas) | Historial **vertical** con las 5 familias del formato (`Fe (232.6) 🟥`); `/historialflota` con valores y componente en mayúsculas | `/historialmetal` no cambia |
 | **G** | Acumulados por componente (MT, ruedas, hidráulico) + renombre `/rankingacum` → `/rankingmod` | Depende de C (cerrado) |
 
 ## Rendimiento (skill `komfia-doctor`)
@@ -204,6 +204,7 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | `vw_DiagnosticoMD` (`/diagcompleto`) | 6,6 s tras el filtro abajo, pero `LaboratoryData` sigue en **7 scans** (uno por referencia a `base`) | Consolidar a 1 lectura; éxito = `Scan count`, no tiempo |
 | `vw_HistorialFlotaMD` | el radar lista `s ×2` | medir antes de tocar |
 | `vw_TendenciaMetalMD` | ~30 s con el operador real | — |
+| `vw_HistorialFilasMD` · `vw_HistorialEquipoFilasMD` | 34 s tras el F; **leen la flota entera** (LaboratoryData 1 367 → 18 284) | Filtro abajo (CROSS APPLY sobre `MiningEquipment`): una sola fuente, el caso donde funcionó. Medir antes/después (BLOQUE 192.0 como base) |
 
 ## Heredado y backlog de fondo
 

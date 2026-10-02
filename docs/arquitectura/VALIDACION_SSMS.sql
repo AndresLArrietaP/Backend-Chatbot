@@ -8410,3 +8410,10 @@ GO
 --   · historialflota Antapaccay 5,4 s (CPU 0,5 s). L = 2 488 / 10 295 / 8 617.
 --   El transcurrido es ~8x la CPU: espera del tier, no trabajo. En el 192.1 comparar tambien la CPU.
 --   Cortes (el doble): 41 s · 40 s · 11 s.
+
+-- RESULTADOS BLOQUE 192.1 (01/10, vistas NUEVAS) -- quedan las 3 (todas bajo su corte).
+--   historial 34,5 s (CPU 2,4 · base 20,5) · historialeq 34,1 s (CPU 2,7 · base 19,9) · flota 5,4 s (igual).
+--   Forma: separadores 1 · anchos 1 en las 3 ✅. Salida: familias con valor y chip; flota con «Fe (232.6)» y MAYUSCULAS.
+--   ⚠ PERO en las dos por equipo LaboratoryData pasa de 1 367 a 18 284 lecturas = la FLOTA ENTERA: con las columnas
+--   nuevas el filtro por equipo ya no baja antes de leer (la enfermedad del 30/09, aun incubando). Cura candidata:
+--   filtro abajo (CROSS APPLY sobre MiningEquipment) -- son vistas de UNA sola fuente. Pendiente, con medicion.
