@@ -201,7 +201,7 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | Qué | Dónde | Cura probable |
 |---|---|---|
 | Tras los **historiales** la central agrega un resumen de varias viñetas («Patrones destacados…», «Resumen del último mes…»). Usa cifras de la tabla, no inventa, pero es la fuga del C2: tras un tema, como mucho **una** línea | `/historial`, `/historialeq`, `/historialflota` | Revisar si los temas 11/12/15 terminan con «Finalizar tema» y si la regla CIERRES de la central basta; si no, línea explícita «tras un historial, nada» |
-| `/historialflota`: una fila observada con **Observados = —** (`CA3171 MOTOR 15-Sep`, 🟨) | `vw_HistorialFlotaFilasMD` | ✍ **DDL escrito (02/10), BLOQUE 193**: las familias del formato según el componente, como /historial; la fila entra por esas celdas |
+| `/historialflota`: una fila observada con **Observados = —** (`CA3171 MOTOR 15-Sep`, 🟨) | `vw_HistorialFlotaFilasMD` | ✅ **CERRADO (02/10), BLOQUE 193** + Teams: familias del formato según el componente; 0 filas sin observados |
 
 ## Rendimiento (skill `komfia-doctor`)
 
@@ -211,7 +211,7 @@ por ejemplo /grafica 3160 mt lh Fe.»*
 | `vw_DiagnosticoMD` (`/diagcompleto`) | 6,6 s tras el filtro abajo, pero `LaboratoryData` sigue en **7 scans** (uno por referencia a `base`) | Consolidar a 1 lectura; éxito = `Scan count`, no tiempo |
 | `vw_HistorialFlotaMD` | el radar lista `s ×2` | medir antes de tocar |
 | `vw_TendenciaMetalMD` | ~30 s con el operador real | — |
-| `vw_HistorialFilasMD` · `vw_HistorialEquipoFilasMD` | 34 s tras el F; **leen la flota entera** (LaboratoryData 1 367 → 18 284) | Filtro abajo (CROSS APPLY sobre `MiningEquipment`): una sola fuente, el caso donde funcionó. Medir antes/después (BLOQUE 192.0 como base) |
+| `vw_HistorialFilasMD` · `vw_HistorialEquipoFilasMD` · `vw_HistorialFlotaFilasMD` | 34 / 34 / **35,4 s** tras el F (la de flota pasó el corte de 30 s del BLOQUE 193; se dejó por decisión de Andrés); **las tres leen la flota entera** (LaboratoryData 18 284) | Filtro abajo (CROSS APPLY sobre `MiningEquipment`): una sola fuente, el caso donde funcionó. Medir antes/después (BLOQUE 192.0 como base) |
 
 ## Heredado y backlog de fondo
 

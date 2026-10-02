@@ -8446,3 +8446,10 @@ SELECT SUM(CASE WHEN s.value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
 FROM STRING_SPLIT(@f, NCHAR(10)) s;
 SELECT @f AS historialflota_1_mes;
 GO
+
+-- RESULTADOS BLOQUE 193 (01/10)
+--   Forma ✅: separadores 1 · anchos 1 · filas_sin_observados 0 · 200 filas (tope) en el ultimo mes.
+--   ⚠ Tiempo 35,4 s (CPU 4,3 s · LD 18 284 = flota entera) -- PASA el corte de 30 s escrito antes de medir.
+--   Se deja en produccion por decision de Andres (visto en Teams, lejos de los ~100 s del canal), pero queda como
+--   la TERCERA vista de historial leyendo la flota entera -> mismo pendiente que 192.1 (filtro abajo, aqui por
+--   MiningProject). Si hay que volver atras: el commit anterior a cc748d7.
