@@ -661,60 +661,6 @@
               ]
             }
           ]
-        },
-        {
-          "type": "TableRow",
-          "cells": [
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "/limites ‹proj› [modelo] [comp]",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            },
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "Límites que usa el semáforo (solo los cargados)",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "TableRow",
-          "cells": [
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "/limitesc ‹proj› [modelo] [comp]",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            },
-            {
-              "type": "TableCell",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "Formato completo de límites, con o sin dato",
-                  "wrap": true,
-                  "size": "Small"
-                }
-              ]
-            }
-          ]
         }
       ]
     },

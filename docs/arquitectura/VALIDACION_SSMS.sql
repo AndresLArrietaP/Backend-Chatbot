@@ -8851,3 +8851,13 @@ SELECT v.caso, CHECKSUM(v.md) AS huella, DATALENGTH(v.md) / 2 AS chars,
 FROM (VALUES (N'historial 3195 MTLH', @h), (N'tema 14 Fe MTLH', @m), (N'tema 13 Fe', @e), (N'historialflota antapaccay', @f)) v(caso, md)
 CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso, v.md;
 GO
+
+-- RESULTADOS 199 (03/10) -- las CUATRO quedan: misma huella antes y despues en todas.
+--   tema 13 /historialmetal 3195 Fe   9,6 s -> 0,54 s (LD 18 287 -> 802) ✅
+--   /historialflota antapaccay 1 mes 34,7 s -> 1,9 s ✅
+--   /historial 3195 MTLH 10,3 -> 10,2 s · tema 14 9,6 -> 9,6 s: sin mejora, sin dano. Quitar «rn_hist <= 200» no basto:
+--     las dos vistas USAN rn_hist (es su columna rn), y esa ventana de vw_MuestrasHistorial obliga a pasar por la
+--     flota entera. Cura pendiente (menor, 10 s esta lejos del corte): numerar en la propia vista con el mismo
+--     ROW_NUMBER (PARTITION BY Equipo, Compartimiento ORDER BY FechaMuestreo DESC, LaboratoryDataId DESC), como hace
+--     el tema 13 con grn -> deberia caer a ~0,5 s con la misma huella.
+--   Balance de la ronda en historiales: 34 / 34 / 35 / 80 / 9 s  ->  10 / 0,5 / 1,9 / 9,6 / 0,5 s.
