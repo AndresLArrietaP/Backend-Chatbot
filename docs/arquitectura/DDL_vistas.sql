@@ -3578,7 +3578,7 @@ SELECT
            ISNULL: si P1 no tuviera fila, la tabla queda solo con el metal y el MD no se anula. */
         N'**Gráfica de ' + CONVERT(nvarchar(20), g.Parametro) + N' — ' + g.Equipo + N' · '
       + CASE WHEN g.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN g.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN g.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN g.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN g.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN g.Compartimiento='MOTOR' THEN N'Motor' ELSE g.Compartimiento END
-      + N'** · últimas ' + CONVERT(nvarchar(10), te.NMuestras) + N' muestras' + NCHAR(10) + NCHAR(10)
+      + N'** · últimas ' + CONVERT(nvarchar(10), IIF(te.f1 IS NULL,0,1) + IIF(te.f2 IS NULL,0,1) + IIF(te.f3 IS NULL,0,1) + IIF(te.f4 IS NULL,0,1) + IIF(te.f5 IS NULL,0,1) + IIF(te.f6 IS NULL,0,1)) + N' muestras' + NCHAR(10) + NCHAR(10)
       + N'| Par. | ' + ISNULL(FORMAT(te.f1,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f2,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f3,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f4,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f5,'dd-MMM'),N'—') + N' | ' + ISNULL(FORMAT(te.f6,'dd-MMM'),N'—') + N' | Acum |' + NCHAR(10)
       + N'|---|---|---|---|---|---|---|---|' + NCHAR(10)
       + N'| ' + CONVERT(nvarchar(20),g.Parametro) + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d1 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d2 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d3 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d5 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·') + N' | ' + ISNULL(REPLACE(REPLACE(CAST(te.d6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'), N'·')
@@ -4075,54 +4075,16 @@ GO
    LP/LC se fijan por ventana para que TituloMD sea IGUAL en todas las filas del grupo
    (el original usaba MAX(LP)/MAX(LC) al agregar; MAX(TituloMD) en el flujo exige que no varie).
    ---------------------------------------------------------------------------- */
+/* 03/10 (BLOQUE 196): P y B con su limite y la marca de cada celda de Estado_*. La columna Estado se probo
+   con la regla del historial (peor celda con Inf = 0) y se REVIRTIO: calcularla por muestra sobre la flota
+   entera llevo el tema 13 de 8,3 s a 211 s. Vuelve cuando estas vistas filtren abajo por equipo. */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalFilasMD] AS
-WITH s AS (
-    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
-        CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
-        Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
-        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
-        Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
-        Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
-        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
-        Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN
-    FROM [dbo].[vw_MuestrasHistorial] mh
-    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
-    OUTER APPLY (
-        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
-        FROM (VALUES
-            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
-            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
-            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
-            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
-            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
-            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
-            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
-            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
-            (N'ISO>14', mh.Estado_ISO14)
-        ) e(metal, est)
-        CROSS APPLY (
-            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
-            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
-            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
-        ) ff
-    ) pe
-    WHERE rn_hist <= 200
-),
-u AS (
-    SELECT s.Equipo, s.Proyecto, s.Compartimiento, s.compAbbr, s.rn_hist, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.HorasComponente, s.CM, s.estadoChip,
-        CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
-        MAX(CAST(m.LP AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LPg,
-        MAX(CAST(m.LC AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LCg,
-        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
-    FROM s CROSS APPLY (VALUES
-            (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe), (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ), (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
-            (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni), (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu), (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),
-            (N'Sn',Sn_ppm,Sn_LP,Sn_LC,Estado_Sn), (N'Al',Al_ppm,Al_LP,Al_LC,Estado_Al), (N'Si',Si_ppm,Si_LP,Si_LC,Estado_Si),
-            (N'Ca',Ca_ppm,Ca_LP,Ca_LC,Estado_Ca), (N'Zn',Zn_ppm,Zn_LP,Zn_LC,Estado_Zn), (N'K',K_ppm,K_LP,K_LC,Estado_K),
-            (N'Na',Na_ppm,Na_LP,Na_LC,Estado_Na), (N'Mg',Mg_ppm,Mg_LP,Mg_LC,Estado_Mg), (N'B',B_ppm,B_LP,B_LC,Estado_B),
-            (N'P',P_ppm,P_LP,P_LC,Estado_P), (N'V100',V100,NULL,NULL,Estado_V100), (N'TBN',TBN,TBN_LP,TBN_LC,Estado_TBN)
-    ) m(metal, Valor, LP, LC, Est)
-)
+/* 03/10 -- FILTRO ABAJO (skill komfia-doctor): una sola fuente (vw_MuestrasHistorial), el caso donde funciono.
+   El filtro del flujo caia sobre el resultado final y la vista armaba la flota entera antes (BLOQUE 196.0: 79,8 s,
+   CPU 7,3 s). Ahora la clave sale de MiningEquipment y la base lee solo ese camion. Misma salida. */
+SELECT me.[Code] AS Equipo, x.compAbbr, x.Parametro, x.Proyecto, x.FechaMuestreo, x.rn, x.TituloMD, x.SufijoMD, x.ColsMD, x.Fila
+FROM [Mine].[MiningEquipment] me
+CROSS APPLY (
 SELECT
     Equipo, compAbbr, Parametro, Proyecto, FechaMuestreo, rn_hist AS rn,
     CAST(N'**Historial de ' + Parametro + N' — ' + Equipo + N' · ' + compAbbr + N'**'
@@ -4135,7 +4097,33 @@ SELECT
     CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—')
        + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + CASE Est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END, N'—')
        + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CM,N'—') + N' | ' + estadoChip + N' |' AS nvarchar(max)) AS Fila
-FROM u;
+FROM (
+    SELECT s.Equipo, s.Proyecto, s.Compartimiento, s.compAbbr, s.rn_hist, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.HorasComponente, s.CM, s.estadoChip,
+        CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
+        MAX(CAST(m.LP AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LPg,
+        MAX(CAST(m.LC AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LCg,
+        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
+    FROM (
+    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
+        CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
+        Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
+        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
+        Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
+        Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
+        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+        Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN
+    FROM [dbo].[vw_MuestrasHistorial]
+    WHERE Equipo = me.[Code] AND rn_hist <= 200
+    ) s CROSS APPLY (VALUES
+            (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe), (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ), (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
+            (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni), (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu), (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC,Estado_Sn), (N'Al',Al_ppm,Al_LP,Al_LC,Estado_Al), (N'Si',Si_ppm,Si_LP,Si_LC,Estado_Si),
+            (N'Ca',Ca_ppm,Ca_LP,Ca_LC,Estado_Ca), (N'Zn',Zn_ppm,Zn_LP,Zn_LC,Estado_Zn), (N'K',K_ppm,K_LP,K_LC,Estado_K),
+            (N'Na',Na_ppm,Na_LP,Na_LC,Estado_Na), (N'Mg',Mg_ppm,Mg_LP,Mg_LC,Estado_Mg), (N'B',B_ppm,B_LP,B_LC,Estado_B),
+            (N'P',P_ppm,P_LP,P_LC,Estado_P), (N'V100',V100,NULL,NULL,Estado_V100), (N'TBN',TBN,TBN_LP,TBN_LC,Estado_TBN)
+    ) m(metal, Valor, LP, LC, Est)
+) u
+) x;
 GO
 
 
@@ -4147,7 +4135,7 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalEquipoFilasMD] AS
 WITH s0 AS (
     SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM,
-        CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
+        CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
@@ -4155,27 +4143,7 @@ WITH s0 AS (
         Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
         Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC, Compartimiento, LaboratoryDataId) AS grn
-    FROM [dbo].[vw_MuestrasHistorial] mh
-    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
-    OUTER APPLY (
-        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
-        FROM (VALUES
-            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
-            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
-            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
-            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
-            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
-            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
-            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
-            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
-            (N'ISO>14', mh.Estado_ISO14)
-        ) e(metal, est)
-        CROSS APPLY (
-            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
-            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
-            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
-        ) ff
-    ) pe
+    FROM [dbo].[vw_MuestrasHistorial]
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 200),
 u AS (
@@ -4207,34 +4175,14 @@ GO
 /* ==== vw_HistorialMetalMD (historial de un metal en un componente) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalMD] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
         Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
         Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
         Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN
-    FROM [dbo].[vw_MuestrasHistorial] mh
-    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
-    OUTER APPLY (
-        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
-        FROM (VALUES
-            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
-            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
-            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
-            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
-            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
-            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
-            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
-            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
-            (N'ISO>14', mh.Estado_ISO14)
-        ) e(metal, est)
-        CROSS APPLY (
-            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
-            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
-            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
-        ) ff
-    ) pe
+    FROM [dbo].[vw_MuestrasHistorial]
     WHERE rn_hist <= 12
 ),
 u AS (
@@ -4377,7 +4325,7 @@ GO
 /* ==== vw_HistorialMetalEquipoMD (variante 2: metal en todos los componentes) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalEquipoMD] AS
 WITH s0 AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
@@ -4385,27 +4333,7 @@ WITH s0 AS (
         Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
         Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC, Compartimiento, LaboratoryDataId) AS grn
-    FROM [dbo].[vw_MuestrasHistorial] mh
-    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
-    OUTER APPLY (
-        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
-        FROM (VALUES
-            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
-            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
-            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
-            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
-            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
-            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
-            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
-            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
-            (N'ISO>14', mh.Estado_ISO14)
-        ) e(metal, est)
-        CROSS APPLY (
-            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
-            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
-            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
-        ) ff
-    ) pe
+    FROM [dbo].[vw_MuestrasHistorial]
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 24),
 u AS (

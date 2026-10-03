@@ -8680,3 +8680,67 @@ FROM (VALUES (N'limites 980E traccion', @l), (N'completo 980E traccion', @c), (N
 CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso;
 SELECT @l AS limites, @c AS completo, @r AS resumen;
 GO
+-- RESULTADOS 195 (03/10)
+--   195.0 se corrio ANTES de desplegar: salio la tabla vieja (con_col_modelo = 0, Si LC 60). No prueba nada -> 197.2.
+--   195.1 MT LH 36 equipos / MT RH 36 equipos, los 36 con >= 3 muestras, ningun 'MOTORO' en Antapaccay.
+--         R14 DESCARTADO: que los 5 del incipiente sean LH es casualidad, no un hueco de datos.
+-- RESULTADOS 196 (03/10)
+--   196.0 antes (DDL viejo): tema 14 79,8 s (CPU 7,3 s) · tema 13 8,3 s (CPU 1,5 s).
+--         despues:           tema 14 90,8 s (CPU 9,8 s) · tema 13 **211,4 s** (CPU 28,0 s) -> pasa el corte (1,25x).
+--         Se aplica lo escrito: REVERTIDA la columna Estado (OUTER APPLY 'pe') de las 4 vistas; quedan los limites de
+--         P/B y la marca de Estado_* en cada celda. ⚠ Y el tema 14 ya rondaba 80 s ANTES: a 40 s del corte del conector.
+--   196.1 bug confirmado: '%P%' -> P, Pb, PQ (56 filas cada uno) · 'P' -> solo P. ✅ cura en el flujo.
+--   196.2 P «LP 280.0 · LC 240.0» en el titulo ✅
+--   196.3 grafica ISO>6: «(código)», marcas ×24 ×22 ×22 ×20, «LC 20», limites «LP 19 · LC 20» ✅. Detalle: el titulo
+--         decia «ultimas 4 muestras» sobre 6 columnas (contaba valores, no fechas) -> corregido.
+--   196.4 vw_LimitesMD: 21 filas en Antapaccay, 0,3 s, anchos 1 en las tres variantes, «P ↓ 280.00 | 240.00»,
+--         «V100 | — | 70.10–85.70», «17 de 23 parametros con limite» ✅. (Modulo aparcado a largo plazo, 03/10.)
+
+
+-- ==== BLOQUE 197 - tema 14 con FILTRO ABAJO · reversion del tema 13 · 195.0 con el DDL desplegado ====
+-- CAMBIOS (DDL escrito): vw_HistorialMetalFilasMD con filtro abajo (CROSS APPLY sobre MiningEquipment, la base lee
+--   solo ese camion) · columna Estado revertida en las 4 vistas de historial de metal · titulo de la grafica.
+--   Etiqueta git de respaldo: respaldo-antes-filtroabajo-histmetal-2026-10-03.
+-- ⚑ ORDEN: desplegar DDL_vistas.sql entero -> BLOQUE 89 -> 197.0 -> 197.1 -> 197.2.
+-- ⚑ DECISION escrita antes de ver los numeros (metrica = LaboratoryData logical reads; el tiempo lo estrangula el tier):
+--   tema 14: LD <= ~2 000 lecturas (un camion por la cadena ≈ 1 400) y < 15 s -> queda; y es la receta para
+--            vw_HistorialFilasMD y vw_HistorialEquipoFilasMD (34 s, flota entera). Si LD sigue en ~18 000 -> revertir
+--            esta vista (la etiqueta) y bisectar.
+--   tema 13: <= 10 s -> la reversion confirma que el 211 s era la columna Estado. Si no -> hay otra causa.
+
+-- 197.0 ⭐ medicion (consultas EXACTAS de MD_historial, metal sin comodines)
+DECLARE @a nvarchar(max), @b nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== tema 14: historialmetal 3195 MTLH Fe';
+SELECT @a = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== tema 13: historialmetal 3195 Fe todos los componentes';
+SELECT @b = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalEquipoFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%%%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+-- 197.1 la salida no cambio: 56 filas en el tema 14 (las mismas del 196.1) · anchos 1 en los dos
+SELECT v.caso,
+       SUM(CASE WHEN s.value LIKE N'| [0-9]%' THEN 1 ELSE 0 END) AS filas,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM (VALUES (N'tema 14', @a), (N'tema 13', @b)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso;
+SELECT @a AS tema14, @b AS tema13;
+GO
+
+-- 197.2 = 195.0 otra vez, ya con el DDL desplegado: esperado con_col_modelo = 1 en hidraulico (980E + D475A) y 0
+--   en traccion (solo 980E); la tabla de limites con «| Modelo | Metal | LP | LC |» y Si del 980E distinto del D475A.
+DECLARE @h nvarchar(max);
+SET STATISTICS TIME ON;
+SELECT @h = MD FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%' AND CompTipo = 'HIDRAULICO' AND Modelo LIKE '%todos%';
+SET STATISTICS TIME OFF;
+SELECT COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(CASE WHEN s.value LIKE N'| Equipo | Modelo%' THEN 1 ELSE 0 END) AS con_col_modelo
+FROM STRING_SPLIT(@h, NCHAR(10)) s;
+SELECT @h AS incipiente_hidr;
+GO
