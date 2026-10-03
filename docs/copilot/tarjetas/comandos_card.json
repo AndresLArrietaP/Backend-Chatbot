@@ -508,7 +508,7 @@
               "items": [
                 {
                   "type": "TextBlock",
-                  "text": "/incipiente ‹proj› [comp]",
+                  "text": "/incipiente ‹proj› [comp] [modelo]",
                   "wrap": true,
                   "size": "Small"
                 }

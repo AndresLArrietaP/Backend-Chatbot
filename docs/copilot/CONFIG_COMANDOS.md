@@ -32,7 +32,7 @@ POR-FLOTA
 /panel <proyecto> [modelo]                   → 16 Panel de flota (I, 02/10) · alias: /barrido, /conteo
 /barridodet <proyecto> [modelo]              → 17 Barrido detalle
 /triage <componente> <proyecto> [modelo]     → 19 Triage de un componente en la flota
-/incipiente <proyecto> [componente]          → 20 Tendencia incipiente (comp default: tracción)
+/incipiente <proyecto> [componente] [modelo] → 20 Tendencia incipiente (comp default: tracción; modelo default: (todos))
 /ranking <proyecto> <componente> <metal> [modelo] [top] → 22 Ranking de un metal
 /metalflota <proyecto> <componente> <metal(es)> [modelo] → 25 Último por metal en la flota  (metales: coma-sin-espacio Fe,Cu)
 /historialflota <proyecto> [rango]           → 15 Historial de observados de flota
@@ -355,8 +355,8 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/acumulados` | 28 Acumulados equipo | equipo=p1 |
 | `/panel` · alias `/barrido`, `/conteo` | **16 Panel de flota** | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` — UNA Condición con las tres (`cmd = /barrido` **CUALQUIERA** `/panel` · `/conteo`, ley 8). La Condición vieja de `/conteo` queda inalcanzable: **no se borra** |
 | `/barridodet` | 17 Barrido detalle | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
-| `/triage` | 19 Triage | **acepta la mina primero** (02/10): `Topic.esComp1 = IsMatch(Lower(Topic.p1), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · compartimiento=`If(esComp1, p1, "tracción")` · proyecto=`If(esComp1, If(p2="","Antapaccay",p2), If(p1="","Antapaccay",p1))` · modelo=`If(esComp1, If(p3="","(todos)",p3), If(p2="","(todos)",p2))` — `/triage antapaccay` mandaba `CompTipo = 'antapaccay'` |
-| `/incipiente` | 20 Tendencia incipiente | proyecto=`If(p1="","Antapaccay",p1)` · **compartimiento=`If(Topic.resto2="","tracción",Topic.resto2)`** ⟵ 2º input |
+| `/triage` | 19 Triage | **acepta la mina primero** (02/10): `Topic.esComp1 = IsMatch(Lower(Topic.p1), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · compartimiento=`If(esComp1, p1, "tracción")` · proyecto=`If(esComp1, If(p2="","Antapaccay",p2), If(p1="","Antapaccay",p1))` · modelo=`If(esComp1, If(p3="","(todos)",p3), If(p2="","(todos)",p2))` — `/triage antapaccay` mandaba `CompTipo = 'antapaccay'` · **(03/10) con un EQUIPO** (`/triage 3195 antapaccay`, visto en la presentación): Condición al inicio de la rama, `IsMatch(Topic.p1, "(?i)(ca|t)?\d{4}")` → Mensaje «El triage es de la flota; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» → **Ir a tema 03 Diagnóstico** (equipo = `Topic.p1`) → Finalizar. El `else` sigue como está. Hoy salía «No encontré datos» y la IA improvisaba la ayuda |
+| `/incipiente` | 20 Tendencia incipiente | **modelo (03/10)**, mismo patrón que `/triage`: `Topic.esComp2 = IsMatch(Lower(Topic.p2), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(Topic.esComp2, Topic.p2, "tracción")` · modelo=`If(Topic.esComp2, If(IsMatch(Topic.p3, ".*\d.*"), Topic.p3, If(IsMatch(Topic.p4, ".*\d.*"), Topic.p4, "(todos)")), If(Topic.p2 = "", "(todos)", Topic.p2))` — un modelo siempre lleva un dígito y un componente nunca, así que `antapaccay 980`, `antapaccay mtlh` y `antapaccay mt lh 980` caen bien. Antes `980` llegaba como componente → «Sin datos suficientes» |
 | `/conteo` | **16 Panel de flota** (alias desde el 02/10; antes 21) | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` — en el nodo «Tema» de la rama solo cambia el destino |
 | `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · **modelo y top desde p4/p5** — fórmulas en §`/ranking` |
 | `/metalflota` | 25 Último por metal flota | proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(p2="","tracción",p2)` · parametros=p3 · **modelo=`If(p4="","(todos)",p4)`** ⟵ 4º input |
@@ -429,7 +429,7 @@ POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicionmt ‹eq› · /diagcomple
              /grafica ‹eq› ‹comp› ‹metal› · /historial ‹eq› ‹comp› [rango] · /historialeq ‹eq›
              /historialmetal ‹eq› ‹metal› [comp] · /acumulados ‹eq›
 POR-FLOTA:   /panel ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
-             /incipiente ‹proj› [comp] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
+             /incipiente ‹proj› [comp] [modelo] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
              /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj› · /rankinggraf ‹proj›
 ```
 

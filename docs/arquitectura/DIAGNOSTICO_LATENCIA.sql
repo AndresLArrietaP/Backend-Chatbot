@@ -253,6 +253,87 @@ SELECT database_name = DB_NAME(), sku = DATABASEPROPERTYEX(DB_NAME(),'ServiceObj
 GO
 
 
+/* ----------------------------------------------------------------------------
+   L9 — FORENSE DEL 02/10 (presentación a gerencia, 08:25-09:20 hora Lima): ¿la BD estaba saturada?
+   Lo visto: /panel 980 dos veces > 120 s (en SSMS, BLOQUE 191: 2,9 s), MD_incipiente 8 min 22 s,
+   /rankingacum con el aviso de tiempo y luego la tabla. Y en el BLOQUE 193: 35,4 s de reloj con 4,3 s
+   de CPU -> el servidor ESPERA, no calcula. Hipótesis: el tier S1 llega a su tope (DTU) cuando corren
+   varias consultas pesadas juntas, y una consulta que el conector abandona a los 120 s SIGUE corriendo
+   en el servidor y le roba recursos a la siguiente.
+   Fuente: Query Store (Azure lo trae encendido; guarda duración, CPU y esperas por intervalo de 1 h).
+   Horas en UTC: Lima = UTC-5 -> 08:00-09:30 Lima = 13:00-14:30 UTC.
+   ⚑ CÓMO SE DECIDE: si en L9.1 las consultas de la ventana tienen dur_prom >> cpu_prom y en L9.2 dominan
+     las esperas de «Buffer IO»/«CPU», era SATURACIÓN (la cura es no apilar consultas: reintentos en
+     Ninguno en TODOS los flujos + menos lecturas por consulta; y el tier, que es del DBA). Si cpu ≈ dur,
+     la consulta en sí es cara y se ataca en la vista.
+   ---------------------------------------------------------------------------- */
+-- ⛔ RESULTADO 03/10: L9.0 SI corre (READ_WRITE · 60 min · esperas ON), pero L9.1-L9.4 dan Msg 262
+--   «VIEW DATABASE PERFORMANCE STATE permission denied». El dato EXISTE (Query Store guarda ~30 dias);
+--   falta el permiso. Pedir al DBA: GRANT VIEW DATABASE PERFORMANCE STATE TO <usuario> (solo lectura de
+--   metricas, no toca datos ni esquema). Mientras tanto la evidencia es el 194.M: reloj = 4-8 x CPU.
+-- L9.0 ¿Query Store encendido? (si no: READ_ONLY/OFF -> la forense no es posible; pasar a L9.3 en vivo)
+SELECT actual_state_desc, interval_length_minutes, wait_stats_capture_mode_desc
+FROM sys.database_query_store_options;
+GO
+-- L9.1 Las consultas de KomfIA en la ventana de la presentación, de la más cara a la más barata
+--      execution_type_desc = Aborted -> el cliente la cortó (el conector a los 120 s).
+DECLARE @ini datetimeoffset = '2026-10-02 13:00 +00:00', @fin datetimeoffset = '2026-10-02 14:30 +00:00';
+SELECT TOP 40
+    CONVERT(varchar(16), SWITCHOFFSET(i.start_time, '-05:00'), 120) AS hora_lima,
+    LEFT(REPLACE(REPLACE(qt.query_sql_text, CHAR(10), ' '), CHAR(13), ' '), 150) AS consulta,
+    rs.execution_type_desc AS tipo,
+    rs.count_executions AS n,
+    CAST(rs.avg_duration / 1e6 AS decimal(9,1)) AS dur_prom_s,
+    CAST(rs.max_duration / 1e6 AS decimal(9,1)) AS dur_max_s,
+    CAST(rs.avg_cpu_time / 1e6 AS decimal(9,1)) AS cpu_prom_s,
+    CAST(rs.avg_logical_io_reads AS bigint)     AS lecturas_prom,
+    CAST(rs.avg_physical_io_reads AS bigint)    AS fisicas_prom
+FROM sys.query_store_runtime_stats rs
+JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id
+JOIN sys.query_store_plan p        ON p.plan_id = rs.plan_id
+JOIN sys.query_store_query q       ON q.query_id = p.query_id
+JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
+WHERE i.start_time >= @ini AND i.start_time < @fin
+  AND qt.query_sql_text LIKE '%vw[_]%'
+ORDER BY rs.avg_duration * rs.count_executions DESC;
+GO
+-- L9.2 ¿En qué esperó el servidor en esa ventana? (por categoría, todas las consultas)
+DECLARE @ini datetimeoffset = '2026-10-02 13:00 +00:00', @fin datetimeoffset = '2026-10-02 14:30 +00:00';
+SELECT ws.wait_category_desc AS espera,
+       CAST(SUM(ws.total_query_wait_time_ms) / 1000.0 AS decimal(12,1)) AS espera_total_s
+FROM sys.query_store_wait_stats ws
+JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = ws.runtime_stats_interval_id
+WHERE i.start_time >= @ini AND i.start_time < @fin
+GROUP BY ws.wait_category_desc
+ORDER BY espera_total_s DESC;
+GO
+-- L9.3 Contraste: las mismas vistas en los días anteriores (¿el 02/10 fue distinto?)
+SELECT CAST(SWITCHOFFSET(i.start_time, '-05:00') AS date) AS dia_lima,
+       LEFT(SUBSTRING(qt.query_sql_text, CHARINDEX('vw_', qt.query_sql_text), 40), CHARINDEX(' ', SUBSTRING(qt.query_sql_text, CHARINDEX('vw_', qt.query_sql_text), 40) + ' ') - 1) AS vista,
+       SUM(rs.count_executions) AS n,
+       SUM(CASE WHEN rs.execution_type_desc = 'Aborted' THEN rs.count_executions ELSE 0 END) AS cortadas,
+       CAST(SUM(rs.avg_duration * rs.count_executions) / NULLIF(SUM(rs.count_executions), 0) / 1e6 AS decimal(9,1)) AS dur_prom_s,
+       CAST(SUM(rs.avg_cpu_time * rs.count_executions) / NULLIF(SUM(rs.count_executions), 0) / 1e6 AS decimal(9,1)) AS cpu_prom_s
+FROM sys.query_store_runtime_stats rs
+JOIN sys.query_store_runtime_stats_interval i ON i.runtime_stats_interval_id = rs.runtime_stats_interval_id
+JOIN sys.query_store_plan p        ON p.plan_id = rs.plan_id
+JOIN sys.query_store_query q       ON q.query_id = p.query_id
+JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
+WHERE i.start_time >= '2026-09-28 05:00 +00:00'
+  AND qt.query_sql_text LIKE '%vw[_]%MD%'
+GROUP BY CAST(SWITCHOFFSET(i.start_time, '-05:00') AS date),
+         LEFT(SUBSTRING(qt.query_sql_text, CHARINDEX('vw_', qt.query_sql_text), 40), CHARINDEX(' ', SUBSTRING(qt.query_sql_text, CHARINDEX('vw_', qt.query_sql_text), 40) + ' ') - 1)
+ORDER BY vista, dia_lima;
+GO
+-- L9.4 En vivo (solo cubre la ÚLTIMA HORA, cada 15 s): correr justo después de una prueba en Teams o de
+--      un bloque pesado. avg_cpu_percent / avg_data_io_percent en 100 = el tier está al tope.
+SELECT TOP 40 CONVERT(varchar(19), DATEADD(HOUR, -5, end_time), 120) AS hora_lima,
+       avg_cpu_percent, avg_data_io_percent, avg_log_write_percent, avg_memory_usage_percent
+FROM sys.dm_db_resource_stats
+ORDER BY end_time DESC;
+GO
+
+
 /* ============================================================================
    CÓMO DECIDIR CON LOS RESULTADOS
    - L2 vs traza Copilot (L0): si los "A" (SSMS warm) son chicos y los "B/C" del chat

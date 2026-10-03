@@ -15,7 +15,7 @@ FLOTA = [
  ("/panel <proj> [modelo]", "Panel de la flota: cuántos, qué componentes y por dónde empezar"),
  ("/barridodet <proj> [modelo]", "Barrido detalle por componente"),
  ("/triage <comp> <proj> [modelo]", "Triage: estado de un componente en la flota"),
- ("/incipiente <proj> [comp]", "Tendencia incipiente (alerta temprana)"),
+ ("/incipiente <proj> [comp] [modelo]", "Tendencia incipiente (alerta temprana)"),
  ("/ranking <proj> <comp> <metal> [modelo] [top]", "Ranking de un metal"),
  ("/metalflota <proj> <comp> <metal(es)> [modelo]", "Último de un metal en la flota"),
  ("/historialflota <proj> [rango]", "Historial de observados de la flota"),

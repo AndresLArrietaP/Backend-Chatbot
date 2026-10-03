@@ -8453,3 +8453,127 @@ GO
 --   Se deja en produccion por decision de Andres (visto en Teams, lejos de los ~100 s del canal), pero queda como
 --   la TERCERA vista de historial leyendo la flota entera -> mismo pendiente que 192.1 (filtro abajo, aqui por
 --   MiningProject). Si hay que volver atras: el commit anterior a cc748d7.
+
+-- ==== BLOQUE 194 - Lo que se vio en la presentacion del 02/10 (testigo: CA3195 MT LH) ====
+-- Que se vio:
+--   · /ultimo sin limite en P, B y V100, y sin ISO (Antapaccay SI los tiene): vw_UltimoAnalisisMD leia 18
+--     parametros con P/B/V100 en NULL fijo. Lo mismo /tendencia y /grafica (vw_TendenciaElemento: P con
+--     LP=240 escrito a mano, sin ISO). Y la fila Estado salia de Estado_General: el 16-Sep del CA3195 era
+--     🟢 en la tendencia y 🟥 en el historial (ISO>6 = 22).
+--   · /incipiente no listo al CA3195 (PQ ≈50 -> 233): el criterio descartaba lo que ya paso el LP. Y leia
+--     el proyecto TRES veces (universo, cuerpo y limites eran copias de la misma cadena).
+--   · /panel antapaccay 980 > 120 s dos veces. El BLOQUE 191 midio 2,9 s, pero SIN modelo.
+-- CAMBIO (DDL ya escrito): vw_UltimoAnalisisMD y vw_TendenciaElemento con los 30 parametros y su Estado_*;
+--   vw_TendenciaP1MD: Estado = peor celda con Inf = 0 (la regla del historial y del triage); ISO entero en
+--   todas las vistas; vw_TendenciaIncipienteMD reescrita (1 lectura, por modelo, + «cruzó»).
+-- ⚑ ORDEN:
+--   1. En Power Automate, ANTES del DDL: MD_incipiente con «AND Modelo LIKE '%todos%'» (la vista nueva da una
+--      fila por modelo; sin el filtro el flujo tomaria una cualquiera). Con la vista vieja funciona igual.
+--   2. 194.M con el DDL VIEJO (anotar los 4 tiempos y el CPU de cada uno).
+--   3. Desplegar DDL_vistas.sql entero -> BLOQUE 89 (smoke test).
+--   4. 194.M otra vez (DDL nuevo) -> 194.1, 194.2, 194.3.
+-- ⚑ DECISION escrita antes de ver los numeros (comparar 194.M antes / despues):
+--   incipiente  > 30 s o mas lento que antes      -> revertir SOLO vw_TendenciaIncipienteMD (git).
+--   tendencia   > 1,25 x su tiempo de antes        -> revertir vw_TendenciaElemento (zona caliente: vw_TendenciaMD
+--                                                    lee 'te' seis veces); /ultimo se queda.
+--   ultimo      > 5 s                              -> revisar antes de seguir.
+--   panel 980   > 20 s con el DDL viejo            -> el panel tiene un problema propio con el modelo (skill
+--                                                    komfia-doctor). Si da ~3 s, lo del 02/10 fue la BD cargada (L9).
+-- ⚑ Correr cada seccion ENTERA (de DECLARE a GO). La pestaña «Messages» trae los tiempos con su etiqueta.
+
+-- 194.M ⭐ medicion: las 4 consultas EXACTAS de los flujos (MD_flota, MD_incipiente, MD_equipo_comp x2)
+DECLARE @x nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON; SET STATISTICS IO ON;
+PRINT N'===== panel antapaccay 980';
+SELECT @x = MD FROM vw_PanelFlotaMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%980%';
+PRINT N'===== incipiente antapaccay traccion';
+SELECT @x = MD FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%' AND CompTipo = 'TRACCION' AND Modelo LIKE '%todos%';
+PRINT N'===== ultimo CA3195 MT LH';
+SELECT @x = MD FROM vw_UltimoAnalisisMD WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('MT LH',' ','') + '%';
+PRINT N'===== tendencia CA3195 MT LH';
+SELECT @x = MD FROM vw_TendenciaMD WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%' + REPLACE('MT LH',' ','') + '%';
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+-- (sys.dm_db_resource_stats: sin permiso -- Msg 262, ver L9)
+GO
+
+-- 194.1 /ultimo CA3195 MT LH (DDL nuevo): forma + las filas que faltaban
+--   Esperado: separadores 1 · anchos 1 · P y B con LP/LC · V100 con banda (≥/≤ o a–b) si hay limite ·
+--   ISO>4/6/14 con valor ENTERO y su limite entero.
+DECLARE @u nvarchar(max);
+SELECT @u = MD FROM vw_UltimoAnalisisMD WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%';
+SELECT SUM(CASE WHEN s.value LIKE N'|---%' THEN 1 ELSE 0 END) AS separadores,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM STRING_SPLIT(@u, NCHAR(10)) s;
+SELECT s.value AS fila FROM STRING_SPLIT(@u, NCHAR(10)) s
+WHERE s.value LIKE N'| P |%' OR s.value LIKE N'| B |%' OR s.value LIKE N'| V100 |%' OR s.value LIKE N'| ISO%' OR s.value LIKE N'| PQ |%';
+SELECT @u AS ultimo_CA3195;
+GO
+
+-- 194.2 /tendencia y /grafica CA3195 MT LH (DDL nuevo)
+--   Esperado: anchos 1 en las dos · Estado del 16-Sep = 🟥 (ISO>6 = 22) · ISO>6 con valores enteros ·
+--   P con marca solo si baja de su limite · el pie de informativos presente.
+DECLARE @t nvarchar(max), @g nvarchar(max);
+SELECT @t = MD FROM vw_TendenciaMD WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%';
+SELECT @g = MD FROM vw_TendenciaGraficoMD WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%' AND Parametro = 'PQ';
+SELECT v.caso,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(CASE WHEN v.md LIKE N'%informativos%' THEN 1 ELSE 0 END) AS pie_informativos
+FROM (VALUES (N'tendencia', @t), (N'grafica PQ', @g)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
+GROUP BY v.caso;
+SELECT s.value AS fila FROM STRING_SPLIT(@t, NCHAR(10)) s
+WHERE s.value LIKE N'| Estado |%' OR s.value LIKE N'| ISO%' OR s.value LIKE N'| P |%' OR s.value LIKE N'| Zn |%' OR s.value LIKE N'| PQ |%';
+SELECT @t AS tendencia_CA3195;
+GO
+
+-- 194.3 /incipiente (DDL nuevo)
+--   Esperado: UNA fila por (Proyecto, Modelo, CompTipo) · '(todos)' sin los modelos sin limites ·
+--   CA3195 MT LH en TRACCION con «PQ … → 233.2» y 🟥 cruzó LC · la variante 980 igual de rapida.
+SELECT Proyecto, Modelo, CompTipo, COUNT(*) AS filas
+FROM vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%'
+GROUP BY Proyecto, Modelo, CompTipo ORDER BY CompTipo, Modelo;
+DECLARE @i nvarchar(max), @i9 nvarchar(max);
+SELECT @i  = MD FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%' AND CompTipo = 'TRACCION' AND Modelo LIKE '%todos%';
+SELECT @i9 = MD FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%' AND CompTipo = 'TRACCION' AND Modelo LIKE '%980%';
+SELECT CASE WHEN @i LIKE N'%CA3195%' THEN 1 ELSE 0 END AS sale_CA3195,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM STRING_SPLIT(@i, NCHAR(10)) s;
+SELECT @i AS incipiente_todos, @i9 AS incipiente_980;
+GO
+
+-- RESULTADOS 194.M con el DDL VIEJO (03/10, sabado, BD sin otra carga)
+--   panel antapaccay 980      3,3 s  (CPU 0,8 s · LD 1 367, Scan 1)     -> el panel NO tiene un problema propio:
+--                                                                         lo del 02/10 (>120 s x2) fue la BD cargada.
+--   incipiente traccion      10,0 s  (CPU 2,7 s · LD Scan 9 / 12 303 · lc Scan 1 984)
+--   ultimo CA3195 MT LH       8,8 s  (CPU 2,0 s · LD Scan 7 / 111 095)  -> 7 lecturas de la tabla para UN equipo.
+--   tendencia CA3195 MT LH   32,4 s  (CPU 3,9 s · compilar 6,9 s · Workfile 582 fisicas = derrame a disco)
+--   ⚑ EL PATRON: reloj = 4 a 8 veces el CPU, sin lecturas fisicas. No espera disco: espera su TURNO de CPU.
+--     Es el tope del tier (S1 limita el CPU de la BD a una fraccion de un nucleo). Consecuencia directa: dos
+--     consultas a la vez se reparten ese tope y cada una tarda el doble. El 02/10 se juntaron el panel dos
+--     veces (la que el conector abandono a los 120 s seguia corriendo), el incipiente con 4 reintentos y el
+--     resto de la demo -> todo pasaba de 120 s. La palanca es el CPU de cada consulta y no apilarlas.
+--   ⚑ Compilar cuesta: la tendencia gasta 6,9 s solo en compilar, y el flujo manda el texto con el equipo
+--     escrito dentro -> cada equipo distinto recompila. (Parametrizacion forzada = ajuste de BD, del DBA.)
+--   Cortes para el despues (escritos antes): incipiente <= 10,0 s · tendencia <= 40,5 s (1,25 x 32,4) · ultimo <= 5 s.
+--     ⚠ El ultimo ya pasa de 5 s con el DDL viejo: el corte se queda como meta, el criterio es «no peor que 8,8 s».
+
+-- RESULTADOS 194 con el DDL NUEVO (03/10) -- BLOQUE 89: 0 vistas rotas.
+--   194.M  panel 980 2,2 s (sin cambio) · incipiente 1,9 s (CPU 0,4 s · LD Scan 1 / 1 367 · lc Scan 2) contra
+--          10,0 s (LD Scan 9, lc Scan 1 984): 5 veces mas rapido, UNA lectura como se diseno. ✅
+--          ultimo y tendencia: la salida de Messages se corto -> PENDIENTE pegar esos dos tiempos (corte: ultimo no
+--          peor que 8,8 s · tendencia <= 40,5 s). La seccion 194.2 entera (tendencia + grafica) tardo 55 s.
+--   194.1  /ultimo CA3195: separadores 1 · anchos 1 ✅ · V100 «— | 70.1–85.7 | 75.1» (MT: solo critico, banda) ·
+--          P «280.0 | 240.0 | 290.2» sin marca (aditivo, por encima del LP = sano) · B sin limite cargado en MT ·
+--          ISO>4 22 · ISO>6 «19 | 20 | 20 🟨» · ISO>14 «16 | 19 | 16» -- ENTEROS ✅ · PQ 233.2 🟥 ✅
+--   194.2  tendencia: anchos 1 · pie de informativos ✅ · Estado 🟥 🟢 🟥 🟢 🟥 🟥 = IDENTICO al historial
+--          (15-Aug, 26-Aug y 16-Sep por ISO>6 = 24/22/22; 26-Sep por PQ). Antes 16-Sep salia 🟢. ✅
+--          ISO>4/6/14 con valores enteros donde antes habia «·» ✅ · Zn 🟥 con Estado 🟢 (informativo, explicado).
+--          grafica PQ: anchos 2 = la tabla (9 barras) + las lineas de la grafica ASCII, que tambien empiezan con
+--          «|» dentro del fence. No es descuadre.
+--   194.3  incipiente: 1 fila por (Proyecto, Modelo, CompTipo), 36 en Antapaccay ✅ · sale_CA3195 = 1 ✅ ·
+--          «5 de 54 evaluados» (el 930E ya no infla el universo de (todos)):
+--            CA3195 MT LH 🟥 cruzó LC · PQ 55.1→233.2 (+323%)   ← el testigo
+--            CA3176 MT LH 🟥 cruzó LC · Fe 116.8→232.6 (+99%), Cr 0.6→1.7 (+168%)
+--            CA3179 MT LH 🟨 cruzó LP · Pb 1.5→4.5 (+197%)
+--            CA3170 MT LH 🔵 incipiente · Fe 103.0→149.2 (+45%)  · CA3178 MT LH 🔵 incipiente · PQ 83.5→120.4 (+44%)
+--          Los dos 🔵 son los mismos de la presentacion: el criterio viejo se conserva, solo se agrego «cruzó».

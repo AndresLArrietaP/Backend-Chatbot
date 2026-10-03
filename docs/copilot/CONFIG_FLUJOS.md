@@ -202,8 +202,16 @@ vuelve a tardar 4 s.
 > ✅ **Verificado en el editor (02/10):** lleva los Redactar `comp in`/`comp tipo` y la consulta real es
 > `CompTipo = '‹comp_tipo›'` (§ FIX CANÓNICO). El `concat` con `LIKE` de abajo es la versión anterior.
 Misma forma que `MD_triage` pero sobre `vw_TendenciaIncipienteMD`. `compartimiento` = palabra BASE
-(tracción/rueda/motor/hidráulico/mando/transmisión), default `tracción`. **Sin `modelo`**: la vista no
-desglosa por modelo (expone `Modelo='(todos)'` fijo), así que pedirlo solo daría 0 filas.
+(tracción/rueda/motor/hidráulico/mando/transmisión), default `tracción`.
+> 🔴 **(03/10) Entra `modelo`** — la vista nueva (BLOQUE 194) da **una fila por modelo** más `(todos)`, como el
+> triage. Sin filtro de modelo el flujo tomaría una fila cualquiera con `first()`. Pasos, **antes** de desplegar el DDL:
+> 1. Entrada nueva **`modelo`** (Texto). Descripción: «Modelo (980E, 930E…); (todos) si no lo nombran.»
+> 2. En el `Query`, después del `CompTipo`: `AND Modelo LIKE '%‹modelo›%'` — en el editor:
+>    `' AND Modelo LIKE ''%', if(empty(triggerBody()?['text_N']),'todos',triggerBody()?['text_N']), '%'''`
+>    (`text_N` = la ficha de la entrada `modelo`; insértala desde Contenido dinámico, no la escribas a mano).
+> 3. Tema 20: entrada `modelo` («Se debe solicitar» desmarcado, sin entidad → vacío) y pasarla al flujo.
+>    Desde el Tema 00 llega ya resuelta ([CONFIG_COMANDOS](CONFIG_COMANDOS.md), fila `/incipiente`).
+> Con la vista vieja (`Modelo='(todos)'` fijo) el filtro `todos` devuelve lo mismo que hoy: se puede montar ya.
 ```
 concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE ''%', ‹proyecto›, '%'' AND CompTipo COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%''')
 ```
@@ -298,4 +306,19 @@ blanco, se escribe el literal **`%`** (el SQL arma `LIKE '%' + ‹valor› + '%'
 - `tope` = "Máximo de filas. Escribir 200 (la entrada es obligatoria, no admite vacío)."
 
 ⚠ `compAbbr` lleva `COLLATE Latin1_General_CI_AI` para tolerar acentos y mayúsculas.
+
+🔴 **(03/10) Componente pegado: `/historial 3195 MTLH` → «No encontré datos».** `compAbbr` es `MT LH` con
+espacio y el `LIKE '%MTLH%'` no casa (el «6 meses» del caso de la presentación no tenía la culpa). Es el bug del
+24/09 que se curó en `MD_equipo_comp` y nunca llegó aquí. Cura = **traducir en el flujo** (ley 3), un Redactar
+**`comp_key`** antes del SQL (cada `‹compartimiento›` = la ficha de la entrada):
+```
+if(equals(trim(coalesce(‹compartimiento›,'')),'%'),'%',if(contains(toLower(replace(‹compartimiento›,' ','')),'hid'),'Hidr',if(or(startsWith(toLower(replace(‹compartimiento›,' ','')),'mt'),contains(toLower(replace(‹compartimiento›,' ','')),'tracc')),concat('MT',if(endsWith(toLower(replace(‹compartimiento›,' ','')),'rh'),'RH',if(endsWith(toLower(replace(‹compartimiento›,' ','')),'lh'),'LH',''))),if(or(startsWith(toLower(replace(‹compartimiento›,' ','')),'rd'),contains(toLower(replace(‹compartimiento›,' ','')),'rueda')),concat('RD',if(endsWith(toLower(replace(‹compartimiento›,' ','')),'rh'),'RH',if(endsWith(toLower(replace(‹compartimiento›,' ','')),'lh'),'LH',''))),if(contains(toLower(replace(‹compartimiento›,' ','')),'motor'),'Motor',replace(‹compartimiento›,' ',''))))))
+```
+y en el `Query` el filtro de componente pasa a comparar **sin espacios** contra esa salida:
+`... AND REPLACE(compAbbr,'' '','''') COLLATE Latin1_General_CI_AI LIKE ''%', outputs('comp_key'), '%'' AND ...`
+Casos: `MTLH` · `mt lh` · `MOTOR DE TRACCION LH` → `MTLH` · `hidráulico` · `hidr&#225;ulico` · `Sist. Hidr.` → `Hidr`
+(casa con `Sist.Hidr.`) · `rueda rh` · `rdrh` → `RDRH` · `motor` → `Motor` (no casa con `MTLH`) · `%` → `%`.
+⚠ `mt` y `tracc` van **antes** que `motor` (MOTOR DE TRACCION contiene «motor»).
+⚑ El mismo Redactar sirve a `MD_equipo_comp` y `MD_metal`, que hoy toleran `mtlh` pero no `hidráulico` ni la
+entidad HTML: ver el mapa 5.1b de [PENDIENTES](PENDIENTES.md).
 ⚠ Validado en SSMS antes de armarlo: **BLOQUE 72** (versión Tema 11) y **BLOQUE 74** (versión genérica).

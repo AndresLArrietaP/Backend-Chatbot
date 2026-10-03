@@ -74,7 +74,7 @@ más riesgo que la línea que ahorra.
 | Barrido detalle | proyecto, modelo | MD_flota · vista=vw_ObservadosBarridoMD · columna=DetalleTodosMD | no |
 | Barrido filtrado | proyecto, modelo, **columna** | MD_flota · vista=vw_ObservadosBarridoMD | no |
 | Triage de componente (flota) | proyecto, **modelo (IA)**, **compartimiento** | MD_triage · vista=vw_TriageMD (fija) · modelo=IA/(todos) · compartimiento=tracción | sí (+ recos MT) |
-| Tendencia incipiente | proyecto, **compartimiento** | MD_incipiente · vista=vw_TendenciaIncipienteMD (fija) · compartimiento=tracción | sí |
+| Tendencia incipiente | proyecto, **compartimiento**, **modelo** (03/10) | MD_incipiente · vista=vw_TendenciaIncipienteMD (fija) · compartimiento=tracción · modelo=(todos) | sí |
 | Último análisis por metal (flota) | proyecto, **modelo (IA)**, compartimiento, **parametros** | MD_ultmetalflota · vista=vw_UltimoMetalFlotaMD (fija en concat) · modelo=IA (default (todos)) · compartimiento=tracción | sí (+ recos solo MT) |
 | Ayuda / Glosario | — (usa la pregunta) | **SIN flujo** · Prompt `Ayuda KomfIA` | Prompt |
 | Ranking de acumulados (flota) | proyecto | MD_acumflota · vista=vw_AcumuladosFlotaMD (fija) | no |

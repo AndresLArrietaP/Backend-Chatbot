@@ -1191,7 +1191,14 @@ WITH s AS (
            Ni_ppm, Ni_LP, Ni_LC, Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC,
            Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC, Ca_ppm, Ca_LP, Ca_LC,
            Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC, Mg_ppm, Mg_LP, Mg_LC,
-           B_ppm, P_ppm, V100, TBN, TBN_LP
+           B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, Mo_ppm, Mo_LP, Mo_LC, V100, V40, TBN, TBN_LP, TBN_LC,
+           TAN, TAN_LP, TAN_LC, Oxidacion, Oxi_LP, Oxi_LC, Sulfatacion, Sulf_LP, Sulf_LC, Nitracion, Nit_LP, Nit_LC,
+           Hollin, Hollin_LP, Hollin_LC, Diesel, Diesel_LP, Diesel_LC, Agua, Agua_LP, Agua_LC,
+           ISO4, ISO4_LP, ISO4_LC, ISO6, ISO6_LP, ISO6_LC, ISO14, ISO14_LP, ISO14_LC,
+           Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+           Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_Mo, Estado_V100, Estado_V40,
+           Estado_TBN, Estado_TAN, Estado_Oxi, Estado_Sulf, Estado_Nit, Estado_Hollin, Estado_Diesel, Estado_Agua,
+           Estado_ISO4, Estado_ISO6, Estado_ISO14
     FROM [dbo].[vw_MuestrasRankeadas]
     WHERE rn_recencia <= 6
 ),
@@ -1202,53 +1209,60 @@ u AS (   /* El FORMATO (grupo, orden, Inv, Inf) ya no vive aqui: viene de vw_For
            f.Parametro, f.Grupo, f.Orden, f.Inf, f.Inv,
            CAST(p.Valor AS decimal(18,2)) AS Valor,
            CAST(p.LP AS decimal(18,2))    AS LP,
-           CAST(p.LC AS decimal(18,2))    AS LC
+           CAST(p.LC AS decimal(18,2))    AS LC,
+           p.Est
     /* Se recorre el FORMATO (no la lista de valores): asi aparecen tambien los parametros que el Excel
-       pide y la BD no mide -- salen con '—'. El OUTER APPLY busca el valor si existe. */
+       pide y la BD no mide -- salen con '—'. El OUTER APPLY busca el valor si existe.
+       03/10: los 30 parametros con su limite y su Estado_* de la fundacion (aqui P llevaba LP=240 fijo, B y
+       V100 sin limite, y el ISO no se leia). La viscosidad es banda: no tiene un LP/LC unico que dibujar, asi
+       que su linea queda vacia y el semaforo sale igual de Estado_V100. */
     FROM s
     INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = s.CompTipo
     OUTER APPLY (
-        SELECT v.Valor, v.LP, v.LC
+        SELECT v.Valor, v.LP, v.LC, v.Est
         FROM (VALUES
-            ('Fe',  s.Fe_ppm,    s.Fe_LP,  s.Fe_LC),
-            ('PQ',  s.Indice_PQ, s.PQ_LP,  s.PQ_LC),
-            ('Cr',  s.Cr_ppm,    s.Cr_LP,  s.Cr_LC),
-            ('Ni',  s.Ni_ppm,    s.Ni_LP,  s.Ni_LC),
-            ('Cu',  s.Cu_ppm,    s.Cu_LP,  s.Cu_LC),
-            ('Pb',  s.Pb_ppm,    s.Pb_LP,  s.Pb_LC),
-            ('Sn',  s.Sn_ppm,    s.Sn_LP,  s.Sn_LC),
-            ('Al',  s.Al_ppm,    s.Al_LP,  s.Al_LC),
-            ('Si',  s.Si_ppm,    s.Si_LP,  s.Si_LC),
-            ('Ca',  s.Ca_ppm,    s.Ca_LP,  s.Ca_LC),
-            ('Zn',  s.Zn_ppm,    s.Zn_LP,  s.Zn_LC),
-            ('K',   s.K_ppm,     s.K_LP,   s.K_LC),
-            ('Na',  s.Na_ppm,    s.Na_LP,  s.Na_LC),
-            ('B',   s.B_ppm,     NULL,     NULL),
-            /* ⚠ P: LP=240 HARDCODEADO, tal como estaba. vw_MuestrasRankeadas no expone P_LP/P_LC (ni los
-               de B), asi que no hay de donde leerlo. El Excel dice P LP=280 / LC=240: hoy usamos el LC
-               como LP. Pasarlo por la cadena de limites es un item propio del bloque C. */
-            ('P',   s.P_ppm,     240,      NULL),
-            ('Mg',  s.Mg_ppm,    s.Mg_LP,  s.Mg_LC),
-            ('V100',s.V100,      NULL,     NULL),
-            ('TBN', s.TBN,       s.TBN_LP, NULL)
-        ) v(Parametro, Valor, LP, LC)
+            ('Fe',  s.Fe_ppm,    s.Fe_LP,  s.Fe_LC,  s.Estado_Fe),
+            ('PQ',  s.Indice_PQ, s.PQ_LP,  s.PQ_LC,  s.Estado_PQ),
+            ('Cr',  s.Cr_ppm,    s.Cr_LP,  s.Cr_LC,  s.Estado_Cr),
+            ('Ni',  s.Ni_ppm,    s.Ni_LP,  s.Ni_LC,  s.Estado_Ni),
+            ('Cu',  s.Cu_ppm,    s.Cu_LP,  s.Cu_LC,  s.Estado_Cu),
+            ('Pb',  s.Pb_ppm,    s.Pb_LP,  s.Pb_LC,  s.Estado_Pb),
+            ('Sn',  s.Sn_ppm,    s.Sn_LP,  s.Sn_LC,  s.Estado_Sn),
+            ('Al',  s.Al_ppm,    s.Al_LP,  s.Al_LC,  s.Estado_Al),
+            ('Si',  s.Si_ppm,    s.Si_LP,  s.Si_LC,  s.Estado_Si),
+            ('Ca',  s.Ca_ppm,    s.Ca_LP,  s.Ca_LC,  s.Estado_Ca),
+            ('Zn',  s.Zn_ppm,    s.Zn_LP,  s.Zn_LC,  s.Estado_Zn),
+            ('K',   s.K_ppm,     s.K_LP,   s.K_LC,   s.Estado_K),
+            ('Na',  s.Na_ppm,    s.Na_LP,  s.Na_LC,  s.Estado_Na),
+            ('Mg',  s.Mg_ppm,    s.Mg_LP,  s.Mg_LC,  s.Estado_Mg),
+            ('B',   s.B_ppm,     s.B_LP,   s.B_LC,   s.Estado_B),
+            ('P',   s.P_ppm,     s.P_LP,   s.P_LC,   s.Estado_P),
+            ('Mo',  s.Mo_ppm,    s.Mo_LP,  s.Mo_LC,  s.Estado_Mo),
+            ('TBN', s.TBN,       s.TBN_LP, s.TBN_LC, s.Estado_TBN),
+            ('TAN', s.TAN,       s.TAN_LP, s.TAN_LC, s.Estado_TAN),
+            ('Oxidacion',   s.Oxidacion,   s.Oxi_LP,    s.Oxi_LC,    s.Estado_Oxi),
+            ('Sulfatacion', s.Sulfatacion, s.Sulf_LP,   s.Sulf_LC,   s.Estado_Sulf),
+            ('Nitracion',   s.Nitracion,   s.Nit_LP,    s.Nit_LC,    s.Estado_Nit),
+            ('Hollin',      s.Hollin,      s.Hollin_LP, s.Hollin_LC, s.Estado_Hollin),
+            ('Diesel',      s.Diesel,      s.Diesel_LP, s.Diesel_LC, s.Estado_Diesel),
+            ('Agua',        s.Agua,        s.Agua_LP,   s.Agua_LC,   s.Estado_Agua),
+            ('V100',  s.V100,  NULL,       NULL,       s.Estado_V100),
+            ('V40',   s.V40,   NULL,       NULL,       s.Estado_V40),
+            ('ISO>4', s.ISO4,  s.ISO4_LP,  s.ISO4_LC,  s.Estado_ISO4),
+            ('ISO>6', s.ISO6,  s.ISO6_LP,  s.ISO6_LC,  s.Estado_ISO6),
+            ('ISO>14',s.ISO14, s.ISO14_LP, s.ISO14_LC, s.Estado_ISO14)
+        ) v(Parametro, Valor, LP, LC, Est)
         WHERE v.Parametro = f.Parametro
     ) p
 ),
 v AS (
+    /* Ningun modulo recalcula el semaforo: la marca sale de Estado_* (la fundacion ya resuelve el sentido de
+       los aditivos y el 0 que no es medicion). El ISO va entero. */
     SELECT u.*,
-        CONVERT(varchar(24), CAST(u.Valor AS decimal(18,1)))
-        + CASE
-            WHEN u.Valor IS NULL THEN ''
-            WHEN u.Inv = 1 THEN CASE WHEN u.LP IS NOT NULL AND u.Valor > 0 AND u.Valor < u.LP THEN ':P' ELSE '' END
-            ELSE CASE WHEN u.Valor > ISNULL(u.LC, 999999) THEN ':C'
-                      WHEN u.Valor > ISNULL(u.LP, 999999) THEN ':P' ELSE '' END
-          END AS Vstr,
-        CASE
-            WHEN u.Valor IS NULL THEN 0
-            WHEN u.Inv = 1 THEN CASE WHEN u.LP IS NOT NULL AND u.Valor > 0 AND u.Valor < u.LP THEN 1 ELSE 0 END
-            ELSE CASE WHEN u.Valor > ISNULL(u.LP, 999999) THEN 1 ELSE 0 END
-          END AS FueraUmbral
+        CASE WHEN u.Parametro LIKE 'ISO%' THEN CONVERT(varchar(24), CAST(u.Valor AS decimal(18,0)))
+             ELSE CONVERT(varchar(24), CAST(u.Valor AS decimal(18,1))) END
+        + CASE u.Est WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Vstr,
+        CASE WHEN u.Est IN ('CRITICO', 'PRECAUCION') THEN 1 ELSE 0 END AS FueraUmbral
     FROM u
 )
 , g AS (
@@ -1482,9 +1496,9 @@ SELECT
     CONVERT(varchar(20),CAST(Hollin     AS decimal(18,1))) + CASE Estado_Hollin WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Hollin,
     CONVERT(varchar(20),CAST(Diesel     AS decimal(18,1))) + CASE Estado_Diesel WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Diesel,
     CONVERT(varchar(20),CAST(Agua       AS decimal(18,1))) + CASE Estado_Agua   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS Agua,
-    CONVERT(varchar(20),CAST(ISO4       AS decimal(18,1))) + CASE Estado_ISO4   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO4,
-    CONVERT(varchar(20),CAST(ISO6       AS decimal(18,1))) + CASE Estado_ISO6   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO6,
-    CONVERT(varchar(20),CAST(ISO14      AS decimal(18,1))) + CASE Estado_ISO14  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO14,
+    CONVERT(varchar(20),CAST(ISO4       AS decimal(18,0))) + CASE Estado_ISO4   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO4,
+    CONVERT(varchar(20),CAST(ISO6       AS decimal(18,0))) + CASE Estado_ISO6   WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO6,
+    CONVERT(varchar(20),CAST(ISO14      AS decimal(18,0))) + CASE Estado_ISO14  WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS ISO14,
     CONVERT(varchar(20),CAST(V40        AS decimal(18,1))) + CASE Estado_V40    WHEN 'CRITICO' THEN ':C' WHEN 'PRECAUCION' THEN ':P' ELSE '' END AS V40,
     CONVERT(varchar(20),CAST(Refrigerante AS decimal(18,1))) AS Refrigerante,
     CONVERT(varchar(20),CAST(V100      AS decimal(18,1))) AS V100,
@@ -3118,50 +3132,65 @@ LEFT JOIN (
            STRING_AGG(rowMD, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS b
     FROM (   /* La tabla la genera el FORMATO (vw_FormatoParametro), no una lista hardcodeada: el
                 orden, los grupos y que parametros aparecen dependen del componente. */
+    /* 03/10 -- los limites y el semaforo salen de la fundacion para los 30 parametros del formato: aqui P, B y
+       V100 iban con NULL fijo y el ISO no estaba, asi que /ultimo mostraba «—» donde Antapaccay si tiene limite.
+       La viscosidad es una banda: cada celda muestra piso–techo. El ISO va entero (es un codigo, no una medida). */
     SELECT a.Equipo, a.Compartimiento, f.Orden,
         CASE WHEN ROW_NUMBER() OVER (PARTITION BY a.Equipo, a.Compartimiento, f.Grupo ORDER BY f.Orden) = 1
              THEN N'| **' + f.Grupo + N'** | | | |' + NCHAR(10) ELSE N'' END
       + N'| ' + f.Parametro + N' | '
-      + ISNULL(CONVERT(varchar(20),CAST(p.LP AS decimal(18,1))), N'—') + N' | '
-      + ISNULL(CONVERT(varchar(20),CAST(p.LC AS decimal(18,1))), N'—') + N' | '
-      + CASE WHEN p.Valor IS NULL THEN N'—'
-             /* Inv=1 (aditivos y TBN): la alerta es por DEBAJO, el aditivo se agota */
-             WHEN f.Inv = 1 THEN CONVERT(varchar(20),CAST(p.Valor AS decimal(18,1)))
-                  + CASE WHEN p.LC IS NOT NULL AND p.Valor > 0 AND p.Valor < p.LC THEN N' 🟥'
-                         WHEN p.LP IS NOT NULL AND p.Valor > 0 AND p.Valor < p.LP THEN N' 🟨'
-                         ELSE N'' END
-             ELSE CONVERT(varchar(20),CAST(p.Valor AS decimal(18,1)))
-                  + CASE WHEN p.Valor > ISNULL(p.LC, 9999) THEN N' 🟥'
-                         WHEN p.Valor > ISNULL(p.LP, 9999) THEN N' 🟨'
-                         ELSE N'' END
-        END
+      + CASE WHEN p.esBanda = 1 THEN COALESCE(t.LP + N'–' + t.LPs, N'≥ ' + t.LP, N'≤ ' + t.LPs, N'—')
+             ELSE ISNULL(t.LP, N'—') END + N' | '
+      + CASE WHEN p.esBanda = 1 THEN COALESCE(t.LC + N'–' + t.LCs, N'≥ ' + t.LC, N'≤ ' + t.LCs, N'—')
+             ELSE ISNULL(t.LC, N'—') END + N' | '
+      + ISNULL(t.Valor, N'—')
+      + CASE p.Est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END
       + N' |' AS rowMD
     FROM (SELECT * FROM [dbo].[vw_UltimoAnalisisAceite] WHERE Equipo = me.[Code]) a
     INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = a.CompTipo
     OUTER APPLY (
-        SELECT v.Valor, v.LP, v.LC
+        SELECT v.Valor, v.LP, v.LC, v.LPs, v.LCs, v.Est, v.esBanda
         FROM (VALUES
-            (N'Fe',  a.Fe_ppm,    a.Fe_LP,  a.Fe_LC),
-            (N'PQ',  a.Indice_PQ, a.PQ_LP,  a.PQ_LC),
-            (N'Cr',  a.Cr_ppm,    a.Cr_LP,  a.Cr_LC),
-            (N'Ni',  a.Ni_ppm,    a.Ni_LP,  a.Ni_LC),
-            (N'Cu',  a.Cu_ppm,    a.Cu_LP,  a.Cu_LC),
-            (N'Pb',  a.Pb_ppm,    a.Pb_LP,  a.Pb_LC),
-            (N'Sn',  a.Sn_ppm,    a.Sn_LP,  a.Sn_LC),
-            (N'Al',  a.Al_ppm,    a.Al_LP,  a.Al_LC),
-            (N'Si',  a.Si_ppm,    a.Si_LP,  a.Si_LC),
-            (N'Ca',  a.Ca_ppm,    a.Ca_LP,  a.Ca_LC),
-            (N'Zn',  a.Zn_ppm,    a.Zn_LP,  a.Zn_LC),
-            (N'K',   a.K_ppm,     a.K_LP,   a.K_LC),
-            (N'Na',  a.Na_ppm,    a.Na_LP,  a.Na_LC),
-            (N'Mg',  a.Mg_ppm,    a.Mg_LP,  a.Mg_LC),
-            (N'B',   a.B_ppm,     NULL,     NULL),
-            (N'P',   a.P_ppm,     NULL,     NULL),
-            (N'V100',a.V100,      NULL,     NULL),
-            (N'TBN', a.TBN,       a.TBN_LP, NULL)
-        ) v(Parametro, Valor, LP, LC)
+            (N'Fe',  a.Fe_ppm,    a.Fe_LP,  a.Fe_LC,  NULL, NULL, a.Estado_Fe, 0),
+            (N'PQ',  a.Indice_PQ, a.PQ_LP,  a.PQ_LC,  NULL, NULL, a.Estado_PQ, 0),
+            (N'Cr',  a.Cr_ppm,    a.Cr_LP,  a.Cr_LC,  NULL, NULL, a.Estado_Cr, 0),
+            (N'Ni',  a.Ni_ppm,    a.Ni_LP,  a.Ni_LC,  NULL, NULL, a.Estado_Ni, 0),
+            (N'Cu',  a.Cu_ppm,    a.Cu_LP,  a.Cu_LC,  NULL, NULL, a.Estado_Cu, 0),
+            (N'Pb',  a.Pb_ppm,    a.Pb_LP,  a.Pb_LC,  NULL, NULL, a.Estado_Pb, 0),
+            (N'Sn',  a.Sn_ppm,    a.Sn_LP,  a.Sn_LC,  NULL, NULL, a.Estado_Sn, 0),
+            (N'Al',  a.Al_ppm,    a.Al_LP,  a.Al_LC,  NULL, NULL, a.Estado_Al, 0),
+            (N'Si',  a.Si_ppm,    a.Si_LP,  a.Si_LC,  NULL, NULL, a.Estado_Si, 0),
+            (N'Ca',  a.Ca_ppm,    a.Ca_LP,  a.Ca_LC,  NULL, NULL, a.Estado_Ca, 0),
+            (N'Zn',  a.Zn_ppm,    a.Zn_LP,  a.Zn_LC,  NULL, NULL, a.Estado_Zn, 0),
+            (N'K',   a.K_ppm,     a.K_LP,   a.K_LC,   NULL, NULL, a.Estado_K,  0),
+            (N'Na',  a.Na_ppm,    a.Na_LP,  a.Na_LC,  NULL, NULL, a.Estado_Na, 0),
+            (N'Mg',  a.Mg_ppm,    a.Mg_LP,  a.Mg_LC,  NULL, NULL, a.Estado_Mg, 0),
+            (N'B',   a.B_ppm,     a.B_LP,   a.B_LC,   NULL, NULL, a.Estado_B,  0),
+            (N'P',   a.P_ppm,     a.P_LP,   a.P_LC,   NULL, NULL, a.Estado_P,  0),
+            (N'Mo',  a.Mo_ppm,    a.Mo_LP,  a.Mo_LC,  NULL, NULL, a.Estado_Mo, 0),
+            (N'TBN', a.TBN,       a.TBN_LP, a.TBN_LC, NULL, NULL, a.Estado_TBN, 0),
+            (N'TAN', a.TAN,       a.TAN_LP, a.TAN_LC, NULL, NULL, a.Estado_TAN, 0),
+            (N'Oxidacion',   a.Oxidacion,   a.Oxi_LP,    a.Oxi_LC,    NULL, NULL, a.Estado_Oxi,    0),
+            (N'Sulfatacion', a.Sulfatacion, a.Sulf_LP,   a.Sulf_LC,   NULL, NULL, a.Estado_Sulf,   0),
+            (N'Nitracion',   a.Nitracion,   a.Nit_LP,    a.Nit_LC,    NULL, NULL, a.Estado_Nit,    0),
+            (N'Hollin',      a.Hollin,      a.Hollin_LP, a.Hollin_LC, NULL, NULL, a.Estado_Hollin, 0),
+            (N'Diesel',      a.Diesel,      a.Diesel_LP, a.Diesel_LC, NULL, NULL, a.Estado_Diesel, 0),
+            (N'Agua',        a.Agua,        a.Agua_LP,   a.Agua_LC,   NULL, NULL, a.Estado_Agua,   0),
+            (N'Refrigerante',a.Refrigerante, NULL,       NULL,        NULL, NULL, NULL,            0),
+            (N'V100', a.V100, a.V100_LPI, a.V100_LCI, a.V100_LPS, a.V100_LCS, a.Estado_V100, 1),
+            (N'V40',  a.V40,  a.V40_LPI,  a.V40_LCI,  a.V40_LPS,  a.V40_LCS,  a.Estado_V40,  1),
+            (N'ISO>4',  a.ISO4,  a.ISO4_LP,  a.ISO4_LC,  NULL, NULL, a.Estado_ISO4,  0),
+            (N'ISO>6',  a.ISO6,  a.ISO6_LP,  a.ISO6_LC,  NULL, NULL, a.Estado_ISO6,  0),
+            (N'ISO>14', a.ISO14, a.ISO14_LP, a.ISO14_LC, NULL, NULL, a.Estado_ISO14, 0)
+        ) v(Parametro, Valor, LP, LC, LPs, LCs, Est, esBanda)
         WHERE v.Parametro = f.Parametro
     ) p
+    CROSS APPLY (SELECT
+        CASE WHEN f.Parametro LIKE N'ISO%' THEN CONVERT(varchar(20), CAST(p.Valor AS decimal(18,0))) ELSE CONVERT(varchar(20), CAST(p.Valor AS decimal(18,1))) END AS Valor,
+        CASE WHEN f.Parametro LIKE N'ISO%' THEN CONVERT(varchar(20), CAST(p.LP    AS decimal(18,0))) ELSE CONVERT(varchar(20), CAST(p.LP    AS decimal(18,1))) END AS LP,
+        CASE WHEN f.Parametro LIKE N'ISO%' THEN CONVERT(varchar(20), CAST(p.LC    AS decimal(18,0))) ELSE CONVERT(varchar(20), CAST(p.LC    AS decimal(18,1))) END AS LC,
+        CONVERT(varchar(20), CAST(p.LPs AS decimal(18,1))) AS LPs,
+        CONVERT(varchar(20), CAST(p.LCs AS decimal(18,1))) AS LCs) t
 ) filas GROUP BY Equipo, Compartimiento
 ) tb  ON tb.Equipo=u.Equipo AND tb.Compartimiento=u.Compartimiento
 ) x;
@@ -3340,20 +3369,47 @@ JOIN (
     /* 'base' se lleva TODO lo que necesita la tabla de contexto para que 'unpv' no vuelva a leer la
        fundacion: antes eran DOS lecturas de vw_MuestrasRankeadas para la misma ventana de 6 muestras.
        Mismo anti-patron del BLOQUE 117 (un CTE no se materializa: cada referencia lo re-ejecuta). */
-    SELECT Equipo, Proyecto, Modelo, Compartimiento, rn_recencia,
-        Horometro, HorasDeAceite, HorasComponente, CM, Grado, Estado_General,
+    SELECT Equipo, Proyecto, Modelo, Compartimiento, CompTipo, rn_recencia,
+        Horometro, HorasDeAceite, HorasComponente, CM, Grado,
+        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+        Estado_Ca, Estado_Zn, Estado_Mg, Estado_K, Estado_Na, Estado_B, Estado_P, Estado_Mo,
+        Estado_V100, Estado_V40, Estado_TAN, Estado_TBN, Estado_Oxi, Estado_Sulf, Estado_Nit,
+        Estado_Agua, Estado_Hollin, Estado_Diesel, Estado_ISO4, Estado_ISO6, Estado_ISO14,
         CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr,
         ISNULL(FORMAT(FechaMuestreo,'dd-MMM'), N'—') AS colLabel
     FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Equipo = me.[Code]) vw_MuestrasRankeadas
     WHERE rn_recencia <= 6
 ) b
+    /* 03/10: el Estado sale de las MISMAS celdas que la tabla (la peor con Inf = 0), como el historial y el
+       triage. Con Estado_General el 16-Sep del CA3195 salia 🟢 aqui y 🟥 en el historial (ISO>6 = 22). */
+    OUTER APPLY (
+        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1
+                        WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
+        FROM (VALUES
+            (N'Fe', b.Estado_Fe), (N'PQ', b.Estado_PQ), (N'Cr', b.Estado_Cr), (N'Ni', b.Estado_Ni),
+            (N'Cu', b.Estado_Cu), (N'Pb', b.Estado_Pb), (N'Sn', b.Estado_Sn), (N'Al', b.Estado_Al),
+            (N'Si', b.Estado_Si), (N'Ca', b.Estado_Ca), (N'Zn', b.Estado_Zn), (N'Mg', b.Estado_Mg),
+            (N'K', b.Estado_K), (N'Na', b.Estado_Na), (N'B', b.Estado_B), (N'P', b.Estado_P),
+            (N'Mo', b.Estado_Mo), (N'V100', b.Estado_V100), (N'V40', b.Estado_V40), (N'TAN', b.Estado_TAN),
+            (N'TBN', b.Estado_TBN), (N'Oxidacion', b.Estado_Oxi), (N'Sulfatacion', b.Estado_Sulf),
+            (N'Nitracion', b.Estado_Nit), (N'Agua', b.Estado_Agua), (N'Hollin', b.Estado_Hollin),
+            (N'Diesel', b.Estado_Diesel), (N'ISO>4', b.Estado_ISO4), (N'ISO>6', b.Estado_ISO6),
+            (N'ISO>14', b.Estado_ISO14)
+        ) e(metal, est)
+        CROSS APPLY (
+            SELECT TOP 1 f.Inf
+            FROM [dbo].[vw_FormatoParametro] f
+            WHERE f.Parametro = e.metal AND f.CompTipo IN (b.CompTipo, N'(CRUZADO)')
+            ORDER BY CASE WHEN f.CompTipo = b.CompTipo THEN 0 ELSE 1 END
+        ) ff
+    ) pe
     CROSS APPLY (VALUES
             (1, N'SMR', ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—')),
             (2, N'Hrs Aceite', ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—')),
             (3, N'Hrs Comp', ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—')),
             (6, N'Grado', ISNULL(Grado, N'—')),
             (4, N'CM', ISNULL(CM, N'—')),
-            (5, N'Estado', CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END)
+            (5, N'Estado', CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END)
     ) v(ord, etq, val)
 ) unpv GROUP BY Equipo, compAbbr, ord, etq
 ) rows_ GROUP BY Equipo, compAbbr
@@ -3471,6 +3527,8 @@ SELECT
              THEN N'_⚠ **Sin límites (LP/LC) cargados** para los metales de desgaste de este componente: los valores se '
                 + N'muestran, pero no hay contra qué compararlos, y el estado **no se puede evaluar**. Esto **no** significa que estén dentro de límite._' + NCHAR(10) + NCHAR(10)
              ELSE N'' END
+      /* Mismo pie que el triage: un Zn 🟥 en un MT con la fila Estado en 🟢 se lee como contradiccion. */
+      + N'_El **Estado** sale de las **mismas celdas** que ves en la tabla. Algunos parámetros son **informativos** para el área — `K`, `Na`, `B`, y `Ca`/`Zn`/`Mg` en Motor de Tracción, donde son contaminantes: se ven con su marca, pero **no cuentan** para el Estado._' + NCHAR(10) + NCHAR(10)
       /* Dos 'acumulados' distintos con el mismo nombre coloquial confunden: se dice cual es cual. */
       + N'_**Acum** = suma del metal, solo en metales de desgaste y con el criterio del área: en **Motor de Tracción** las muestras previas al dializado y los cambios, en **Motor** todas, y en **Rueda** e **Hidráulico** solo los cambios. En MT y Motor está acotado al componente instalado hoy; en rueda e hidráulico no, porque la base no registra cuál lo está. Un `—` significa **no se puede calcular**, no cero._' + NCHAR(10) + NCHAR(10)
       + N'_¿Quieres el **resumen estadístico** (promedio, σ, nº fuera de límite) o la **gráfica** de un metal?_'
@@ -3767,7 +3825,7 @@ FROM s
                             WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
                             ELSE 3 END) AS peorFam,
                    STRING_AGG(CONVERT(nvarchar(max),
-                       v.metal + N' (' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
+                       v.metal + N' (' + CASE WHEN v.metal LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(v.val AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) END + N')'
                      + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N' · ')
                        WITHIN GROUP (ORDER BY ff.Orden) AS txt
             FROM (VALUES
@@ -3859,7 +3917,7 @@ FROM s
                             WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
                             ELSE 3 END) AS peorFam,
                    STRING_AGG(CONVERT(nvarchar(max),
-                       v.metal + N' (' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
+                       v.metal + N' (' + CASE WHEN v.metal LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(v.val AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) END + N')'
                      + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N' · ')
                        WITHIN GROUP (ORDER BY ff.Orden) AS txt
             FROM (VALUES
@@ -3949,7 +4007,7 @@ o AS (
                             WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
                             ELSE 3 END) AS peorFam,
                    STRING_AGG(CONVERT(nvarchar(max),
-                       v.metal + N' (' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
+                       v.metal + N' (' + CASE WHEN v.metal LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(v.val AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) END + N')'
                      + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N' · ')
                        WITHIN GROUP (ORDER BY ff.Orden) AS txt
             FROM (VALUES
@@ -4398,7 +4456,7 @@ rows_ AS (   -- 1 fila de tabla por equipo+componente. Los metales se agregan SO
                             WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
                             ELSE 3 END) AS peorFam,
                    STRING_AGG(CONVERT(nvarchar(max),
-                       v.metal + N'(' + CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) + N')'
+                       v.metal + N'(' + CASE WHEN v.metal LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(v.val AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) END + N')'
                      + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N', ')
                        WITHIN GROUP (ORDER BY ff.Orden) AS txt
             FROM (VALUES
@@ -4516,7 +4574,7 @@ SELECT
          ⛔ Y se nombran EN PROSA, en el pie, una sola vez. Nunca una etiqueta pegada al dato:
             ver la REGLA PERMANENTE DE 'Inf' en la cabecera de vw_FormatoParametro. */
       + NCHAR(10) + NCHAR(10)
-      + N'_El **Estado** y el conteo salen de las **mismas celdas** que ves en la tabla. Se muestran también algunos parámetros que el área tiene definidos como **informativos** — `K`, `Na`, `B`, y `Ca`/`Zn`/`Mg`/`Mo` en Motor de Tracción, donde son contaminantes: se ven con su valor, pero **no cuentan** como observación._'
+      + N'_El **Estado** y el conteo salen de las **mismas celdas** que ves en la tabla. Se muestran también algunos parámetros que el área tiene definidos como **informativos** — `K`, `Na`, `B`, y `Ca`/`Zn`/`Mg` en Motor de Tracción, donde son contaminantes: se ven con su valor, pero **no cuentan** como observación._'
     AS nvarchar(max)) AS MD
 FROM body b
 LEFT JOIN recoblock rb ON rb.Proyecto=b.Proyecto AND rb.ModeloG=b.ModeloG AND rb.CompTipo=b.CompTipo;
@@ -4528,172 +4586,140 @@ GO
    reportar ruido de laboratorio. El BLOQUE 84 midio que el 46% de las alertas eran saltos <1 ppm,
    casi todos de metales de traza (Cr 53/54, Ni 14/15, Al 50/69). */
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaIncipienteMD] AS
-/* 30/09 -- FILTRO ABAJO (mismo patron que curo /condicionmt: 146 s -> 1,4 s, y /diagcompleto).
-   La logica va en CROSS APPLY sobre [Mine].[MiningProject] y CADA lectura pesada lleva el filtro
-   (Proyecto = mp.[Name]), asi que ninguna rama calcula mas que ese proyecto. Los CTE van desplegados:
-   un APPLY no admite WITH y SQL Server ya los trata como macros. Misma logica y salida. Respaldo: respaldo/DDL_vistas_2026-09-30_antes_filtro_abajo.sql */
-SELECT mp.[Name] AS Proyecto, x.[Modelo], x.[CompTipo], x.[Observados], x.[Recomendaciones], x.[MD]
+/* 03/10 -- UNA sola lectura de la fundacion (antes eran tres: universo, cuerpo y limites eran copias de la
+   misma cadena, y cada copia volvia a leer el proyecto; en la presentacion del 02/10 no respondio).
+   Filtro abajo por MiningProject; un GROUP BY GROUPING SETS da a la vez las filas por equipo y las de
+   limites, y la lista de metales se arma con CONCAT_WS sobre los 9 fijos (sin STRING_AGG anidado).
+   + Modelo: filas por modelo real y '(todos)' = los modelos con limites (como el resto de vistas de flota).
+   + 🟥/🟨 «cruzó»: la ultima muestra ya paso el limite viniendo de un historial por debajo de el (el
+     promedio de las 6 anteriores < LP). Antes se descartaba por «ya observado» y un salto como el PQ del
+     CA3195 (≈50 -> 233) no salia en la lista que existe justamente para eso. Lo cronico (promedio ya sobre
+     el LP) sigue fuera: eso es del barrido, no de una tendencia nueva.
+   GROUPING_ID(Equipo, compAbbr, metal, Orden): 3 = fila de equipo · 12 = fila de metal (limites). */
+SELECT mp.[Name] AS Proyecto, x.Modelo, x.CompTipo,
+       CAST(NULL AS nvarchar(max)) AS Observados,
+       CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+       x.MD
 FROM [Mine].[MiningProject] mp
 CROSS APPLY (
-SELECT
-    u.Proyecto, N'(todos)' AS Modelo, u.CompTipo,
-    CAST(NULL AS nvarchar(max)) AS Observados,
-    CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+SELECT a.ModeloG AS Modelo, a.CompTipo,
     CAST(
-        N'**Tendencia incipiente 🔵 🟧 · ' + CASE u.CompTipo WHEN 'TRACCION' THEN N'Motores de Tracción' WHEN 'HIDRAULICO' THEN N'Sistemas Hidráulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE u.CompTipo END
-      + N' · ' + u.Proyecto + N'** · '
-      + CASE WHEN u.Neval = 0 THEN N'sin límites cargados'
-             ELSE CAST(ISNULL(b.Ninc, 0) AS nvarchar(10)) + N' de ' + CAST(u.Neval AS nvarchar(10)) + N' evaluados' END + NCHAR(10)
-      + CASE WHEN u.Neval = 0 THEN
+        N'**Tendencia incipiente · ' + CASE a.CompTipo WHEN 'TRACCION' THEN N'Motores de Tracción' WHEN 'HIDRAULICO' THEN N'Sistemas Hidráulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE a.CompTipo END
+      + N' · ' + mp.[Name] + CASE WHEN a.ModeloG <> N'(todos)' THEN N' · ' + a.ModeloG ELSE N'' END + N'** · '
+      + CASE WHEN a.Neval = 0 THEN N'sin límites cargados'
+             ELSE CAST(a.Ninc AS nvarchar(10)) + N' de ' + CAST(a.Neval AS nvarchar(10)) + N' evaluados' END + NCHAR(10)
+      + CASE WHEN a.Neval = 0 THEN
             N'_No hay límites (LP) cargados para este componente en este proyecto: no hay contra qué comparar, por eso no se evalúa. ⚠ Esto **no** significa que estén sanos._'
         ELSE
-            N'_Última muestra vs. el promedio de las 6 anteriores. Se listan los que subieron ≥40% sobre ese promedio y ya están en la mitad superior del límite (≥50% del LP), sin superarlo todavía. Se descartan las variaciones menores a 1 ppm (ruido de laboratorio)._'
-          + CASE WHEN u.Nsin > 0 THEN NCHAR(10) + N'_⚠ ' + CAST(u.Nsin AS nvarchar(10)) + N' sin límites cargados: no evaluados._' ELSE N'' END
+            N'_Última muestra vs. el promedio de las 6 anteriores: se listan los que subieron ≥40% sobre ese promedio y ya están en la mitad superior del límite (≥50% del LP). '
+          + N'🟥/🟨 **cruzó**: la última muestra ya pasó el LC/LP viniendo de un historial por debajo de él · 🟧 **acelerada**: subió ≥80% · 🔵 **incipiente**: subió 40-80%, aún bajo el LP. '
+          + N'Se descartan las variaciones menores a 1 ppm (ruido de laboratorio)._'
+          + CASE WHEN a.Nsin > 0 THEN NCHAR(10) + N'_⚠ ' + CAST(a.Nsin AS nvarchar(10)) + N' sin límites cargados: no evaluados._' ELSE N'' END
         END
-      + CASE WHEN b.bodyMD IS NOT NULL THEN
+      + CASE WHEN a.Ninc > 0 THEN
             NCHAR(10) + NCHAR(10)
           + N'| Equipo | Componente | Tendencia | Parámetros (prom' + N'→' + N'últ) |' + NCHAR(10)
-          + N'|---|---|---|---|' + NCHAR(10) + b.bodyMD
-          + CASE WHEN b.Ninc > b.Nmostrados THEN NCHAR(10) + NCHAR(10) + N'_Mostrando ' + CAST(b.Nmostrados AS nvarchar(10)) + N' de ' + CAST(b.Ninc AS nvarchar(10)) + N', los de mayor variación._' ELSE N'' END
+          + N'|---|---|---|---|' + NCHAR(10) + a.bodyMD
+          + CASE WHEN a.Ninc > 25 THEN NCHAR(10) + NCHAR(10) + N'_Mostrando 25 de ' + CAST(a.Ninc AS nvarchar(10)) + N', los más severos primero._' ELSE N'' END
           + NCHAR(10) + NCHAR(10)
           + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
-          + N'| Metal | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(lb.b, N'_—_')
-        WHEN u.Neval > 0 THEN
+          + N'| Metal | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(a.limMD, N'| — | | |')
+        WHEN a.Neval > 0 THEN
             NCHAR(10) + NCHAR(10) + N'_Ninguno: ningún equipo de este componente muestra desviación incipiente sobre su comportamiento histórico._'
         ELSE N'' END
     AS nvarchar(max)) AS MD
-FROM (   -- universo: evaluables (con limite) vs sin limites cargados. Sale de agg, NO de s:
-            -- cada referencia extra a la fundacion la vuelve a expandir (los CTE no se materializan).
-    SELECT Proyecto, CompTipo,
-        COUNT(CASE WHEN tieneLP = 1 THEN 1 END) AS Neval,
-        COUNT(CASE WHEN tieneLP = 0 THEN 1 END) AS Nsin
+FROM (
+    SELECT ModeloG, CompTipo,
+        SUM(CASE WHEN gid = 3 AND tieneLP = 1 THEN 1 ELSE 0 END) AS Neval,
+        SUM(CASE WHEN gid = 3 AND tieneLP = 0 THEN 1 ELSE 0 END) AS Nsin,
+        SUM(CASE WHEN gid = 3 AND nDisp > 0 THEN 1 ELSE 0 END)   AS Ninc,
+        STRING_AGG(CASE WHEN gid = 3 AND nDisp > 0 AND sk <= 25 THEN CAST(
+            N'| ' + Equipo + N' | ' + compAbbr + N' | '
+          + CASE sev WHEN 0 THEN N'🟥 cruzó LC' WHEN 1 THEN N'🟨 cruzó LP' WHEN 2 THEN N'🟧 acelerada' ELSE N'🔵 incipiente' END
+          + N' | ' + mets + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS bodyMD,
+        STRING_AGG(CASE WHEN gid = 12 AND nDisp > 0 THEN CAST(
+            N'| ' + metal + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(LP AS decimal(18,1))), N'—')
+          + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(LC AS decimal(18,1))), N'—') + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS limMD
     FROM (
-        SELECT Proyecto, CompTipo, Equipo, Compartimiento,
-               MAX(CASE WHEN LP IS NOT NULL THEN 1 ELSE 0 END) AS tieneLP
-        FROM (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo)
-    SELECT Proyecto, Equipo, Compartimiento, CompTipo, compAbbr, metal, Orden,
-        MAX(CASE WHEN rn_recencia = 1 THEN Valor END) AS ult,
-        MAX(CASE WHEN rn_recencia = 1 THEN LP END)    AS LP,
-        MAX(CASE WHEN rn_recencia = 1 THEN LC END)    AS LC,
-        AVG(CASE WHEN rn_recencia BETWEEN 2 AND 7 THEN Valor END) AS prom_prev,
-        SUM(CASE WHEN rn_recencia BETWEEN 2 AND 7 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
-    FROM (   -- ultimas 7 muestras por equipo+compartimiento, un renglon por metal de desgaste
-    SELECT Proyecto, Equipo, Compartimiento, CompTipo, rn_recencia,
-        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr,
-        p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
-    FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Proyecto = mp.[Name]) vw_MuestrasRankeadas
-    CROSS APPLY (VALUES
-        (N'Fe',1,Fe_ppm,Fe_LP,Fe_LC),
-        (N'PQ',2,Indice_PQ,PQ_LP,PQ_LC),
-        (N'Cr',3,Cr_ppm,Cr_LP,Cr_LC),
-        (N'Ni',4,Ni_ppm,Ni_LP,Ni_LC),
-        (N'Cu',5,Cu_ppm,Cu_LP,Cu_LC),
-        (N'Pb',6,Pb_ppm,Pb_LP,Pb_LC),
-        (N'Sn',7,Sn_ppm,Sn_LP,Sn_LC),
-        (N'Al',8,Al_ppm,Al_LP,Al_LC),
-        (N'Si',9,Si_ppm,Si_LP,Si_LC)
-    ) p(metal, Orden, Valor, LP, LC)
-    WHERE EsDDI = 0 AND rn_recencia <= 7
-) s GROUP BY Proyecto, Equipo, Compartimiento, CompTipo, compAbbr, metal, Orden
-) agg GROUP BY Proyecto, CompTipo, Equipo, Compartimiento
-    ) z GROUP BY Proyecto, CompTipo
-) u
-LEFT JOIN (
-    SELECT Proyecto, CompTipo, MAX(Ninc) AS Ninc, COUNT(*) AS Nmostrados,
-        STRING_AGG(CAST(N'| ' + Equipo + N' | ' + compAbbr + N' | '
-           + CASE WHEN sev = 1 THEN N'🟧 acelerada' ELSE N'🔵 incipiente' END
-           + N' | ' + mets + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY rn) AS bodyMD
-    FROM (   -- lo mas severo primero, para que el tope nunca corte lo importante
-    SELECT *, ROW_NUMBER() OVER (PARTITION BY Proyecto, CompTipo ORDER BY sev, maxpct DESC, Equipo, compAbbr) AS rn,
-              COUNT(*) OVER (PARTITION BY Proyecto, CompTipo) AS Ninc
-    FROM (   -- por equipo+componente: metales disparados + severidad
-    SELECT Proyecto, CompTipo, Equipo, compAbbr,
-        STRING_AGG(CONVERT(nvarchar(max),
-            metal + N' ' + CONVERT(nvarchar(20), CAST(prom_prev AS decimal(18,1))) + N'→'
-            + CONVERT(nvarchar(20), CAST(ult AS decimal(18,1)))
-            + N' (+' + CASE WHEN pct > 500 THEN N'>500' ELSE CONVERT(nvarchar(12), pct) END + N'%)'), N', ') WITHIN GROUP (ORDER BY Orden) AS mets,
-        MIN(CASE WHEN pct >= 80 THEN 1 ELSE 2 END) AS sev,
-        MAX(pct) AS maxpct
-    FROM (   -- se acerca al LP y sube sobre su propia media, sin superarlo todavia
-    SELECT *, CONVERT(int, ROUND((ult - prom_prev) / NULLIF(prom_prev, 0) * 100, 0)) AS pct
-    FROM (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo)
-    SELECT Proyecto, Equipo, Compartimiento, CompTipo, compAbbr, metal, Orden,
-        MAX(CASE WHEN rn_recencia = 1 THEN Valor END) AS ult,
-        MAX(CASE WHEN rn_recencia = 1 THEN LP END)    AS LP,
-        MAX(CASE WHEN rn_recencia = 1 THEN LC END)    AS LC,
-        AVG(CASE WHEN rn_recencia BETWEEN 2 AND 7 THEN Valor END) AS prom_prev,
-        SUM(CASE WHEN rn_recencia BETWEEN 2 AND 7 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
-    FROM (   -- ultimas 7 muestras por equipo+compartimiento, un renglon por metal de desgaste
-    SELECT Proyecto, Equipo, Compartimiento, CompTipo, rn_recencia,
-        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr,
-        p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
-    FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Proyecto = mp.[Name]) vw_MuestrasRankeadas
-    CROSS APPLY (VALUES
-        (N'Fe',1,Fe_ppm,Fe_LP,Fe_LC),
-        (N'PQ',2,Indice_PQ,PQ_LP,PQ_LC),
-        (N'Cr',3,Cr_ppm,Cr_LP,Cr_LC),
-        (N'Ni',4,Ni_ppm,Ni_LP,Ni_LC),
-        (N'Cu',5,Cu_ppm,Cu_LP,Cu_LC),
-        (N'Pb',6,Pb_ppm,Pb_LP,Pb_LC),
-        (N'Sn',7,Sn_ppm,Sn_LP,Sn_LC),
-        (N'Al',8,Al_ppm,Al_LP,Al_LC),
-        (N'Si',9,Si_ppm,Si_LP,Si_LC)
-    ) p(metal, Orden, Valor, LP, LC)
-    WHERE EsDDI = 0 AND rn_recencia <= 7
-) s GROUP BY Proyecto, Equipo, Compartimiento, CompTipo, compAbbr, metal, Orden
-) agg
-    WHERE n_prev >= 2 AND ult > 0 AND prom_prev > 0
-      AND LP IS NOT NULL            -- solo metales con limite definido
-      AND ult <= LP                 -- aun NO observado
-      AND ult >= 0.5 * LP           -- mitad superior: acercandose al limite
-      AND ult >= prom_prev * 1.4    -- acelerando respecto a su propia media
-      AND (ult - prom_prev) >= 1.0  -- piso de ruido: un salto <1 ppm no es desgaste, es el suelo del laboratorio
-) inc GROUP BY Proyecto, CompTipo, Equipo, compAbbr
-) eq
-) rank_ WHERE rn <= 25 GROUP BY Proyecto, CompTipo
-) b    ON b.Proyecto  = u.Proyecto AND b.CompTipo  = u.CompTipo
-LEFT JOIN (
-    SELECT Proyecto, CompTipo, STRING_AGG(CAST(N'| ' + metal + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LP AS decimal(18,1))),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(LC AS decimal(18,1))),N'—') + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS b
-    FROM (   -- limites solo de los metales que efectivamente salieron. Sale de inc directamente:
-            -- el EXISTS correlacionado contra s re-ejecutaba la fundacion por cada fila (anti-patron nº1).
-    SELECT Proyecto, CompTipo, metal, Orden, MAX(LP) AS LP, MAX(LC) AS LC
-    FROM (   -- se acerca al LP y sube sobre su propia media, sin superarlo todavia
-    SELECT *, CONVERT(int, ROUND((ult - prom_prev) / NULLIF(prom_prev, 0) * 100, 0)) AS pct
-    FROM (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo)
-    SELECT Proyecto, Equipo, Compartimiento, CompTipo, compAbbr, metal, Orden,
-        MAX(CASE WHEN rn_recencia = 1 THEN Valor END) AS ult,
-        MAX(CASE WHEN rn_recencia = 1 THEN LP END)    AS LP,
-        MAX(CASE WHEN rn_recencia = 1 THEN LC END)    AS LC,
-        AVG(CASE WHEN rn_recencia BETWEEN 2 AND 7 THEN Valor END) AS prom_prev,
-        SUM(CASE WHEN rn_recencia BETWEEN 2 AND 7 AND Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
-    FROM (   -- ultimas 7 muestras por equipo+compartimiento, un renglon por metal de desgaste
-    SELECT Proyecto, Equipo, Compartimiento, CompTipo, rn_recencia,
-        CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr,
-        p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
-    FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Proyecto = mp.[Name]) vw_MuestrasRankeadas
-    CROSS APPLY (VALUES
-        (N'Fe',1,Fe_ppm,Fe_LP,Fe_LC),
-        (N'PQ',2,Indice_PQ,PQ_LP,PQ_LC),
-        (N'Cr',3,Cr_ppm,Cr_LP,Cr_LC),
-        (N'Ni',4,Ni_ppm,Ni_LP,Ni_LC),
-        (N'Cu',5,Cu_ppm,Cu_LP,Cu_LC),
-        (N'Pb',6,Pb_ppm,Pb_LP,Pb_LC),
-        (N'Sn',7,Sn_ppm,Sn_LP,Sn_LC),
-        (N'Al',8,Al_ppm,Al_LP,Al_LC),
-        (N'Si',9,Si_ppm,Si_LP,Si_LC)
-    ) p(metal, Orden, Valor, LP, LC)
-    WHERE EsDDI = 0 AND rn_recencia <= 7
-) s GROUP BY Proyecto, Equipo, Compartimiento, CompTipo, compAbbr, metal, Orden
-) agg
-    WHERE n_prev >= 2 AND ult > 0 AND prom_prev > 0
-      AND LP IS NOT NULL            -- solo metales con limite definido
-      AND ult <= LP                 -- aun NO observado
-      AND ult >= 0.5 * LP           -- mitad superior: acercandose al limite
-      AND ult >= prom_prev * 1.4    -- acelerando respecto a su propia media
-      AND (ult - prom_prev) >= 1.0  -- piso de ruido: un salto <1 ppm no es desgaste, es el suelo del laboratorio
-) inc GROUP BY Proyecto, CompTipo, metal, Orden
-) lims GROUP BY Proyecto, CompTipo
-) lb ON lb.Proyecto = u.Proyecto AND lb.CompTipo = u.CompTipo
+        SELECT g.*,
+            ROW_NUMBER() OVER (PARTITION BY g.ModeloG, g.CompTipo, g.gid
+                               ORDER BY CASE WHEN g.nDisp > 0 THEN 0 ELSE 1 END, CASE WHEN g.gid = 12 THEN g.Orden END, ISNULL(g.sev, 9), -ISNULL(g.maxpct, 0),
+                                        g.Equipo, g.compAbbr, g.Orden) AS sk
+        FROM (
+            SELECT d.ModeloG, d.CompTipo, d.Equipo, d.compAbbr, d.metal, d.Orden,
+                GROUPING_ID(d.Equipo, d.compAbbr, d.metal, d.Orden) AS gid,
+                MAX(CASE WHEN d.LP IS NOT NULL THEN 1 ELSE 0 END) AS tieneLP,
+                SUM(d.disp) AS nDisp,
+                MIN(CASE WHEN d.disp = 1 THEN d.sev END) AS sev,
+                MAX(CASE WHEN d.disp = 1 THEN d.pct END) AS maxpct,
+                MAX(CASE WHEN d.disp = 1 THEN d.LP END)  AS LP,
+                MAX(CASE WHEN d.disp = 1 THEN d.LC END)  AS LC,
+                /* los 9 metales en el orden del formato; CONCAT_WS se salta los NULL */
+                CONCAT_WS(N', ',
+                    MAX(CASE WHEN d.disp = 1 AND d.Orden = 1 THEN d.txt END), MAX(CASE WHEN d.disp = 1 AND d.Orden = 2 THEN d.txt END),
+                    MAX(CASE WHEN d.disp = 1 AND d.Orden = 3 THEN d.txt END), MAX(CASE WHEN d.disp = 1 AND d.Orden = 4 THEN d.txt END),
+                    MAX(CASE WHEN d.disp = 1 AND d.Orden = 5 THEN d.txt END), MAX(CASE WHEN d.disp = 1 AND d.Orden = 6 THEN d.txt END),
+                    MAX(CASE WHEN d.disp = 1 AND d.Orden = 7 THEN d.txt END), MAX(CASE WHEN d.disp = 1 AND d.Orden = 8 THEN d.txt END),
+                    MAX(CASE WHEN d.disp = 1 AND d.Orden = 9 THEN d.txt END)) AS mets
+            FROM (
+                SELECT c.*,
+                    CASE WHEN c.n_prev >= 2 AND c.ult > 0 AND c.prom_prev > 0
+                          AND c.LP IS NOT NULL
+                          AND c.prom_prev < c.LP           -- historial bajo el limite: lo cronico es del barrido
+                          AND c.ult >= 0.5 * c.LP          -- mitad superior del limite (o ya pasado)
+                          AND c.ult >= c.prom_prev * 1.4   -- subio sobre su propia media
+                          AND (c.ult - c.prom_prev) >= 1.0 -- piso de ruido del laboratorio
+                         THEN 1 ELSE 0 END AS disp,
+                    CASE WHEN c.ult > ISNULL(c.LC, 999999) THEN 0
+                         WHEN c.ult > c.LP THEN 1
+                         WHEN c.pct >= 80 THEN 2 ELSE 3 END AS sev,
+                    c.metal + N' ' + CONVERT(nvarchar(20), CAST(c.prom_prev AS decimal(18,1))) + N'→'
+                  + CONVERT(nvarchar(20), CAST(c.ult AS decimal(18,1)))
+                  + N' (+' + CASE WHEN c.pct > 500 THEN N'>500' ELSE CONVERT(nvarchar(12), c.pct) END + N'%)' AS txt
+                FROM (
+                    SELECT b.*, CONVERT(int, ROUND((b.ult - b.prom_prev) / NULLIF(b.prom_prev, 0) * 100, 0)) AS pct
+                    FROM (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo)
+                        SELECT s.ModeloG, s.CompTipo, s.Equipo, s.Compartimiento, s.compAbbr, s.metal, s.Orden,
+                            MAX(CASE WHEN s.rn_recencia = 1 THEN s.Valor END) AS ult,
+                            MAX(CASE WHEN s.rn_recencia = 1 THEN s.LP END)    AS LP,
+                            MAX(CASE WHEN s.rn_recencia = 1 THEN s.LC END)    AS LC,
+                            AVG(CASE WHEN s.rn_recencia BETWEEN 2 AND 7 THEN s.Valor END) AS prom_prev,
+                            SUM(CASE WHEN s.rn_recencia BETWEEN 2 AND 7 AND s.Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
+                        FROM (   -- la UNICA lectura: ultimas 7 muestras por equipo+componente, un renglon por metal
+                            SELECT mg.ModeloG, r.CompTipo, r.Equipo, r.Compartimiento, r.rn_recencia,
+                                CASE WHEN r.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN r.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN r.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN r.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN r.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN r.Compartimiento = 'MOTOR' THEN N'Motor' ELSE ISNULL(r.Compartimiento, N'(sin componente)') END AS compAbbr,
+                                p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
+                            FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Proyecto = mp.[Name] AND rn_recencia <= 7) r
+                            CROSS APPLY (SELECT r.Modelo AS ModeloG
+                                         UNION ALL
+                                         SELECT N'(todos)' WHERE EXISTS (
+                                             SELECT 1 FROM [dbo].[vw_ModeloConLimites] ml
+                                             WHERE ml.ProyKey   = UPPER(LTRIM(RTRIM(r.Proyecto)))
+                                               AND ml.ModeloKey = UPPER(LTRIM(RTRIM(r.Modelo))))) mg
+                            CROSS APPLY (VALUES
+                                (N'Fe',1,r.Fe_ppm,r.Fe_LP,r.Fe_LC),
+                                (N'PQ',2,r.Indice_PQ,r.PQ_LP,r.PQ_LC),
+                                (N'Cr',3,r.Cr_ppm,r.Cr_LP,r.Cr_LC),
+                                (N'Ni',4,r.Ni_ppm,r.Ni_LP,r.Ni_LC),
+                                (N'Cu',5,r.Cu_ppm,r.Cu_LP,r.Cu_LC),
+                                (N'Pb',6,r.Pb_ppm,r.Pb_LP,r.Pb_LC),
+                                (N'Sn',7,r.Sn_ppm,r.Sn_LP,r.Sn_LC),
+                                (N'Al',8,r.Al_ppm,r.Al_LP,r.Al_LC),
+                                (N'Si',9,r.Si_ppm,r.Si_LP,r.Si_LC)
+                            ) p(metal, Orden, Valor, LP, LC)
+                        ) s
+                        GROUP BY s.ModeloG, s.CompTipo, s.Equipo, s.Compartimiento, s.compAbbr, s.metal, s.Orden
+                    ) b
+                ) c
+            ) d
+            GROUP BY GROUPING SETS (
+                (d.ModeloG, d.CompTipo, d.Equipo, d.compAbbr),
+                (d.ModeloG, d.CompTipo, d.metal, d.Orden)
+            )
+        ) g
+    ) w
+    GROUP BY ModeloG, CompTipo
+) a
 ) x;
 GO
 

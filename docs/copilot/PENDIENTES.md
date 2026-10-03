@@ -1,7 +1,7 @@
 # Pendientes KomfIA — backlog único
 
 > **Este es EL backlog.** Si algo está pendiente, está aquí. Nadie más lista pendientes.
-> Reescrito limpio el **01/10/2026**. Lo cerrado de la ronda 28/09 (Fase 1 SQL, los timeouts, BLOQUES
+> Reescrito limpio el **01/10/2026**; ronda 03/10 arriba. Lo cerrado de la ronda 28/09 (Fase 1 SQL, los timeouts, BLOQUES
 > 147-188, C1-C4) se archivó en
 > [pendientes-legado/PENDIENTES_2026-09-28_a_2026-10-01.md](pendientes-legado/PENDIENTES_2026-09-28_a_2026-10-01.md)
 > — ahí está el *cómo se resolvió*; aquí solo *qué falta*.
@@ -15,66 +15,75 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 
 ---
 
-# ▶ EMPIEZA AQUÍ — viernes 02/10
+# ▶ EMPIEZA AQUÍ — ronda 03/10 (lo que se vio en la presentación del 02/10)
 
-> ⚠ **Presentación interna con Franco: hoy, 19:30.** Lo de abajo está ordenado para que lo que se vea sea lo
-> que más se nota. El PASO 5 es Copilot puro; el PASO 6 es una conversación con Carlos.
+> Primera presentación de la alfa a gerencia (02/10). Testigo: **CA3195 MT LH** (PQ 233.2 🟥 en la última muestra).
+> Lo cerrado de la ronda 01-02/10 (C5, H6, L6, N3, N4) está en
+> [pendientes-legado/PENDIENTES_2026-10-02.md](pendientes-legado/PENDIENTES_2026-10-02.md).
 
-## Dónde quedamos (01/10, noche)
+## Qué se vio y por qué
 
-| Paso | Qué | Estado | Verificado en Teams |
-|---|---|---|---|
-| **C1** | `‹modelo›` llega al flujo (temas 16/17/18/21) | ✅ | `/barrido antapaccay 980` → 10 · `d475` → 6116 · «solo los críticos» → solo CA · conteo sin duplicar |
-| **C2** | El fallback y el análisis no dibujan tablas | ✅ | La central no añade resúmenes; el fallback responde con 🔎 y viñetas |
-| **BLOQUE 188** | Barrido de Antamina: Ca/Zn/Mg salían 🟥 en el 100 % | ✅ | El barrido lee `Estado_*` de la fundación; el triage pinta 🟨 |
-| **C3** | `/grafica` absorbe `/tendenciametal` · `/ranking` con modelo · descripciones | ✅ | `/grafica 3160 mt lh Fe` · `/ranking antapaccay tracción Fe 980 5` · incipiente por NL |
-| **C4** | Tarjeta de **19** comandos | ✅ | `/comandos` |
-| **Receta** | El tema pregunta lo que falta | ✅ **solo Tema 09** | `/grafica 3160 Fe` pregunta el componente · `3160 mtlh` el metal |
-
----
-
-## PASO 5 · **C5** — paso a paso
-
-### 5.1 · La receta «el tema pregunta lo que falta» en los otros temas ⭐ **primero**
-
-Cura de una vez el **N2** (el «No encontré datos» que sale antes de la respuesta) y el **H1**.
-✅ **Tema 22 Ranking terminado (02/10)** — `/ranking` → `traccion` → `Fe` = top 10 de Fe en tracción, con
-ejecución correcta del flujo. **Es la plantilla:** copiar sus bloques a cada tema de la tabla.
-La receta son **6 piezas** y las 6 tienen que estar → [CONFIG_TEMAS § Receta](CONFIG_TEMAS.md): `Blank()` en el
-Tema 00 · Condición `Len(Trim(...)) = 0` + Pregunta · «Guardar como» la misma variable · «Se debe solicitar»
-desmarcado · Interrupciones desmarcadas · «sin entidad» ≠ Remitir.
-⚠ Revisar también el **Tema 09**: funciona, pero aún no tiene las piezas 4-6 verificadas.
-
-**Orden sugerido** — primero los que más se usan y el que cierra el H1:
-
-| # | Tema | Comando | Bloques a agregar (en este orden) | Prueba |
+| # | Síntoma (02/10) | Causa | Cura | Estado |
 |---|---|---|---|---|
-| ✅ | **22 Ranking** | `/ranking` | compartimiento · parametro (proyecto con default) | hecho 02/10 |
-| ✅ | **01 Último análisis** | `/ultimo` | equipo · compartimiento | hecho 02/10 |
-| ✅ | **06 Tendencia** | `/tendencia` | equipo · compartimiento | hecho 02/10 |
-| ✅ | **11 Historial componente** | `/historial` | equipo · compartimiento | hecho 02/10 — preguntas ANTES de los «Establecer valor» de `rango`; `5 meses` sigue filtrando |
-| ✅ | **13 y 14 Historial de un metal** | `/historialmetal` | 13: equipo · parametro — 14: equipo · compartimiento · parametro | hecho 02/10 |
-| ✅ | **25 Metal en flota** | `/metalflota` | parametros (+ defaults en la Acción) | hecho 02/10 |
-| ✅ | **02 Condición MT** | `/condicionmt` | equipo | hecho 02/10 |
-| ✅ | **04 Diagnóstico completo** | `/diagcompleto` | equipo | hecho 02/10 |
-| ✅ | **12 Historial equipo** | `/historialeq` | equipo | hecho 02/10 — `rango` sigue filtrando (`5 meses`) |
-| ✅ | **28 Acumulados equipo** | `/acumulados` | equipo | hecho 02/10 |
+| **R1** ⭐ | `/ultimo 3195 mt`: P, B, V100 sin LP/LC y el ISO en `—`, **aunque Antapaccay sí tiene esos límites** (el error que más se notó) | El 29/09 la fundación pasó a leer los 38 límites, pero `vw_UltimoAnalisisMD` seguía con su lista de 18 (P/B/V100 en `NULL` fijo, sin ISO) | La vista lee los 30 parámetros con su límite y su `Estado_*`; la viscosidad se muestra como banda (`a–b`, `≥ a`, `≤ b`) | ✅ SQL (194.1): P 280/240, V100 70.1–85.7, ISO enteros · falta Teams |
+| **R2** | `/tendencia` y `/grafica`: lo mismo (P con LP=240 **escrito a mano**, ISO en `·` aunque el historial sí tiene el dato) | `vw_TendenciaElemento`, la misma lista vieja, y recalculaba el semáforo por su cuenta | Igual que R1 + el semáforo sale de `Estado_*` | ✅ SQL (194.2) · ⏳ falta el tiempo de 194.M (corte 40,5 s) |
+| **R3** | «Cosas que no cuadran» en `/tendencia`: el 16-Sep sale 🟢 y en `/historial` 🟥; Zn 🟥 con la fila Estado en 🟢 | La fila Estado salía de `Estado_General` (no mira ISO); el historial y el triage usan la peor celda con `Inf = 0`. Zn en MT es **informativo** (`Inf = 1`) y la tendencia no lo explicaba | Estado = peor celda con `Inf = 0`, como el historial; + el pie de informativos del triage. (El pie del triage nombraba a `Mo` como informativo en MT: no lo es, corregido) | ✅ SQL (194.2): Estado 🟥🟢🟥🟢🟥🟥 = el historial · falta Teams |
+| **R4** | Los códigos de limpieza (ISO) salían con decimal (`20.0`) | Se formateaban como un metal | **Regla: el ISO va siempre entero**, valor y límite. Aplicada en las 7 vistas que lo muestran | ✅ SQL (194.1/194.2) |
+| **R5** ⭐ | `/incipiente` no listó al CA3195 (PQ ≈50 → 233) y tardó 8 min | (a) El criterio **descartaba lo que ya pasó el LP**. (b) La vista leía el proyecto **3 veces**. (c) `MD_incipiente` con **reintentos** (8 min 22 s = 4 intentos de 2 min) | Reescrita en **1 lectura**; nueva categoría 🟥/🟨 **cruzó** (pasó el límite viniendo de un historial bajo él; lo crónico sigue siendo del barrido); por **modelo** | ✅ SQL (194.3): **1,9 s** (antes 10,0), CA3195 🟥 cruzó LC · ⏳ Copilot (PASO 1 y 3) |
+| **R6** | `/incipiente antapaccay 980` → «Sin datos suficientes» | `980` llegaba como componente; la vista no tenía modelo | Tema 00: `esComp2` + modelo (un modelo siempre lleva dígito) · entrada `modelo` en Tema 20 y `MD_incipiente` | ✍ escrito en CONFIG |
+| **R7** | `/historial 3195 MTLH 6 meses` → «No encontré datos» | No era el rango: `MD_historial` compara `LIKE '%MTLH%'` contra `MT LH`. El bug del componente pegado (24/09) nunca llegó a este flujo | Redactar `comp_key` en el flujo + comparar sin espacios ([CONFIG_FLUJOS](CONFIG_FLUJOS.md) § MD_historial) | ✍ escrito en CONFIG |
+| **R8** | `/triage 3195 antapaccay` → «No encontré datos» + ayuda improvisada | El triage es de flota; `3195` llegaba como mina | Tema 00: si `p1` es un equipo → mensaje + **Ir a tema 03 Diagnóstico** | ✍ escrito en CONFIG |
+| **R9** ⭐ | `/panel antapaccay 980` > 120 s dos veces; `/rankingacum` con el aviso de tiempo y luego la tabla; triage e historial «se colgaron y luego corrieron» | **Hipótesis: la BD saturada.** El BLOQUE 191 midió 2,9 s; el 193 dio **35 s de reloj con 4 s de CPU** (el servidor espera, no calcula). Una consulta que el conector abandona a los 120 s **sigue corriendo** en el servidor, y con reintentos se apilan | Medir: **L9** (forense del 02/10 en Query Store) + 194.M (panel 980 con el DDL viejo). Auditar **reintentos = Ninguno en TODOS los flujos** ([CONFIG_TIMEOUT](CONFIG_TIMEOUT.md) Capa A) | ✅ **medido (194.M, 03/10)**: panel 980 = **3,3 s** sin carga → el panel está sano, el 02/10 fue la BD. Patrón en las 4: **reloj = 4-8 × CPU** sin lecturas físicas = cada consulta espera su turno de CPU (tope del tier S1); dos a la vez tardan el doble. L9 sin permiso (Msg 262): **pedir al DBA `VIEW DATABASE PERFORMANCE STATE`** (solo métricas) |
 
-**Textos de las preguntas** (los mismos en todos los temas):
-- equipo → «¿De qué equipo? Por ejemplo: 3160 o CA3160»
-- compartimiento → «¿De qué componente? Por ejemplo: MT LH, MT RH, RD LH, Hidr, Motor»
-- parametro → «¿Qué metal? Escribe el símbolo: Fe, Cu, Cr, Pb, Si, PQ…»
-- parametros (25) → «¿Qué metal o metales? Símbolos separados por coma: Fe,Cu»
-- proyecto (22) → «¿De qué mina? Por ejemplo: Antapaccay, Antamina»
+## Orden de trabajo
 
-**Criterio de terminado:** en cada tema, el comando a secas pregunta **todo** lo que falta, en orden, y
-**nunca** aparece «No encontré datos» antes de la pregunta. Con todo completo, responde directo.
-⚠ Si algo sale raro: el **historial de ejecuciones del flujo** muestra la consulta con los valores que
-llegaron. Mirarlo antes de teorizar (así se encontró la trampa 4).
+**PASO 1 · Power Automate, antes del DDL** (sin esto el incipiente nuevo se rompe)
+1. `MD_incipiente`: entrada `modelo` + `AND Modelo LIKE '%…%'` (default `todos`) — [CONFIG_FLUJOS](CONFIG_FLUJOS.md) § MD_incipiente.
+   Con la vista vieja devuelve lo mismo que hoy.
+2. En **cada** flujo con «Ejecutar una consulta SQL (V2)»: ··· → Configuración → **Directiva de reintentos = Ninguno**.
+   `MD_flota` ya lo tiene (visto en la captura); `MD_incipiente` **no** (8 min). Anotar cuáles se cambiaron.
 
-**✅ 5.1 CERRADO (02/10): los 11 temas tienen la receta.** Ver el mapa de abajo para lo que puede rebrotar.
+**PASO 2 · SSMS** — [BLOQUE 194](../arquitectura/VALIDACION_SSMS.sql) y [L9](../arquitectura/DIAGNOSTICO_LATENCIA.sql)
+1. **L9.0-L9.3** (forense; no depende del DDL).
+2. **194.M** con el DDL viejo → desplegar `DDL_vistas.sql` → **BLOQUE 89** → **194.M** otra vez → 194.1, 194.2, 194.3.
+   Los cortes para revertir están escritos en el bloque.
 
-### 5.1b · Mapa de propagación — flujos que reciben un componente
+**PASO 3 · Copilot** (después de que el 194 quede)
+1. Tema 00 `/incipiente` (fórmulas en [CONFIG_COMANDOS](CONFIG_COMANDOS.md)) + Tema 20 entrada `modelo`.
+2. `MD_historial`: Redactar `comp_key` (R7). Luego el mismo en `MD_equipo_comp` y `MD_metal` (mapa de abajo).
+3. Tema 00 `/triage` con equipo → Diagnóstico (R8). ⛔ Ley 8: se **agrega** una Condición dentro de la rama, no se borra nada.
+4. Tarjeta: `/incipiente ‹proj› [comp] [modelo]` — los 3 archivos ya están editados; pegar el JSON en el nodo.
+5. Prueba en Teams con el testigo: `/ultimo 3195 mt lh` · `/tendencia 3195 mt lh` · `/grafica 3195 mt lh PQ` ·
+   `/incipiente antapaccay` · `/incipiente antapaccay 980` · `/historial 3195 MTLH 6 meses` · `/triage 3195`.
+
+**PASO 4 · Decisiones de Andrés**
+- **T (sigue abierta, ahora más visible):** con R3 el ISO cuenta para el Estado en **tendencia, historial y triage**;
+  **no** en panel, barrido y conteo (`Estado_General`). ¿Se unifica? Recomendación: que cuente en todos — el área
+  cargó límites de ISO, y un componente con ISO>6 🟥 que el panel da por sano es el mismo fallo silencioso de G0.
+- **«Acum» del PQ** (2489 en el CA3195): el PQ es un índice, no ppm. ¿El área lo suma? Si no, sale de la lista de Acum.
+- ¿Qué más «no cuadraba» en la tendencia? (lo encontrado: R2, R3, R4).
+
+## Después
+
+| | Qué | Nota |
+|---|---|---|
+| **R10** | `/historialmetal` (4 vistas) con P/B/V100 sin límite | **No basta pasar el límite**: estas vistas recalculan el semáforo siempre «por arriba», y con el LP de P (280, invertido) marcarían 🟥 un P sano. Pasarlas a `Estado_*` primero |
+| **R11** | Gráfica ASCII de un ISO: las marcas salen con decimal (`×20.0`) | Cosmético; `vw_TendenciaGrafico` es un bloque de 12 líneas generadas |
+| **R12** | **`/limites` y `/limitesc`** — el menos prioritario (pedido 03/10) | Ver plan abajo |
+
+### R12 · Plan de `/limites` y `/limitesc`
+- **Qué:** como `/comandos` o `/ayuda`, pero con la tabla de límites. `/limites ‹proj› [modelo] [comp]` = solo los
+  parámetros **con** límite cargado; `/limitesc …` = el formato completo del componente, con `—` donde no hay.
+- **Fuente:** `vw_LimitesPorComponente` (lo que KomfIA **realmente** compara, ya agregado por `CompTipo`), no `[Eqpcare].[lc]`
+  crudo: así lo que se ve es exactamente lo que dispara el semáforo. El orden y los grupos, de `vw_FormatoParametro`.
+- **Forma:** una tabla por componente — `| Par. | LP | LC |` agrupada por familia, como `/ultimo`; la viscosidad
+  como banda; el ISO entero; y una marca para los invertidos («la alerta es por debajo»).
+- **Tamaño:** un proyecto entero son ~3 modelos × 4-6 componentes × ~30 filas (~20 KB): roza el tope de Teams. Sin
+  `comp` → un resumen (componente × nº de parámetros con límite) y la invitación a pedir uno; con `comp` → la tabla.
+- **Módulo completo:** vista `vw_LimitesMD` + flujo (`MD_flota` sirve: proyecto/modelo + vista + columna) + tema +
+  Tema 00 + los 3 archivos de la tarjeta. Sin SQL de prueba nuevo hasta que se decida empezar.
+
+### Mapa de propagación (5.1b) — flujos que reciben un componente
 
 La trampa 9 (el componente llega en otro vocabulario: `MT`, `tracción`, `hidr&#225;ulico`) ya mordió dos veces
 (`MD_ranking`, `MD_ultmetalflota`). Estado de **cada** flujo que filtra por componente:
@@ -95,67 +104,6 @@ correcto para los flujos por equipo, y los de flota ya traducen `MT` → `TRACCI
 vaya a un flujo del mismo vocabulario.
 **Síntoma a reconocer:** el tema responde **dos veces** (la primera vacía, con un `•` suelto) o el historial del
 flujo muestra **dos ejecuciones** para una sola consulta.
-
-### 5.2 · H6 — `/triage mtrh antapaccay 980` sale con columnas descuadradas — ✅ **CERRADO (02/10)**: sale alineado; lo curó J (5 columnas, 29/09)
-
-Solo esa variante (`mtrh` pegado). Traer la captura y el `md` del historial del flujo `MD_triage`: ver si el
-descuadre está en la tabla (vista) o en un mensaje que se coló entre filas.
-
-### 5.3 · L6 — «0 observados» se lee como error — ✅ **CERRADO (02/10)** en temas 16 y 17: «No hay equipos observados con esos criterios…»
-
-`/barrido antapaccay 930E` no devuelve filas porque el 930E no tiene observados (y además no tiene límites):
-el tema dice «No encontré datos». Se arregla **en el tema**, no en SQL (cambiar la cardinalidad de la vista
-afecta a todas las flotas sanas): el mensaje sin-datos de los temas de flota pasa a *«No hay equipos
-observados con esos criterios. Si el modelo no tiene límites cargados, sus equipos no se pueden evaluar.»*
-*(Origen: BLOQUE 151.)*
-
-### 5.4 · H2 — `/ayuda` responde dos cosas distintas — ✍ **arreglo escrito (02/10)**
-
-Medido: la **tarjeta es idéntica** las dos veces; lo que varía es la línea que la central agrega debajo. La regla
-de CIERRES de la central ahora dice «tras la tarjeta de /comandos o /ayuda, NADA» → pegar la central de nuevo.
-
-Aleatoriedad abierta desde el 17/09. Mirar en el Tema 00 si `/ayuda` va a la tarjeta (`/comandos`) **y**
-el orquestador además dispara el Tema 26 (Ayuda/Glosario). Si es eso: `/ayuda` → solo la tarjeta, y el
-glosario queda para las preguntas en lenguaje natural.
-
-### 5.5 · N3 — `/triage` entra por el tema 19 directo, no por el Tema 00 — ✍ **reinterpretado y escrito (02/10)**
-
-⚠ **Volvió (02/10, con el panel):** `/barrido antapaccay 980` → 17 y `/conteo antamina` → 21, **directo**, sin el 00. El
-orquestador empareja la palabra del comando con la descripción de un tema, y la central decía «lo resuelve SIEMPRE
-**su tema**» (lo leía como «el que se llama igual»). Cura en 4 textos: descripción del **00** («TODO mensaje con «/»
-viene AQUÍ y SOLO aquí»), del **16** y **17** («un mensaje con «/» → 00 Comandos»; 17 solo con DETALLE), y la
-**central** («va SIEMPRE al tema «00 Comandos»»). + desactivar el **21**.
-✅ **N3 CERRADO (02/10):** `/barrido 980`, `/conteo antamina` y `/barridodet` pasan por el **00**; el lenguaje natural
-«barrido de…» y «cuántos…» va al 16 y «detalle del barrido…» al 17.
-
-La raíz era otra: `/triage antapaccay` (mina primero) mandaba `CompTipo = 'antapaccay'` → 0 filas → «No encontré
-datos» + una ayuda improvisada por la IA. Arreglo: el Tema 00 reconoce si `p1` es componente o mina
-(`esComp1`) → [CONFIG_COMANDOS](CONFIG_COMANDOS.md), fila `/triage`.
-
-El mapa de actividad lo mostró: el orquestador elige el tema por su descripción antes de que el Tema 00
-lea el `/`. Funciona, pero se salta los defaults del comando. Mirar si la descripción del 00 ancla bien
-«mensaje que empieza con `/`».
-
-### 5.6 · N4 — `T3160` (código de Cummins) no encuentra el camión — ✅ **CERRADO (02/10)**
-
-Redactar `eq in`/`eq` en los 5 flujos por equipo ([CONFIG_FLUJOS § N4](CONFIG_FLUJOS.md)). Verificado en Teams:
-`/ultimo T3160 mt lh` · `/condicionmt T3160` · `/grafica T3160 mt lh Fe` · `/historial T3160 mt lh` ·
-`/acumulados T3162` → todos al CA correspondiente; `/ultimo 3161 mt lh` sin cambios.
-✅ `/historialflota antapaccay` (equipo vacío) responde normal.
-
-<details><summary>Plan original</summary>
-
-
-Probado en SQL (BLOQUE 176.3): quitar la `T` **solo si le siguen 4+ dígitos** → `T3160` → `CA3160`;
-`T1`/`T11`/`HT079` quedan intactos. **Falta ponerlo en los flujos por equipo** (`MD_equipo`,
-`MD_equipo_comp`, `MD_metal`), como acción **Redactar** antes de la consulta (ley 3: traducir es del flujo).
-
-</details>
-
-### 5.7 · Retoque — el mensaje de `/tendenciametal` muestra `**` literales — ✅ **CERRADO (02/10)**
-
-Dejarlo en texto plano: *«/tendenciametal se unió a /grafica. Usa /grafica ‹equipo› ‹componente› ‹metal›,
-por ejemplo /grafica 3160 mt lh Fe.»*
 
 ---
 
