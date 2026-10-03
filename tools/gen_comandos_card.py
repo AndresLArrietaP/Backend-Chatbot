@@ -21,6 +21,8 @@ FLOTA = [
  ("/historialflota <proj> [rango]", "Historial de observados de la flota"),
  ("/rankingacum <proj>", "Ranking de acumulados (motor diésel)"),
  ("/rankinggraf <proj>", "Ranking de acumulados en gráfica de barras"),
+ ("/limites <proj> [modelo] [comp]", "Límites que usa el semáforo (solo los cargados)"),
+ ("/limitesc <proj> [modelo] [comp]", "Formato completo de límites, con o sin dato"),
 ]
 # Adaptive Card borra los <...> (los lee como etiqueta HTML) -> usar guillemets ‹ › para requeridos
 EQUIPO=[(c.replace("<","‹").replace(">","›"), q) for c,q in EQUIPO]

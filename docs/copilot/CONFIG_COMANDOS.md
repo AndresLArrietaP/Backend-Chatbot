@@ -38,6 +38,8 @@ POR-FLOTA
 /historialflota <proyecto> [rango]           → 15 Historial de observados de flota
 /rankingacum <proyecto>                      → 27 Ranking de acumulados (motor diésel)
 /rankinggraf <proyecto>                      → 29 Ranking gráfico (mismas cifras, en barras)
+/limites <proyecto> [modelo] [componente]    → 30 Límites (solo los cargados; R12, 03/10)
+/limitesc <proyecto> [modelo] [componente]   → 30 Límites (formato completo, «—» donde no hay)
 
 META
 /comandos  ó  /ayuda                         → lista de comandos
@@ -363,6 +365,7 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` · **rango=`Topic.rango`** |
 | `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` |
 | `/rankinggraf` | 29 Ranking gráfico | proyecto=`If(p1="","Antapaccay",p1)` |
+| `/limites` · `/limitesc` (03/10) | 30 Límites | **UNA** Condición con **CUALQUIERA**: `cmd = "/limites"` o `cmd = "/limitesc"` (ley 8: rama nueva, no se toca nada) · proyecto=`If(Topic.p1 = "", "Antapaccay", Topic.p1)` · modelo=`If(IsMatch(Topic.p2, ".*\d.*"), Topic.p2, If(IsMatch(Topic.p3, ".*\d.*"), Topic.p3, "(todos)"))` · compartimiento=`If(IsMatch(Lower(Topic.p2), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*"), Topic.p2, If(IsMatch(Lower(Topic.p3), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*"), Topic.p3, "(todos)"))` · columna=`If(Topic.cmd = "/limitesc", "MD_Completo", "MD")` — modelo y componente en cualquier orden: el modelo lleva dígito, el componente no |
 | `/comandos` ó `/ayuda` | (nodo Mensaje, ver 4) | — |
 | (ninguna coincide) | **«Ir a otro tema» → Conversación** | — (era NL con `/`, no un comando) |
 
@@ -431,6 +434,7 @@ POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicionmt ‹eq› · /diagcomple
 POR-FLOTA:   /panel ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
              /incipiente ‹proj› [comp] [modelo] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
              /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj› · /rankinggraf ‹proj›
+REFERENCIA:  /limites ‹proj› [modelo] [comp] · /limitesc ‹proj› [modelo] [comp]
 ```
 
 ### 5) Rama «ninguna coincide» (comando `/xxx` no reconocido) → Mensaje + Finalizar

@@ -26,7 +26,7 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 | # | Síntoma (02/10) | Causa | Cura | Estado |
 |---|---|---|---|---|
 | **R1** ⭐ | `/ultimo 3195 mt`: P, B, V100 sin LP/LC y el ISO en `—`, **aunque Antapaccay sí tiene esos límites** (el error que más se notó) | El 29/09 la fundación pasó a leer los 38 límites, pero `vw_UltimoAnalisisMD` seguía con su lista de 18 (P/B/V100 en `NULL` fijo, sin ISO) | La vista lee los 30 parámetros con su límite y su `Estado_*`; la viscosidad se muestra como banda (`a–b`, `≥ a`, `≤ b`) | ✅ SQL (194.1): P 280/240, V100 70.1–85.7, ISO enteros · falta Teams |
-| **R2** | `/tendencia` y `/grafica`: lo mismo (P con LP=240 **escrito a mano**, ISO en `·` aunque el historial sí tiene el dato) | `vw_TendenciaElemento`, la misma lista vieja, y recalculaba el semáforo por su cuenta | Igual que R1 + el semáforo sale de `Estado_*` | ✅ SQL (194.2) · ⏳ falta el tiempo de 194.M (corte 40,5 s) |
+| **R2** | `/tendencia` y `/grafica`: lo mismo (P con LP=240 **escrito a mano**, ISO en `·` aunque el historial sí tiene el dato) | `vw_TendenciaElemento`, la misma lista vieja, y recalculaba el semáforo por su cuenta | Igual que R1 + el semáforo sale de `Estado_*` | ✅ SQL (194.2) · **19,0 s** (antes 32,4) · ✅ Teams 03/10 |
 | **R3** | «Cosas que no cuadran» en `/tendencia`: el 16-Sep sale 🟢 y en `/historial` 🟥; Zn 🟥 con la fila Estado en 🟢 | La fila Estado salía de `Estado_General` (no mira ISO); el historial y el triage usan la peor celda con `Inf = 0`. Zn en MT es **informativo** (`Inf = 1`) y la tendencia no lo explicaba | Estado = peor celda con `Inf = 0`, como el historial; + el pie de informativos del triage. (El pie del triage nombraba a `Mo` como informativo en MT: no lo es, corregido) | ✅ SQL (194.2): Estado 🟥🟢🟥🟢🟥🟥 = el historial · falta Teams |
 | **R4** | Los códigos de limpieza (ISO) salían con decimal (`20.0`) | Se formateaban como un metal | **Regla: el ISO va siempre entero**, valor y límite. Aplicada en las 7 vistas que lo muestran | ✅ SQL (194.1/194.2) |
 | **R5** ⭐ | `/incipiente` no listó al CA3195 (PQ ≈50 → 233) y tardó 8 min | (a) El criterio **descartaba lo que ya pasó el LP**. (b) La vista leía el proyecto **3 veces**. (c) `MD_incipiente` con **reintentos** (8 min 22 s = 4 intentos de 2 min) | Reescrita en **1 lectura**; nueva categoría 🟥/🟨 **cruzó** (pasó el límite viniendo de un historial bajo él; lo crónico sigue siendo del barrido); por **modelo** | ✅ SQL (194.3): **1,9 s** (antes 10,0), CA3195 🟥 cruzó LC · ⏳ Copilot (PASO 1 y 3) |
@@ -54,7 +54,8 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 1. Tema 00 `/incipiente` (fórmulas en [CONFIG_COMANDOS](CONFIG_COMANDOS.md)) + Tema 20 entrada `modelo`.
 2. `MD_historial`: Redactar `comp_key` (R7). Luego el mismo en `MD_equipo_comp` y `MD_metal` (mapa de abajo).
 3. Tema 00 `/triage` con equipo → Diagnóstico (R8). ⛔ Ley 8: se **agrega** una Condición dentro de la rama, no se borra nada.
-4. Tarjeta: `/incipiente ‹proj› [comp] [modelo]` — los 3 archivos ya están editados; pegar el JSON en el nodo.
+4. Tarjeta: `/incipiente ‹proj› [comp] [modelo]` + `/limites` y `/limitesc` (20 filas) — los 3 archivos ya están editados; pegar el JSON en el nodo.
+4b. (03/10, tras el 196) `MD_historial`: metal sin comodines (R15) · flujo `MD_limites` + Tema 30 + rama del Tema 00 (R12).
 5. Prueba en Teams con el testigo: `/ultimo 3195 mt lh` · `/tendencia 3195 mt lh` · `/grafica 3195 mt lh PQ` ·
    `/incipiente antapaccay` · `/incipiente antapaccay 980` · `/historial 3195 MTLH 6 meses` · `/triage 3195`.
 
@@ -69,9 +70,10 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 
 | | Qué | Nota |
 |---|---|---|
-| **R10** | `/historialmetal` (4 vistas) con P/B/V100 sin límite | **No basta pasar el límite**: estas vistas recalculan el semáforo siempre «por arriba», y con el LP de P (280, invertido) marcarían 🟥 un P sano. Pasarlas a `Estado_*` primero |
-| **R11** | Gráfica ASCII de un ISO: las marcas salen con decimal (`×20.0`) | Cosmético; `vw_TendenciaGrafico` es un bloque de 12 líneas generadas |
-| **R12** | **`/limites` y `/limitesc`** — el menos prioritario (pedido 03/10) | Ver plan abajo |
+| **R10** ✍ DDL · 196 | `/historialmetal` (4 vistas) con P/B/V100 sin límite — **hecho**: P y B con límite, marca de `Estado_*`, columna Estado con la regla del historial | **No basta pasar el límite**: estas vistas recalculan el semáforo siempre «por arriba», y con el LP de P (280, invertido) marcarían 🟥 un P sano. Pasarlas a `Estado_*` primero |
+| **R11** ✍ DDL · 196 | Gráfica ASCII de un ISO: las marcas salen con decimal (`×20.0`) — **hecho**: marcas y LP/LC enteros, «(código)» | Cosmético; `vw_TendenciaGrafico` es un bloque de 12 líneas generadas |
+| **R12** ✍ DDL · 196 + Copilot | **`/limites` y `/limitesc`** — **hecho en SQL**: `vw_LimitesMD`; Copilot = flujo `MD_limites` (copia de `MD_incipiente`) + **Tema 30** + rama del Tema 00 + tarjeta (20 filas) | Ver plan abajo y [CONFIG_TEMAS](CONFIG_TEMAS.md) § 30 |
+| **R15** ⭐ | `/historialmetal 3195 P` trae P, **PQ y Pb** mezclados; `B` trae Pb | `MD_historial` filtra `Parametro LIKE '%P%'`. Cura en el flujo: sin comodines ([CONFIG_FLUJOS](CONFIG_FLUJOS.md) § MD_historial, consulta lista) | 196.1 lo demuestra |
 
 ### R12 · Plan de `/limites` y `/limitesc`
 - **Qué:** como `/comandos` o `/ayuda`, pero con la tabla de límites. `/limites ‹proj› [modelo] [comp]` = solo los

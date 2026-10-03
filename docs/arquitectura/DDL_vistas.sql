@@ -1344,19 +1344,19 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_TendenciaGrafico] AS
 SELECT te.Equipo, te.Compartimiento, te.Parametro,
     CONCAT(
-        te.Parametro, N' — ', te.Compartimiento, N' (ppm)',
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 12=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 12=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 11=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 11=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 10=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 10=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 9=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 9=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 8=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 8=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 7=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 7=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 6=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 6=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 5=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 5=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 4=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 4=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 3=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 3=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 2=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 2=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
-        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))),9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))),9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))),9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))),9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))),9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))),9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 1=b1.rLC THEN N' LC '+CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) WHEN 1=b1.rLP THEN N' LP '+CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) ELSE N'' END,
+        te.Parametro, N' — ', te.Compartimiento, CASE WHEN te.Parametro LIKE 'ISO%' THEN N' (código)' ELSE N' (ppm)' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=12 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 12=b1.rLC THEN N'·········' WHEN 12=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 12=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 12=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=11 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 11=b1.rLC THEN N'·········' WHEN 11=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 11=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 11=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=10 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 10=b1.rLC THEN N'·········' WHEN 10=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 10=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 10=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=9 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 9=b1.rLC THEN N'·········' WHEN 9=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 9=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 9=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=8 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 8=b1.rLC THEN N'·········' WHEN 8=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 8=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 8=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=7 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 7=b1.rLC THEN N'·········' WHEN 7=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 7=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 7=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=6 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 6=b1.rLC THEN N'·········' WHEN 6=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 6=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 6=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=5 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 5=b1.rLC THEN N'·········' WHEN 5=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 5=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 5=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=4 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 4=b1.rLC THEN N'·········' WHEN 4=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 4=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 4=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=3 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 3=b1.rLC THEN N'·········' WHEN 3=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 3=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 3=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=2 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 2=b1.rLC THEN N'·········' WHEN 2=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 2=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 2=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
+        CHAR(10), N'|', CASE WHEN p.n1 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n1/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n1 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n1 AS decimal(18,1))) END,9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n2 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n2/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n2 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n2 AS decimal(18,1))) END,9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n3 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n3/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n3 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n3 AS decimal(18,1))) END,9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n4 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n4/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n4 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n4 AS decimal(18,1))) END,9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n5 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n5/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n5 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n5 AS decimal(18,1))) END,9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN p.n6 IS NOT NULL AND b0.vtop>0 AND CAST(ROUND(p.n6/b0.vtop*12,0) AS int)=1 THEN RIGHT(N'         '+N'×'+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(p.n6 AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(p.n6 AS decimal(18,1))) END,9) WHEN 1=b1.rLC THEN N'·········' WHEN 1=b1.rLP THEN N'---------' ELSE N'         ' END, CASE WHEN 1=b1.rLC THEN N' LC '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LC AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LC AS decimal(18,1))) END WHEN 1=b1.rLP THEN N' LP '+CASE WHEN te.Parametro LIKE 'ISO%' THEN CONVERT(varchar(12),CAST(te.LP AS decimal(18,0))) ELSE CONVERT(varchar(12),CAST(te.LP AS decimal(18,1))) END ELSE N'' END,
         CHAR(10), N'+', CASE WHEN te.f1 IS NULL THEN N'         ' ELSE RIGHT(N'         '+CONVERT(varchar(2),DAY(te.f1)),9) END, CASE WHEN te.f2 IS NULL THEN N'         ' ELSE RIGHT(N'         '+CONVERT(varchar(2),DAY(te.f2)),9) END, CASE WHEN te.f3 IS NULL THEN N'         ' ELSE RIGHT(N'         '+CONVERT(varchar(2),DAY(te.f3)),9) END, CASE WHEN te.f4 IS NULL THEN N'         ' ELSE RIGHT(N'         '+CONVERT(varchar(2),DAY(te.f4)),9) END, CASE WHEN te.f5 IS NULL THEN N'         ' ELSE RIGHT(N'         '+CONVERT(varchar(2),DAY(te.f5)),9) END, CASE WHEN te.f6 IS NULL THEN N'         ' ELSE RIGHT(N'         '+CONVERT(varchar(2),DAY(te.f6)),9) END, N' ', CHOOSE(MONTH(te.f6), N'Jan',N'Feb',N'Mar',N'Apr',N'May',N'Jun',N'Jul',N'Aug',N'Sep',N'Oct',N'Nov',N'Dec')
     ) AS Grafico
 FROM [dbo].[vw_TendenciaElemento] te
@@ -3597,7 +3597,8 @@ SELECT
       + N'- **Nº fuera de límite:** ' + CONVERT(nvarchar(10), te.NVecesObs)
         + N' de ' + CONVERT(nvarchar(10), te.NMuestras) + N' — veces que superó **LP** en el período.' + NCHAR(10)
       + N'- **Acum:** ' + CASE WHEN te.Parametro NOT IN ('Fe','PQ','Cr','Ni','Cu','Pb','Sn','Al') THEN N'— (solo aplica a metales de desgaste)' ELSE ISNULL(CONVERT(nvarchar(20),CAST(te.Acumulado AS decimal(18,1))), N'—') + N' — suma del metal con el criterio del área; un `—` significa **no se puede calcular**, no cero.' END + NCHAR(10) + NCHAR(10)
-      + N'**Límites de referencia (ppm)**: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') + NCHAR(10) + NCHAR(10)
+      + CASE WHEN te.Parametro LIKE 'ISO%' THEN N'**Límites de referencia (código)**: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,0))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,0))), N'—')
+             ELSE N'**Límites de referencia (ppm)**: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LP AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(te.LC AS decimal(18,1))), N'—') END + NCHAR(10) + NCHAR(10)
       + N'```' + NCHAR(10) + g.Grafico + NCHAR(10) + N'```'
     AS nvarchar(max)) AS MD
 FROM [dbo].[vw_TendenciaGrafico] g
@@ -4077,12 +4078,34 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalFilasMD] AS
 WITH s AS (
     SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
-        CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
+        CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
-        Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
-    FROM [dbo].[vw_MuestrasHistorial]
+        Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
+        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+        Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN
+    FROM [dbo].[vw_MuestrasHistorial] mh
+    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
+    OUTER APPLY (
+        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
+        FROM (VALUES
+            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
+            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
+            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
+            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
+            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
+            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
+            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
+            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
+            (N'ISO>14', mh.Estado_ISO14)
+        ) e(metal, est)
+        CROSS APPLY (
+            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
+            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
+        ) ff
+    ) pe
     WHERE rn_hist <= 200
 ),
 u AS (
@@ -4090,15 +4113,15 @@ u AS (
         CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
         MAX(CAST(m.LP AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LPg,
         MAX(CAST(m.LC AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LCg,
-        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC
+        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
     FROM s CROSS APPLY (VALUES
-            (N'Fe',Fe_ppm,Fe_LP,Fe_LC), (N'PQ',Indice_PQ,PQ_LP,PQ_LC), (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
-            (N'Ni',Ni_ppm,Ni_LP,Ni_LC), (N'Cu',Cu_ppm,Cu_LP,Cu_LC), (N'Pb',Pb_ppm,Pb_LP,Pb_LC),
-            (N'Sn',Sn_ppm,Sn_LP,Sn_LC), (N'Al',Al_ppm,Al_LP,Al_LC), (N'Si',Si_ppm,Si_LP,Si_LC),
-            (N'Ca',Ca_ppm,Ca_LP,Ca_LC), (N'Zn',Zn_ppm,Zn_LP,Zn_LC), (N'K',K_ppm,K_LP,K_LC),
-            (N'Na',Na_ppm,Na_LP,Na_LC), (N'Mg',Mg_ppm,Mg_LP,Mg_LC), (N'B',B_ppm,NULL,NULL),
-            (N'P',P_ppm,NULL,NULL), (N'V100',V100,NULL,NULL), (N'TBN',TBN,TBN_LP,NULL)
-    ) m(metal, Valor, LP, LC)
+            (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe), (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ), (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
+            (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni), (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu), (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC,Estado_Sn), (N'Al',Al_ppm,Al_LP,Al_LC,Estado_Al), (N'Si',Si_ppm,Si_LP,Si_LC,Estado_Si),
+            (N'Ca',Ca_ppm,Ca_LP,Ca_LC,Estado_Ca), (N'Zn',Zn_ppm,Zn_LP,Zn_LC,Estado_Zn), (N'K',K_ppm,K_LP,K_LC,Estado_K),
+            (N'Na',Na_ppm,Na_LP,Na_LC,Estado_Na), (N'Mg',Mg_ppm,Mg_LP,Mg_LC,Estado_Mg), (N'B',B_ppm,B_LP,B_LC,Estado_B),
+            (N'P',P_ppm,P_LP,P_LC,Estado_P), (N'V100',V100,NULL,NULL,Estado_V100), (N'TBN',TBN,TBN_LP,TBN_LC,Estado_TBN)
+    ) m(metal, Valor, LP, LC, Est)
 )
 SELECT
     Equipo, compAbbr, Parametro, Proyecto, FechaMuestreo, rn_hist AS rn,
@@ -4110,7 +4133,7 @@ SELECT
     CAST(N'| Fecha | SMR | Hor. Aci. | ' + Parametro + N' | Hrs Comp | T. muestra | Estado |' + NCHAR(10)
        + N'|---|---|---|---|---|---|---|' AS nvarchar(max))                                     AS ColsMD,
     CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—')
-       + N' | ' + ISNULL(CASE WHEN Valor > ISNULL(LC,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1)))+N' 🟥' WHEN Valor > ISNULL(LP,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1)))+N' 🟨' ELSE CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) END, N'—')
+       + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + CASE Est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END, N'—')
        + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CM,N'—') + N' | ' + estadoChip + N' |' AS nvarchar(max)) AS Fila
 FROM u;
 GO
@@ -4124,26 +4147,49 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalEquipoFilasMD] AS
 WITH s0 AS (
     SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM,
-        CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
-        Fe_ppm,Fe_LP,Fe_LC,Indice_PQ,PQ_LP,PQ_LC,Cr_ppm,Cr_LP,Cr_LC,Ni_ppm,Ni_LP,Ni_LC,Cu_ppm,Cu_LP,Cu_LC,
-        Pb_ppm,Pb_LP,Pb_LC,Sn_ppm,Sn_LP,Sn_LC,Al_ppm,Al_LP,Al_LC,Si_ppm,Si_LP,Si_LC,Ca_ppm,Ca_LP,Ca_LC,Zn_ppm,Zn_LP,Zn_LC,
-        K_ppm,K_LP,K_LC,Na_ppm,Na_LP,Na_LC,Mg_ppm,Mg_LP,Mg_LC,B_ppm,P_ppm,V100,TBN,TBN_LP,
+        CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
+        Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
+        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
+        Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
+        Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
+        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+        Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC, Compartimiento, LaboratoryDataId) AS grn
-    FROM [dbo].[vw_MuestrasHistorial]
+    FROM [dbo].[vw_MuestrasHistorial] mh
+    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
+    OUTER APPLY (
+        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
+        FROM (VALUES
+            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
+            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
+            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
+            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
+            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
+            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
+            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
+            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
+            (N'ISO>14', mh.Estado_ISO14)
+        ) e(metal, est)
+        CROSS APPLY (
+            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
+            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
+        ) ff
+    ) pe
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 200),
 u AS (
     SELECT s.Equipo, s.Proyecto, s.compAbbr, s.grn, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.CM, s.estadoChip,
         CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
-        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC
+        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
     FROM s CROSS APPLY (VALUES
-            (N'Fe',Fe_ppm,Fe_LP,Fe_LC), (N'PQ',Indice_PQ,PQ_LP,PQ_LC), (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
-            (N'Ni',Ni_ppm,Ni_LP,Ni_LC), (N'Cu',Cu_ppm,Cu_LP,Cu_LC), (N'Pb',Pb_ppm,Pb_LP,Pb_LC),
-            (N'Sn',Sn_ppm,Sn_LP,Sn_LC), (N'Al',Al_ppm,Al_LP,Al_LC), (N'Si',Si_ppm,Si_LP,Si_LC),
-            (N'Ca',Ca_ppm,Ca_LP,Ca_LC), (N'Zn',Zn_ppm,Zn_LP,Zn_LC), (N'K',K_ppm,K_LP,K_LC),
-            (N'Na',Na_ppm,Na_LP,Na_LC), (N'Mg',Mg_ppm,Mg_LP,Mg_LC), (N'B',B_ppm,NULL,NULL),
-            (N'P',P_ppm,NULL,NULL), (N'V100',V100,NULL,NULL), (N'TBN',TBN,TBN_LP,NULL)
-    ) m(metal, Valor, LP, LC)
+            (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe), (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ), (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
+            (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni), (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu), (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC,Estado_Sn), (N'Al',Al_ppm,Al_LP,Al_LC,Estado_Al), (N'Si',Si_ppm,Si_LP,Si_LC,Estado_Si),
+            (N'Ca',Ca_ppm,Ca_LP,Ca_LC,Estado_Ca), (N'Zn',Zn_ppm,Zn_LP,Zn_LC,Estado_Zn), (N'K',K_ppm,K_LP,K_LC,Estado_K),
+            (N'Na',Na_ppm,Na_LP,Na_LC,Estado_Na), (N'Mg',Mg_ppm,Mg_LP,Mg_LC,Estado_Mg), (N'B',B_ppm,B_LP,B_LC,Estado_B),
+            (N'P',P_ppm,P_LP,P_LC,Estado_P), (N'V100',V100,NULL,NULL,Estado_V100), (N'TBN',TBN,TBN_LP,TBN_LC,Estado_TBN)
+    ) m(metal, Valor, LP, LC, Est)
 )
 SELECT
     Equipo, compAbbr, Parametro, Proyecto, FechaMuestreo, grn AS rn,
@@ -4152,7 +4198,7 @@ SELECT
     CAST(N'| Fecha | SMR | Hor. Aci. | ' + Parametro + N' | Componente | T. muestra | Estado |' + NCHAR(10)
        + N'|---|---|---|---|---|---|---|' AS nvarchar(max))                                     AS ColsMD,
     CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—')
-       + N' | ' + ISNULL(CASE WHEN Valor > ISNULL(LC,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1)))+N' 🟥' WHEN Valor > ISNULL(LP,999999) THEN CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1)))+N' 🟨' ELSE CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) END, N'—')
+       + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Valor AS decimal(18,1))) + CASE Est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END, N'—')
        + N' | ' + compAbbr + N' | ' + ISNULL(CM,N'—') + N' | ' + estadoChip + N' |' AS nvarchar(max)) AS Fila
 FROM u;
 GO
@@ -4161,42 +4207,64 @@ GO
 /* ==== vw_HistorialMetalMD (historial de un metal en un componente) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalMD] AS
 WITH s AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM, CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
         Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
-        Mg_ppm, Mg_LP, Mg_LC, B_ppm, P_ppm, V100, TBN, TBN_LP
-    FROM [dbo].[vw_MuestrasHistorial]
+        Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
+        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+        Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN
+    FROM [dbo].[vw_MuestrasHistorial] mh
+    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
+    OUTER APPLY (
+        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
+        FROM (VALUES
+            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
+            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
+            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
+            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
+            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
+            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
+            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
+            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
+            (N'ISO>14', mh.Estado_ISO14)
+        ) e(metal, est)
+        CROSS APPLY (
+            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
+            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
+        ) ff
+    ) pe
     WHERE rn_hist <= 12
 ),
 u AS (
     SELECT s.Equipo, s.Compartimiento, s.compAbbr, s.rn_hist, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.HorasComponente, s.CM, s.estadoChip,
         CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
-        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC
+        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
     FROM s CROSS APPLY (VALUES
-            (N'Fe',Fe_ppm,Fe_LP,Fe_LC),
-            (N'PQ',Indice_PQ,PQ_LP,PQ_LC),
-            (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
-            (N'Ni',Ni_ppm,Ni_LP,Ni_LC),
-            (N'Cu',Cu_ppm,Cu_LP,Cu_LC),
-            (N'Pb',Pb_ppm,Pb_LP,Pb_LC),
-            (N'Sn',Sn_ppm,Sn_LP,Sn_LC),
-            (N'Al',Al_ppm,Al_LP,Al_LC),
-            (N'Si',Si_ppm,Si_LP,Si_LC),
-            (N'Ca',Ca_ppm,Ca_LP,Ca_LC),
-            (N'Zn',Zn_ppm,Zn_LP,Zn_LC),
-            (N'K',K_ppm,K_LP,K_LC),
-            (N'Na',Na_ppm,Na_LP,Na_LC),
-            (N'Mg',Mg_ppm,Mg_LP,Mg_LC),
-            (N'B',B_ppm,NULL,NULL),
-            (N'P',P_ppm,NULL,NULL),
-            (N'V100',V100,NULL,NULL),
-            (N'TBN',TBN,TBN_LP,NULL)
-    ) m(metal, Valor, LP, LC)
+            (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe),
+            (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ),
+            (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
+            (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni),
+            (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu),
+            (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC,Estado_Sn),
+            (N'Al',Al_ppm,Al_LP,Al_LC,Estado_Al),
+            (N'Si',Si_ppm,Si_LP,Si_LC,Estado_Si),
+            (N'Ca',Ca_ppm,Ca_LP,Ca_LC,Estado_Ca),
+            (N'Zn',Zn_ppm,Zn_LP,Zn_LC,Estado_Zn),
+            (N'K',K_ppm,K_LP,K_LC,Estado_K),
+            (N'Na',Na_ppm,Na_LP,Na_LC,Estado_Na),
+            (N'Mg',Mg_ppm,Mg_LP,Mg_LC,Estado_Mg),
+            (N'B',B_ppm,B_LP,B_LC,Estado_B),
+            (N'P',P_ppm,P_LP,P_LC,Estado_P),
+            (N'V100',V100,NULL,NULL,Estado_V100),
+            (N'TBN',TBN,TBN_LP,TBN_LC,Estado_TBN)
+    ) m(metal, Valor, LP, LC, Est)
 ),
 rows_ AS (
     SELECT Equipo, Compartimiento, compAbbr, Parametro, rn_hist, LP, LC,
-        CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—') + N' | ' + ISNULL(CASE WHEN u.Valor > ISNULL(u.LC,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟥' WHEN u.Valor > ISNULL(u.LP,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟨' ELSE CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1))) END, N'—')
+        CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1))) + CASE u.Est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END, N'—')
            + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(CM,N'—') + N' | ' + estadoChip + N' |' AS nvarchar(max)) AS rowMD
     FROM u
 ),
@@ -4309,42 +4377,65 @@ GO
 /* ==== vw_HistorialMetalEquipoMD (variante 2: metal en todos los componentes) ==== */
 CREATE OR ALTER VIEW [dbo].[vw_HistorialMetalEquipoMD] AS
 WITH s0 AS (
-    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
-        Fe_ppm,Fe_LP,Fe_LC,Indice_PQ,PQ_LP,PQ_LC,Cr_ppm,Cr_LP,Cr_LC,Ni_ppm,Ni_LP,Ni_LC,Cu_ppm,Cu_LP,Cu_LC,
-        Pb_ppm,Pb_LP,Pb_LC,Sn_ppm,Sn_LP,Sn_LC,Al_ppm,Al_LP,Al_LC,Si_ppm,Si_LP,Si_LC,Ca_ppm,Ca_LP,Ca_LC,Zn_ppm,Zn_LP,Zn_LC,
-        K_ppm,K_LP,K_LC,Na_ppm,Na_LP,Na_LC,Mg_ppm,Mg_LP,Mg_LC,B_ppm,P_ppm,V100,TBN,TBN_LP,
+    SELECT Equipo, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM, CASE pe.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END AS estadoChip,
+        Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
+        Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
+        Ca_ppm, Ca_LP, Ca_LC, Zn_ppm, Zn_LP, Zn_LC, K_ppm, K_LP, K_LC, Na_ppm, Na_LP, Na_LC,
+        Mg_ppm, Mg_LP, Mg_LC, B_ppm, B_LP, B_LC, P_ppm, P_LP, P_LC, V100, TBN, TBN_LP, TBN_LC,
+        Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
+        Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN,
         ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC, Compartimiento, LaboratoryDataId) AS grn
-    FROM [dbo].[vw_MuestrasHistorial]
+    FROM [dbo].[vw_MuestrasHistorial] mh
+    /* 03/10: el Estado de la fila = la peor celda con Inf = 0, la misma regla de /historial y /tendencia */
+    OUTER APPLY (
+        SELECT MIN(CASE WHEN ff.Inf = 0 AND e.est = 'CRITICO' THEN 1 WHEN ff.Inf = 0 AND e.est = 'PRECAUCION' THEN 2 END) AS peor
+        FROM (VALUES
+            (N'Fe', mh.Estado_Fe), (N'PQ', mh.Estado_PQ), (N'Cr', mh.Estado_Cr), (N'Ni', mh.Estado_Ni),
+            (N'Cu', mh.Estado_Cu), (N'Pb', mh.Estado_Pb), (N'Sn', mh.Estado_Sn), (N'Al', mh.Estado_Al),
+            (N'Si', mh.Estado_Si), (N'Ca', mh.Estado_Ca), (N'Zn', mh.Estado_Zn), (N'Mg', mh.Estado_Mg),
+            (N'K', mh.Estado_K), (N'Na', mh.Estado_Na), (N'B', mh.Estado_B), (N'P', mh.Estado_P),
+            (N'Mo', mh.Estado_Mo), (N'V100', mh.Estado_V100), (N'V40', mh.Estado_V40), (N'TAN', mh.Estado_TAN),
+            (N'TBN', mh.Estado_TBN), (N'Oxidacion', mh.Estado_Oxi), (N'Sulfatacion', mh.Estado_Sulf),
+            (N'Nitracion', mh.Estado_Nit), (N'Agua', mh.Estado_Agua), (N'Hollin', mh.Estado_Hollin),
+            (N'Diesel', mh.Estado_Diesel), (N'ISO>4', mh.Estado_ISO4), (N'ISO>6', mh.Estado_ISO6),
+            (N'ISO>14', mh.Estado_ISO14)
+        ) e(metal, est)
+        CROSS APPLY (
+            SELECT TOP 1 f.Inf FROM [dbo].[vw_FormatoParametro] f
+            WHERE f.Parametro = e.metal AND f.CompTipo IN (mh.CompTipo, N'(CRUZADO)')
+            ORDER BY CASE WHEN f.CompTipo = mh.CompTipo THEN 0 ELSE 1 END
+        ) ff
+    ) pe
 ),
 s AS (SELECT * FROM s0 WHERE grn <= 24),
 u AS (
     SELECT s.Equipo, s.compAbbr, s.grn, s.FechaMuestreo, s.Horometro, s.HorasDeAceite, s.CM, s.estadoChip,
         CONVERT(nvarchar(20), m.metal) AS Parametro, CAST(m.Valor AS decimal(18,2)) AS Valor,
-        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC
+        CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
     FROM s CROSS APPLY (VALUES
-            (N'Fe',Fe_ppm,Fe_LP,Fe_LC),
-            (N'PQ',Indice_PQ,PQ_LP,PQ_LC),
-            (N'Cr',Cr_ppm,Cr_LP,Cr_LC),
-            (N'Ni',Ni_ppm,Ni_LP,Ni_LC),
-            (N'Cu',Cu_ppm,Cu_LP,Cu_LC),
-            (N'Pb',Pb_ppm,Pb_LP,Pb_LC),
-            (N'Sn',Sn_ppm,Sn_LP,Sn_LC),
-            (N'Al',Al_ppm,Al_LP,Al_LC),
-            (N'Si',Si_ppm,Si_LP,Si_LC),
-            (N'Ca',Ca_ppm,Ca_LP,Ca_LC),
-            (N'Zn',Zn_ppm,Zn_LP,Zn_LC),
-            (N'K',K_ppm,K_LP,K_LC),
-            (N'Na',Na_ppm,Na_LP,Na_LC),
-            (N'Mg',Mg_ppm,Mg_LP,Mg_LC),
-            (N'B',B_ppm,NULL,NULL),
-            (N'P',P_ppm,NULL,NULL),
-            (N'V100',V100,NULL,NULL),
-            (N'TBN',TBN,TBN_LP,NULL)
-    ) m(metal, Valor, LP, LC)
+            (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe),
+            (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ),
+            (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
+            (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni),
+            (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu),
+            (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),
+            (N'Sn',Sn_ppm,Sn_LP,Sn_LC,Estado_Sn),
+            (N'Al',Al_ppm,Al_LP,Al_LC,Estado_Al),
+            (N'Si',Si_ppm,Si_LP,Si_LC,Estado_Si),
+            (N'Ca',Ca_ppm,Ca_LP,Ca_LC,Estado_Ca),
+            (N'Zn',Zn_ppm,Zn_LP,Zn_LC,Estado_Zn),
+            (N'K',K_ppm,K_LP,K_LC,Estado_K),
+            (N'Na',Na_ppm,Na_LP,Na_LC,Estado_Na),
+            (N'Mg',Mg_ppm,Mg_LP,Mg_LC,Estado_Mg),
+            (N'B',B_ppm,B_LP,B_LC,Estado_B),
+            (N'P',P_ppm,P_LP,P_LC,Estado_P),
+            (N'V100',V100,NULL,NULL,Estado_V100),
+            (N'TBN',TBN,TBN_LP,TBN_LC,Estado_TBN)
+    ) m(metal, Valor, LP, LC, Est)
 ),
 rows_ AS (
     SELECT Equipo, Parametro, grn,
-        CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—') + N' | ' + ISNULL(CASE WHEN u.Valor > ISNULL(u.LC,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟥' WHEN u.Valor > ISNULL(u.LP,999999) THEN CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1)))+N' 🟨' ELSE CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1))) END, N'—')
+        CAST(N'| ' + ISNULL(FORMAT(FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(HorasDeAceite AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(u.Valor AS decimal(18,1))) + CASE u.Est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END, N'—')
            + N' | ' + compAbbr + N' | ' + ISNULL(CM,N'—') + N' | ' + estadoChip + N' |' AS nvarchar(max)) AS rowMD
     FROM u
 ),
@@ -5305,4 +5396,128 @@ SELECT
       + N'```'
     AS nvarchar(max)) AS MD
 FROM cuerpo c;
+GO
+
+
+/* ==== vw_LimitesMD (R12, 03/10: /limites y /limitesc) ====
+   La tabla de limites que KomfIA USA para el semaforo: vw_LimitesPorComponente (lc agregado por CompTipo, con
+   las reglas MIN/MAX de alla), no [Eqpcare].[lc] crudo. Asi lo que se ve es exactamente contra que se compara.
+   El orden y los grupos salen de vw_FormatoParametro; el sentido (↓ = la alerta es por debajo) de su Inv.
+   'OTRO' fuera: la fundacion nunca usa esos limites (guard anti-colision de vw_MuestrasEstado).
+     MD          = solo los parametros CON limite cargado      (/limites)
+     MD_Completo = el formato entero, con «—» donde no hay      (/limitesc)
+   Filas: (modelo, componente) · (todos los modelos, componente) · (modelo, todos los componentes) ·
+   (todos, todos) = resumen. Las cuatro salen del mismo 'blk'; lc tiene 64 filas, releerlo no cuesta. */
+CREATE OR ALTER VIEW [dbo].[vw_LimitesMD] AS
+WITH p AS (
+    SELECT ISNULL(mp.[Name], l.ProyKey) AS Proyecto, l.ModeloKey AS Modelo, l.CompTipo,
+        f.Parametro, f.Grupo, f.Orden, f.Inv,
+        v.LP, v.LC, v.LPs, v.LCs, ISNULL(v.esBanda, 0) AS esBanda,
+        CASE WHEN COALESCE(v.LP, v.LC, v.LPs, v.LCs) IS NOT NULL THEN 1 ELSE 0 END AS conLim
+    FROM [dbo].[vw_LimitesPorComponente] l
+    LEFT JOIN [Mine].[MiningProject] mp ON UPPER(LTRIM(RTRIM(mp.[Name]))) = l.ProyKey
+    INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = l.CompTipo
+    OUTER APPLY (
+        SELECT x.LP, x.LC, x.LPs, x.LCs, x.esBanda
+        FROM (VALUES
+            (N'Fe', l.Fe_LP, l.Fe_LC, NULL, NULL, 0), (N'PQ', l.PQ_LP, l.PQ_LC, NULL, NULL, 0),
+            (N'Cr', l.Cr_LP, l.Cr_LC, NULL, NULL, 0), (N'Ni', l.Ni_LP, l.Ni_LC, NULL, NULL, 0),
+            (N'Cu', l.Cu_LP, l.Cu_LC, NULL, NULL, 0), (N'Pb', l.Pb_LP, l.Pb_LC, NULL, NULL, 0),
+            (N'Sn', l.Sn_LP, l.Sn_LC, NULL, NULL, 0), (N'Al', l.Al_LP, l.Al_LC, NULL, NULL, 0),
+            (N'Si', l.Si_LP, l.Si_LC, NULL, NULL, 0), (N'Ca', l.Ca_LP, l.Ca_LC, NULL, NULL, 0),
+            (N'Zn', l.Zn_LP, l.Zn_LC, NULL, NULL, 0), (N'Mg', l.Mg_LP, l.Mg_LC, NULL, NULL, 0),
+            (N'K', l.K_LP, l.K_LC, NULL, NULL, 0), (N'Na', l.Na_LP, l.Na_LC, NULL, NULL, 0),
+            (N'B', l.B_LP, l.B_LC, NULL, NULL, 0), (N'P', l.P_LP, l.P_LC, NULL, NULL, 0),
+            (N'Mo', l.Mo_LP, l.Mo_LC, NULL, NULL, 0), (N'TBN', l.TBN_LP, l.TBN_LC, NULL, NULL, 0),
+            (N'TAN', l.TAN_LP, l.TAN_LC, NULL, NULL, 0),
+            (N'Oxidacion', l.Oxi_LP, l.Oxi_LC, NULL, NULL, 0), (N'Sulfatacion', l.Sulf_LP, l.Sulf_LC, NULL, NULL, 0),
+            (N'Nitracion', l.Nit_LP, l.Nit_LC, NULL, NULL, 0), (N'Hollin', l.Hollin_LP, l.Hollin_LC, NULL, NULL, 0),
+            (N'Diesel', l.Diesel_LP, l.Diesel_LC, NULL, NULL, 0), (N'Agua', l.Agua_LP, l.Agua_LC, NULL, NULL, 0),
+            (N'V100', l.V100_LPI, l.V100_LCI, l.V100_LPS, l.V100_LCS, 1),
+            (N'V40', l.V40_LPI, l.V40_LCI, l.V40_LPS, l.V40_LCS, 1),
+            (N'ISO>4', l.ISO4_LP, l.ISO4_LC, NULL, NULL, 0), (N'ISO>6', l.ISO6_LP, l.ISO6_LC, NULL, NULL, 0),
+            (N'ISO>14', l.ISO14_LP, l.ISO14_LC, NULL, NULL, 0)
+        ) x(Parametro, LP, LC, LPs, LCs, esBanda)
+        WHERE x.Parametro = f.Parametro
+    ) v
+    WHERE l.CompTipo <> 'OTRO'
+),
+fila AS (
+    SELECT p.*,
+        /* la cabecera de grupo va en la primera fila del grupo; en MD, en la primera CON limite */
+        CASE WHEN ROW_NUMBER() OVER (PARTITION BY Proyecto, Modelo, CompTipo, Grupo ORDER BY Orden) = 1
+             THEN N'| **' + Grupo + N'** | | |' + NCHAR(10) ELSE N'' END AS cabC,
+        CASE WHEN conLim = 1 AND ROW_NUMBER() OVER (PARTITION BY Proyecto, Modelo, CompTipo, Grupo ORDER BY conLim DESC, Orden) = 1
+             THEN N'| **' + Grupo + N'** | | |' + NCHAR(10) ELSE N'' END AS cabD,
+        N'| ' + Parametro + CASE WHEN Inv = 1 THEN N' ↓' ELSE N'' END + N' | '
+      + CASE WHEN esBanda = 1 THEN COALESCE(t.LP + N'–' + t.LPs, N'≥ ' + t.LP, N'≤ ' + t.LPs, N'—') ELSE ISNULL(t.LP, N'—') END + N' | '
+      + CASE WHEN esBanda = 1 THEN COALESCE(t.LC + N'–' + t.LCs, N'≥ ' + t.LC, N'≤ ' + t.LCs, N'—') ELSE ISNULL(t.LC, N'—') END + N' |' AS rowMD
+    FROM p
+    CROSS APPLY (SELECT
+        CASE WHEN p.Parametro LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(p.LP AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(p.LP AS decimal(18,2))) END AS LP,
+        CASE WHEN p.Parametro LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(p.LC AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(p.LC AS decimal(18,2))) END AS LC,
+        CONVERT(nvarchar(20), CAST(p.LPs AS decimal(18,2))) AS LPs,
+        CONVERT(nvarchar(20), CAST(p.LCs AS decimal(18,2))) AS LCs) t
+),
+blk AS (   -- un bloque por (proyecto, modelo, componente)
+    SELECT Proyecto, Modelo, CompTipo,
+        CASE CompTipo WHEN 'TRACCION' THEN 1 WHEN 'RUEDA' THEN 2 WHEN 'MOTOR' THEN 3 WHEN 'HIDRAULICO' THEN 4 WHEN 'MANDO' THEN 5 WHEN 'TRANSMISION' THEN 6 ELSE 9 END AS compOrd,
+        SUM(conLim) AS nLim, COUNT(*) AS nFmt,
+        N'**' + CASE CompTipo WHEN 'TRACCION' THEN N'Motor de Tracción (LH y RH)' WHEN 'HIDRAULICO' THEN N'Sistema Hidráulico' WHEN 'RUEDA' THEN N'Rueda Delantera (LH y RH)' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmisión' WHEN 'MOTOR' THEN N'Motor' ELSE CompTipo END
+      + N' · ' + Modelo + N'** · ' + CAST(SUM(conLim) AS nvarchar(10)) + N' de ' + CAST(COUNT(*) AS nvarchar(10)) + N' parámetros con límite' + NCHAR(10) + NCHAR(10)
+      + N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' AS cab,
+        STRING_AGG(CAST(cabC + rowMD AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyC,
+        STRING_AGG(CASE WHEN conLim = 1 THEN CAST(cabD + rowMD AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyD
+    FROM fila
+    GROUP BY Proyecto, Modelo, CompTipo
+)
+SELECT b.Proyecto, b.Modelo, b.CompTipo,
+    CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
+    CAST(N'**Límites — ' + b.Proyecto + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
+         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
+         + N'El ISO es un código entero._') + NCHAR(10) + NCHAR(10)
+       + b.cab + NCHAR(10) + ISNULL(b.bodyD, N'| _sin límites cargados_ | | |') AS nvarchar(max)) AS MD,
+    CAST(N'**Límites (formato completo) — ' + b.Proyecto + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
+         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
+         + N'El ISO es un código entero._')
+       + N' _«—» = sin límite cargado: ese parámetro no se evalúa._' + NCHAR(10) + NCHAR(10)
+       + b.cab + NCHAR(10) + b.bodyC AS nvarchar(max)) AS MD_Completo
+FROM blk b
+UNION ALL   -- todos los modelos de un componente
+SELECT b.Proyecto, N'(todos)', b.CompTipo, NULL, NULL,
+    CAST(N'**Límites — ' + b.Proyecto + N'** · ' + CAST(COUNT(*) AS nvarchar(10)) + N' modelos' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
+         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
+         + N'El ISO es un código entero._') + NCHAR(10) + NCHAR(10)
+       + STRING_AGG(CAST(b.cab + NCHAR(10) + ISNULL(b.bodyD, N'| _sin límites cargados_ | | |') AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo) AS nvarchar(max)),
+    CAST(N'**Límites (formato completo) — ' + b.Proyecto + N'** · ' + CAST(COUNT(*) AS nvarchar(10)) + N' modelos' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
+         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
+         + N'El ISO es un código entero._')
+       + N' _«—» = sin límite cargado: ese parámetro no se evalúa._' + NCHAR(10) + NCHAR(10)
+       + STRING_AGG(CAST(b.cab + NCHAR(10) + b.bodyC AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo) AS nvarchar(max))
+FROM blk b GROUP BY b.Proyecto, b.CompTipo
+UNION ALL   -- todos los componentes de un modelo
+SELECT b.Proyecto, b.Modelo, N'(todos)', NULL, NULL,
+    CAST(N'**Límites — ' + b.Proyecto + N' · ' + b.Modelo + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
+         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
+         + N'El ISO es un código entero._') + NCHAR(10) + NCHAR(10)
+       + STRING_AGG(CAST(b.cab + NCHAR(10) + ISNULL(b.bodyD, N'| _sin límites cargados_ | | |') AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.compOrd) AS nvarchar(max)),
+    CAST(N'**Límites (formato completo) — ' + b.Proyecto + N' · ' + b.Modelo + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
+         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
+         + N'El ISO es un código entero._')
+       + N' _«—» = sin límite cargado: ese parámetro no se evalúa._' + NCHAR(10) + NCHAR(10)
+       + STRING_AGG(CAST(b.cab + NCHAR(10) + b.bodyC AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.compOrd) AS nvarchar(max))
+FROM blk b GROUP BY b.Proyecto, b.Modelo
+UNION ALL   -- todo el proyecto: resumen (completo seria ~20 KB, roza el tope de Teams)
+SELECT b.Proyecto, N'(todos)', N'(todos)', NULL, NULL,
+    CAST(N'**Límites cargados — ' + b.Proyecto + N'** · qué tiene límite (los que usa el semáforo)' + NCHAR(10) + NCHAR(10)
+       + N'| Modelo | Componente | Con límite | Del formato |' + NCHAR(10) + N'|---|---|---|---|' + NCHAR(10)
+       + STRING_AGG(CAST(N'| ' + b.Modelo + N' | ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motor de Tracción' WHEN 'HIDRAULICO' THEN N'Sist. Hidráulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmisión' WHEN 'MOTOR' THEN N'Motor' ELSE b.CompTipo END
+           + N' | ' + CAST(b.nLim AS nvarchar(10)) + N' | ' + CAST(b.nFmt AS nvarchar(10)) + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo, b.compOrd)
+       + NCHAR(10) + NCHAR(10) + N'_Pide la tabla de uno: **/limites ' + b.Proyecto + N' ‹modelo› ‹componente›** (o **/limitesc** para ver también los que no tienen límite)._' AS nvarchar(max)),
+    CAST(N'**Límites cargados — ' + b.Proyecto + N'** · qué tiene límite (los que usa el semáforo)' + NCHAR(10) + NCHAR(10)
+       + N'| Modelo | Componente | Con límite | Del formato |' + NCHAR(10) + N'|---|---|---|---|' + NCHAR(10)
+       + STRING_AGG(CAST(N'| ' + b.Modelo + N' | ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motor de Tracción' WHEN 'HIDRAULICO' THEN N'Sist. Hidráulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmisión' WHEN 'MOTOR' THEN N'Motor' ELSE b.CompTipo END
+           + N' | ' + CAST(b.nLim AS nvarchar(10)) + N' | ' + CAST(b.nFmt AS nvarchar(10)) + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo, b.compOrd)
+       + NCHAR(10) + NCHAR(10) + N'_Pide la tabla de uno: **/limitesc ' + b.Proyecto + N' ‹modelo› ‹componente›**._' AS nvarchar(max))
+FROM blk b GROUP BY b.Proyecto;
 GO

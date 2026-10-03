@@ -8560,8 +8560,8 @@ GO
 -- RESULTADOS 194 con el DDL NUEVO (03/10) -- BLOQUE 89: 0 vistas rotas.
 --   194.M  panel 980 2,2 s (sin cambio) · incipiente 1,9 s (CPU 0,4 s · LD Scan 1 / 1 367 · lc Scan 2) contra
 --          10,0 s (LD Scan 9, lc Scan 1 984): 5 veces mas rapido, UNA lectura como se diseno. ✅
---          ultimo y tendencia: la salida de Messages se corto -> PENDIENTE pegar esos dos tiempos (corte: ultimo no
---          peor que 8,8 s · tendencia <= 40,5 s). La seccion 194.2 entera (tendencia + grafica) tardo 55 s.
+--          ultimo 9,4 s (CPU 2,0 s; antes 8,8 s: ruido, no peor) · tendencia 19,0 s (CPU 3,6 s + compilar 7,6 s; antes
+--          32,4 s): MEJORA, desaparecio el derrame a disco (Workfile 582 fisicas -> 0). Cortes cumplidos. ✅ 194 CERRADO.
 --   194.1  /ultimo CA3195: separadores 1 · anchos 1 ✅ · V100 «— | 70.1–85.7 | 75.1» (MT: solo critico, banda) ·
 --          P «280.0 | 240.0 | 290.2» sin marca (aditivo, por encima del LP = sano) · B sin limite cargado en MT ·
 --          ISO>4 22 · ISO>6 «19 | 20 | 20 🟨» · ISO>14 «16 | 19 | 16» -- ENTEROS ✅ · PQ 233.2 🟥 ✅
@@ -8613,4 +8613,70 @@ FROM vw_MuestrasRankeadas
 WHERE Proyecto LIKE '%antapaccay%' AND Compartimiento LIKE '%TRACCION%' AND rn_recencia <= 7
 GROUP BY Compartimiento
 ORDER BY Compartimiento;
+GO
+
+-- ==== BLOQUE 196 - /historialmetal con Estado_* · ISO entero en la grafica · /limites y /limitesc ====
+-- CAMBIOS (DDL escrito):
+--   R10 · las 4 vistas de historial de un metal: P y B con su limite, la marca de cada celda de Estado_* (antes
+--         recalculaban «por arriba»: con el LP de P = 280 hubieran marcado 🟥 un P sano) y la columna Estado con
+--         la regla de /historial y /tendencia (peor celda con Inf = 0), no Estado_General.
+--   R11 · grafica ASCII de un ISO: marcas y lineas LP/LC enteras, «(código)» en vez de «(ppm)».
+--   R12 · vista nueva vw_LimitesMD (52 vistas).
+-- BUG VIEJO hallado al armar esto: MD_historial filtra «Parametro LIKE '%P%'» -> /historialmetal de P trae P, PQ
+--   y Pb mezclados; de B trae B y Pb. Cura en el FLUJO (196.1 lo demuestra).
+-- ⚑ ORDEN: 196.0 con el DDL VIEJO -> desplegar DDL_vistas.sql entero -> BLOQUE 89 -> 196.0 otra vez -> 196.2-196.4.
+-- ⚑ DECISION escrita antes de ver los numeros: 196.0 despues > 1,25 x antes -> revertir SOLO la columna Estado
+--   de las 4 vistas (el OUTER APPLY 'pe'); las marcas de celda y los limites de P/B se quedan.
+
+-- 196.0 ⭐ medicion: la consulta EXACTA de MD_historial para los temas 14 y 13 (con el filtro de metal nuevo)
+DECLARE @a nvarchar(max), @b nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON;
+PRINT N'===== historialmetal 3195 MTLH Fe (tema 14)';
+SELECT @a = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== historialmetal 3195 Fe todos los componentes (tema 13)';
+SELECT @b = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalEquipoFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%%%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET ARITHABORT ON;
+GO
+
+-- 196.1 el bug del filtro de metal (correr con cualquier DDL): esperado P, PQ y Pb con '%P%'; solo P con 'P'
+SELECT N'LIKE ''%P%''' AS filtro, Parametro, COUNT(*) AS filas FROM vw_HistorialMetalFilasMD
+WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%' AND Parametro LIKE '%P%' GROUP BY Parametro
+UNION ALL
+SELECT N'LIKE ''P''', Parametro, COUNT(*) FROM vw_HistorialMetalFilasMD
+WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%' AND Parametro LIKE 'P' GROUP BY Parametro;
+GO
+
+-- 196.2 (DDL nuevo) /historialmetal 3195 MTLH P: titulo «LP 280.0 · LC 240.0»; P ≈ 290-400 SIN marca (aditivo
+--   sobre su LP = sano); la columna Estado igual a la de /historial en las mismas fechas (16-Sep 🟥 por ISO).
+SELECT TOP 8 TituloMD, Fila FROM vw_HistorialMetalFilasMD
+WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%' AND Parametro LIKE 'P' ORDER BY rn;
+GO
+
+-- 196.3 (DDL nuevo) grafica de un ISO: «(código)» y marcas sin decimal
+SELECT MD FROM vw_TendenciaGraficoMD WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') LIKE '%MTLH%' AND Parametro = 'ISO>6';
+GO
+
+-- 196.4 (DDL nuevo) /limites: que filas hay, cuanto pesa cada MD (tope de Teams ~28 000) y la forma
+--   Esperado: por cada (modelo, componente) con lc + '(todos)' por componente, por modelo y el resumen.
+--   980E TRACCION: P ↓ 280.00 | 240.00 · V100 con banda en LC · ISO enteros · anchos 1 (3 columnas).
+SET STATISTICS TIME ON;
+SELECT Proyecto, Modelo, CompTipo, DATALENGTH(MD) / 2 AS chars_MD, DATALENGTH(MD_Completo) / 2 AS chars_completo
+FROM vw_LimitesMD WHERE Proyecto LIKE '%antapaccay%' ORDER BY Modelo, CompTipo;
+SET STATISTICS TIME OFF;
+DECLARE @l nvarchar(max), @c nvarchar(max), @r nvarchar(max);
+SELECT @l = MD, @c = MD_Completo FROM vw_LimitesMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%980%' AND CompTipo = 'TRACCION';
+SELECT @r = MD FROM vw_LimitesMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%(todos)%' AND CompTipo = '(todos)';
+SELECT v.caso,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM (VALUES (N'limites 980E traccion', @l), (N'completo 980E traccion', @c), (N'resumen', @r)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso;
+SELECT @l AS limites, @c AS completo, @r AS resumen;
 GO
