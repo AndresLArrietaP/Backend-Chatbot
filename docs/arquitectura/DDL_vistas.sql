@@ -4595,7 +4595,9 @@ CREATE OR ALTER VIEW [dbo].[vw_TendenciaIncipienteMD] AS
      promedio de las 6 anteriores < LP). Antes se descartaba por «ya observado» y un salto como el PQ del
      CA3195 (≈50 -> 233) no salia en la lista que existe justamente para eso. Lo cronico (promedio ya sobre
      el LP) sigue fuera: eso es del barrido, no de una tendencia nueva.
-   GROUPING_ID(Equipo, compAbbr, metal, Orden): 3 = fila de equipo · 12 = fila de metal (limites). */
+   GROUPING_ID(Equipo, compAbbr, RealModelo, metal, Orden): 3 = fila de equipo · 24 = fila de limite por modelo y metal.
+   Los limites van POR MODELO: en '(todos)' conviven modelos con limites distintos (hidraulico 980E vs D475A) y un MAX
+   por metal ponia «Si LC 60» bajo un «Si 13.3 🟥 cruzó LC» del 980E (03/10). Con mas de un modelo, columna Modelo. */
 SELECT mp.[Name] AS Proyecto, x.Modelo, x.CompTipo,
        CAST(NULL AS nvarchar(max)) AS Observados,
        CAST(NULL AS nvarchar(max)) AS Recomendaciones,
@@ -4618,12 +4620,13 @@ SELECT a.ModeloG AS Modelo, a.CompTipo,
         END
       + CASE WHEN a.Ninc > 0 THEN
             NCHAR(10) + NCHAR(10)
-          + N'| Equipo | Componente | Tendencia | Parámetros (prom' + N'→' + N'últ) |' + NCHAR(10)
-          + N'|---|---|---|---|' + NCHAR(10) + a.bodyMD
+          + CASE WHEN a.multi = 1 THEN N'| Equipo | Modelo | Componente | Tendencia | Parámetros (prom→últ) |' + NCHAR(10) + N'|---|---|---|---|---|'
+                 ELSE N'| Equipo | Componente | Tendencia | Parámetros (prom→últ) |' + NCHAR(10) + N'|---|---|---|---|' END + NCHAR(10) + a.bodyMD
           + CASE WHEN a.Ninc > 25 THEN NCHAR(10) + NCHAR(10) + N'_Mostrando 25 de ' + CAST(a.Ninc AS nvarchar(10)) + N', los más severos primero._' ELSE N'' END
           + NCHAR(10) + NCHAR(10)
           + N'**Límites de referencia (ppm)**' + NCHAR(10) + NCHAR(10)
-          + N'| Metal | LP | LC |' + NCHAR(10) + N'|---|---|---|' + NCHAR(10) + ISNULL(a.limMD, N'| — | | |')
+          + CASE WHEN a.multi = 1 THEN N'| Modelo | Metal | LP | LC |' + NCHAR(10) + N'|---|---|---|---|' ELSE N'| Metal | LP | LC |' + NCHAR(10) + N'|---|---|---|' END
+          + NCHAR(10) + ISNULL(a.limMD, N'| — | | |')
         WHEN a.Neval > 0 THEN
             NCHAR(10) + NCHAR(10) + N'_Ninguno: ningún equipo de este componente muestra desviación incipiente sobre su comportamiento histórico._'
         ELSE N'' END
@@ -4633,21 +4636,26 @@ FROM (
         SUM(CASE WHEN gid = 3 AND tieneLP = 1 THEN 1 ELSE 0 END) AS Neval,
         SUM(CASE WHEN gid = 3 AND tieneLP = 0 THEN 1 ELSE 0 END) AS Nsin,
         SUM(CASE WHEN gid = 3 AND nDisp > 0 THEN 1 ELSE 0 END)   AS Ninc,
+        MAX(multi) AS multi,
         STRING_AGG(CASE WHEN gid = 3 AND nDisp > 0 AND sk <= 25 THEN CAST(
-            N'| ' + Equipo + N' | ' + compAbbr + N' | '
+            N'| ' + Equipo + CASE WHEN multi = 1 THEN N' | ' + ISNULL(RealModelo, N'—') ELSE N'' END + N' | ' + compAbbr + N' | '
           + CASE sev WHEN 0 THEN N'🟥 cruzó LC' WHEN 1 THEN N'🟨 cruzó LP' WHEN 2 THEN N'🟧 acelerada' ELSE N'🔵 incipiente' END
           + N' | ' + mets + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS bodyMD,
-        STRING_AGG(CASE WHEN gid = 12 AND nDisp > 0 THEN CAST(
-            N'| ' + metal + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(LP AS decimal(18,1))), N'—')
+        STRING_AGG(CASE WHEN gid = 24 AND nDisp > 0 THEN CAST(
+            CASE WHEN multi = 1 THEN N'| ' + ISNULL(RealModelo, N'—') + N' ' ELSE N'' END + N'| ' + metal + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(LP AS decimal(18,1))), N'—')
           + N' | ' + ISNULL(CONVERT(nvarchar(20), CAST(LC AS decimal(18,1))), N'—') + N' |' AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY sk) AS limMD
     FROM (
         SELECT g.*,
+            /* mas de un modelo entre los que salen -> las dos tablas llevan la columna Modelo */
+            CASE WHEN MAX(CASE WHEN g.gid = 24 AND g.nDisp > 0 THEN g.RealModelo END) OVER (PARTITION BY g.ModeloG, g.CompTipo)
+                   <> MIN(CASE WHEN g.gid = 24 AND g.nDisp > 0 THEN g.RealModelo END) OVER (PARTITION BY g.ModeloG, g.CompTipo)
+                 THEN 1 ELSE 0 END AS multi,
             ROW_NUMBER() OVER (PARTITION BY g.ModeloG, g.CompTipo, g.gid
-                               ORDER BY CASE WHEN g.nDisp > 0 THEN 0 ELSE 1 END, CASE WHEN g.gid = 12 THEN g.Orden END, ISNULL(g.sev, 9), -ISNULL(g.maxpct, 0),
+                               ORDER BY CASE WHEN g.nDisp > 0 THEN 0 ELSE 1 END, CASE WHEN g.gid = 24 THEN g.RealModelo END, CASE WHEN g.gid = 24 THEN g.Orden END, ISNULL(g.sev, 9), -ISNULL(g.maxpct, 0),
                                         g.Equipo, g.compAbbr, g.Orden) AS sk
         FROM (
-            SELECT d.ModeloG, d.CompTipo, d.Equipo, d.compAbbr, d.metal, d.Orden,
-                GROUPING_ID(d.Equipo, d.compAbbr, d.metal, d.Orden) AS gid,
+            SELECT d.ModeloG, d.CompTipo, d.Equipo, d.compAbbr, d.RealModelo, d.metal, d.Orden,
+                GROUPING_ID(d.Equipo, d.compAbbr, d.RealModelo, d.metal, d.Orden) AS gid,
                 MAX(CASE WHEN d.LP IS NOT NULL THEN 1 ELSE 0 END) AS tieneLP,
                 SUM(d.disp) AS nDisp,
                 MIN(CASE WHEN d.disp = 1 THEN d.sev END) AS sev,
@@ -4679,14 +4687,14 @@ FROM (
                 FROM (
                     SELECT b.*, CONVERT(int, ROUND((b.ult - b.prom_prev) / NULLIF(b.prom_prev, 0) * 100, 0)) AS pct
                     FROM (   -- ultimo (rn=1) vs promedio de las 6 previas (rn 2..7, SIN el ultimo)
-                        SELECT s.ModeloG, s.CompTipo, s.Equipo, s.Compartimiento, s.compAbbr, s.metal, s.Orden,
+                        SELECT s.ModeloG, s.CompTipo, s.Equipo, s.Compartimiento, s.compAbbr, s.RealModelo, s.metal, s.Orden,
                             MAX(CASE WHEN s.rn_recencia = 1 THEN s.Valor END) AS ult,
                             MAX(CASE WHEN s.rn_recencia = 1 THEN s.LP END)    AS LP,
                             MAX(CASE WHEN s.rn_recencia = 1 THEN s.LC END)    AS LC,
                             AVG(CASE WHEN s.rn_recencia BETWEEN 2 AND 7 THEN s.Valor END) AS prom_prev,
                             SUM(CASE WHEN s.rn_recencia BETWEEN 2 AND 7 AND s.Valor IS NOT NULL THEN 1 ELSE 0 END) AS n_prev
                         FROM (   -- la UNICA lectura: ultimas 7 muestras por equipo+componente, un renglon por metal
-                            SELECT mg.ModeloG, r.CompTipo, r.Equipo, r.Compartimiento, r.rn_recencia,
+                            SELECT mg.ModeloG, r.Modelo AS RealModelo, r.CompTipo, r.Equipo, r.Compartimiento, r.rn_recencia,
                                 CASE WHEN r.Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN r.Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN r.Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN r.Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN r.Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN r.Compartimiento = 'MOTOR' THEN N'Motor' ELSE ISNULL(r.Compartimiento, N'(sin componente)') END AS compAbbr,
                                 p.metal, p.Orden, CAST(p.Valor AS decimal(18,2)) AS Valor, CAST(p.LP AS decimal(18,2)) AS LP, CAST(p.LC AS decimal(18,2)) AS LC
                             FROM (SELECT * FROM [dbo].[vw_MuestrasRankeadas] WHERE Proyecto = mp.[Name] AND rn_recencia <= 7) r
@@ -4708,13 +4716,13 @@ FROM (
                                 (N'Si',9,r.Si_ppm,r.Si_LP,r.Si_LC)
                             ) p(metal, Orden, Valor, LP, LC)
                         ) s
-                        GROUP BY s.ModeloG, s.CompTipo, s.Equipo, s.Compartimiento, s.compAbbr, s.metal, s.Orden
+                        GROUP BY s.ModeloG, s.CompTipo, s.Equipo, s.Compartimiento, s.compAbbr, s.RealModelo, s.metal, s.Orden
                     ) b
                 ) c
             ) d
             GROUP BY GROUPING SETS (
-                (d.ModeloG, d.CompTipo, d.Equipo, d.compAbbr),
-                (d.ModeloG, d.CompTipo, d.metal, d.Orden)
+                (d.ModeloG, d.CompTipo, d.Equipo, d.compAbbr, d.RealModelo),
+                (d.ModeloG, d.CompTipo, d.RealModelo, d.metal, d.Orden)
             )
         ) g
     ) w

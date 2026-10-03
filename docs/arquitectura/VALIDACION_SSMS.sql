@@ -8577,3 +8577,40 @@ GO
 --            CA3179 MT LH 🟨 cruzó LP · Pb 1.5→4.5 (+197%)
 --            CA3170 MT LH 🔵 incipiente · Fe 103.0→149.2 (+45%)  · CA3178 MT LH 🔵 incipiente · PQ 83.5→120.4 (+44%)
 --          Los dos 🔵 son los mismos de la presentacion: el criterio viejo se conserva, solo se agrego «cruzó».
+
+-- ==== BLOQUE 195 - incipiente: limites POR MODELO + sospecha del typo en MT RH ====
+-- Visto en Teams (03/10, /incipiente antapaccay hidr): «CA3191 Si 8.1→13.3 🟥 cruzó LC» con una tabla de limites
+--   que dice Si LP 30 / LC 60. El 🟥 es correcto contra el limite del 980E; la tabla tomaba el MAX de cada metal
+--   MEZCLANDO modelos (en '(todos)' entran 980E y D475A). Mismo defecto en la vista vieja.
+-- CAMBIO (DDL escrito, solo vw_TendenciaIncipienteMD): limites por (modelo, metal) y, si sale mas de un modelo,
+--   columna Modelo en las dos tablas.
+-- ⚑ Desplegar SOLO esa vista (su CREATE OR ALTER ... GO del DDL) y despues correr esto.
+-- ⚑ DECISION: 195.0 > 3 s (hoy 1,9 s) -> revertir este cambio (git). 195.1 anchos = 2 (tabla principal + limites).
+
+-- 195.0 ⭐ medicion + forma
+DECLARE @h nvarchar(max), @m nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS TIME ON;
+SELECT @h = MD FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%' AND CompTipo = 'HIDRAULICO' AND Modelo LIKE '%todos%';
+SET STATISTICS TIME OFF; SET ARITHABORT ON;
+SELECT @m = MD FROM dbo.vw_TendenciaIncipienteMD WHERE Proyecto LIKE '%antapaccay%' AND CompTipo = 'TRACCION' AND Modelo LIKE '%todos%';
+SELECT v.caso,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(CASE WHEN s.value LIKE N'| Equipo | Modelo%' THEN 1 ELSE 0 END) AS con_col_modelo
+FROM (VALUES (N'hidraulico (980E + D475A)', @h), (N'traccion (solo 980E)', @m)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s
+GROUP BY v.caso;
+SELECT @h AS incipiente_hidr, @m AS incipiente_traccion;
+GO
+
+-- 195.1 ¿por que 5 de 5 en MT LH y ninguno en MT RH? Sospecha: el typo 'MOTORO DE TRACCION RH' parte la serie de
+--   un mismo motor en dos nombres; cada nombre se rankea aparte y ninguno junta las 3 muestras que pide el criterio.
+--   Esperado si es el typo: filas con MOTORO y, en MT RH, menos equipos con >= 3 muestras que en MT LH.
+SELECT Compartimiento,
+       COUNT(DISTINCT Equipo) AS equipos,
+       COUNT(DISTINCT CASE WHEN rn_recencia = 3 THEN Equipo END) AS equipos_con_3_o_mas,
+       MAX(FechaMuestreo) AS ultima
+FROM vw_MuestrasRankeadas
+WHERE Proyecto LIKE '%antapaccay%' AND Compartimiento LIKE '%TRACCION%' AND rn_recencia <= 7
+GROUP BY Compartimiento
+ORDER BY Compartimiento;
+GO
