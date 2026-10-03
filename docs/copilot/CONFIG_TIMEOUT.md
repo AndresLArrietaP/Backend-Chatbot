@@ -14,6 +14,15 @@ Cada reintento **re-corre el query lento** → 5 × ~1min = **5-8min** (exactame
 Gateway Timeout** salta en «Responder al agente» cuando el flujo total excede el tiempo de respuesta síncrona.
 → El problema NO es solo la lentitud de la vista: es la **política de reintentos multiplicándola**.
 
+## Se repitió el 02/10, en la presentación (medido el 03/10)
+- `MD_incipiente` **no tenía** la Capa A: su consulta SQL duró **8 min 22 s** (4 intentos de 2 min) y el agente ya había
+  cortado. → Capa A aplicada a todos los flujos el 03/10.
+- El panel, que en SSMS tarda 3 s, pasó de 120 s dos veces. El BLOQUE 194 midió **reloj = 4-8 × CPU** en consultas
+  sueltas: el tier estrangula el CPU, y las consultas simultáneas se lo reparten. Una consulta que el conector abandona
+  a los 120 s **sigue corriendo** en el servidor. Con reintentos encima, todo se apila.
+- La forense exacta (Query Store) existe pero pide `VIEW DATABASE PERFORMANCE STATE` → pedirlo al DBA
+  ([DIAGNOSTICO_LATENCIA.sql](../arquitectura/DIAGNOSTICO_LATENCIA.sql), L9).
+
 ## Solución en 3 capas (de mayor a menor impacto)
 
 ### Capa A — Reintentos = Ninguno (⭐ el arreglo grande, hazlo primero)

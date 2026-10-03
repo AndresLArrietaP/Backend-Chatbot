@@ -66,8 +66,8 @@ más riesgo que la línea que ahorra.
 | Gráficas de observados | equipo, compartimiento | MD_equipo_comp · vista=vw_TendenciaGraficoObsMD · columna=MD | no |
 | Historial general del equipo | equipo | MD_equipo · vista=vw_HistorialEquipoMD · columna=MD | no |
 | Historial (componente) | equipo, compartimiento | MD_equipo_comp · vista=vw_HistorialMD · columna=MD | no |
-| Historial de un metal (equipo) | equipo, parametro | MD_metal · vista=vw_HistorialMetalEquipoMD · compartimiento=todos | no |
-| Historial de un metal en componente | equipo, compartimiento, parametro | MD_metal · vista=vw_HistorialMetalMD | no |
+| Historial de un metal (equipo) | equipo, parametro | **MD_historial** · vista=vw_HistorialMetalEquipoFilasMD (confirmado en Teams 03/10: «200 muestras», el tope de las *FilasMD) | no |
+| Historial de un metal en componente | equipo, compartimiento, parametro | **MD_historial** · vista=vw_HistorialMetalFilasMD | no |
 | Historial de observados de flota | proyecto | MD_flota · vista=vw_HistorialFlotaMD · modelo=todos · columna=MD | no |
 | Barrido → **Panel de flota** (I, 02/10) | proyecto, modelo | MD_flota · vista=**vw_PanelFlotaMD** · columna=MD | no |
 | ⛔ Conteo de flota — **a desactivar** cuando el panel esté probado (lo absorbe el 16) | proyecto, modelo | MD_flota · vista=vw_ConteoFlotaMD · columna=MD (modelo default (todos)) | no |
@@ -221,7 +221,7 @@ y el orquestador queda fuera de las tres puertas por donde se cuela (piezas 4, 5
 | 04 Diagnóstico completo | `/diagcompleto` · `/diagnostico` | equipo |
 | 12 Historial equipo | `/historialeq` | equipo |
 | 28 Acumulados equipo | `/acumulados` | equipo |
-| 30 Límites (03/10) | `/limites` · `/limitesc` | — (todo con default) |
+| 🅿 30 Límites (aparcado 03/10) | `/limites` · `/limitesc` | — (todo con default) |
 
 Los de flota con default (`/barrido`, `/triage`, `/conteo`, `/incipiente`, `/historialflota`, `/rankingacum`,
 `/rankinggraf`) no la necesitan: su `If(p="","Antapaccay",p)` nunca deja el proyecto vacío.

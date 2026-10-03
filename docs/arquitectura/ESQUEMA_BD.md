@@ -34,17 +34,17 @@ KomfIA. Ese `.json` se retiró el 27/09/2026.
 ## ⚠ Es una INSTANTÁNEA, no un espejo
 
 El volcado se tomó **alrededor del 23/09/2026**. Si una columna o una vista no aparece, puede ser que no
-exista… o que se haya creado después. Al día de hoy faltan **7 vistas**, todas creadas entre el 24 y el
-25/09/2026:
+exista… o que se haya creado después. Al 03/10/2026 faltan **12 vistas nuestras** (cruce de `DDL_vistas.sql`
+contra el Excel), creadas entre el 24/09 y el 03/10:
 
 ```
-vw_FormatoParametro          vw_RankingGrafMD
-vw_HistorialFilasMD          vw_HistorialEquipoFilasMD
-vw_HistorialFlotaFilasMD     vw_HistorialMetalFilasMD
-vw_HistorialMetalEquipoFilasMD
+vw_AcumuladoVida             vw_FormatoParametro          vw_InvPorComponente
+vw_ModeloConLimites          vw_RankingGrafMD             vw_PanelFlotaMD
+vw_LimitesMD                 vw_HistorialFilasMD          vw_HistorialEquipoFilasMD
+vw_HistorialFlotaFilasMD     vw_HistorialMetalFilasMD     vw_HistorialMetalEquipoFilasMD
 ```
 
-Para esas siete, la fuente es [`DDL_vistas.sql`](DDL_vistas.sql). **Cuando se vuelva a tomar el volcado,
+Para esas doce, la fuente es [`DDL_vistas.sql`](DDL_vistas.sql). **Cuando se vuelva a tomar el volcado,
 actualizar esta sección** (o borrarla, si ya no falta nada).
 
 Regenerarlo es una consulta de lectura:

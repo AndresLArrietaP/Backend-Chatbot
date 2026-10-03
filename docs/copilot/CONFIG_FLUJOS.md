@@ -294,7 +294,8 @@ Mismo patrón que `MD_ranking`, que ya expone `HeaderMD` y deja que el flujo lo 
 - Si `tope` recorta, se anexa el pie «_Mostrando las N más recientes de M en el rango._». ⛔ Nunca en silencio.
 - El título se parte en `TituloMD` + `SufijoMD` porque **el conteo depende del rango** y lo pone el flujo.
 
-Query (expresión `fx`; cada `‹x›` = ficha de contenido dinámico, EN ORDEN):
+Query (expresión `fx`; cada `‹x›` = ficha de contenido dinámico, EN ORDEN) — ⚠ **versión anterior al 03/10**: la vigente
+(con `comp_key` y el metal sin comodines) es la de «Tal como queda en el editor», más abajo:
 ```
 concat('WITH f AS (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila, COUNT(*) OVER () AS Tot FROM dbo.', ‹vista›, ' WITH (NOLOCK) WHERE Equipo LIKE ''%', ‹equipo›, '%'' AND compAbbr COLLATE Latin1_General_CI_AI LIKE ''%', ‹compartimiento›, '%'' AND Parametro LIKE ''%', ‹parametro›, '%'' AND Proyecto LIKE ''%', ‹proyecto›, '%'' AND FechaMuestreo >= ''', if(empty(‹desde›),'1900-01-01',‹desde›), '''), sel AS (SELECT TOP (', if(empty(‹tope›),'200',‹tope›), ') * FROM f ORDER BY rn) SELECT MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn) + CASE WHEN MAX(Tot) > COUNT(*) THEN NCHAR(10) + NCHAR(10) + N''_Mostrando las '' + CAST(COUNT(*) AS nvarchar(10)) + N'' más recientes de '' + CAST(MAX(Tot) AS nvarchar(10)) + N'' en el rango._'' ELSE N'''' END AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM sel')
 ```

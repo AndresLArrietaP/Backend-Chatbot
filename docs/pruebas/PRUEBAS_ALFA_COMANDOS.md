@@ -1,4 +1,4 @@
-# KomfIA — Pruebas de alfa · **set completo, versión 02-oct-2026**
+# KomfIA — Pruebas de alfa · **set completo, versión 03-oct-2026**
 
 Cada prueba va **emparejada**: la consulta en **lenguaje natural** y su **`/comando`** equivalente. Los dos
 caminos deben dar **el mismo resultado**; el comando no cambia la lógica, solo dispara el tema con
@@ -20,6 +20,10 @@ parámetros explícitos.
 | historial con «Met. Obs.» | las **5 familias** del formato con su valor: `Fe (232.6) 🟥` |
 | triage con «Metales Obs.» | **5 columnas por familia** (Desgaste · Aditivos · Contaminación · Salud · Cód. Limpieza) |
 | 20 comandos | **18** |
+| **(03/10)** `/ultimo` y `/tendencia` sin límite en P, B, V100 ni ISO | **los 30 parámetros con su límite**; viscosidad como banda (`70.1–85.7`); ISO **entero** |
+| **(03/10)** `/incipiente ‹proj› [comp]` | + **`[modelo]`** · categoría **🟥/🟨 cruzó** · límites por modelo |
+| **(03/10)** `/historialmetal … P` traía P, PQ y Pb | solo el metal pedido |
+| **(03/10)** `/triage 3195` → «No encontré datos» | lleva al **diagnóstico** de ese equipo |
 
 ---
 
@@ -148,6 +152,21 @@ Comando incompleto ⇒ **pregunta**, nunca «No encontré datos». En el panel d
 
 ---
 
+## N11 · Lo que se vio el 02/10 — testigo CA3195 — **nuevo 03/10**
+
+| Consulta | Debe salir |
+|---|---|
+| `/ultimo 3195 mt lh` | P `280.0 · 240.0 · 290.2` sin marca (aditivo sobre su LP = sano) · V100 `— · 70.1–85.7 · 75.1` · ISO>6 `19 · 20 · 20 🟨` (enteros) · PQ 233.2 🟥 |
+| `/tendencia 3195 mt lh` | fila Estado 🟥 🟢 🟥 🟢 🟥 🟥 = la del historial · ISO con valores enteros · pie de informativos |
+| `/grafica 3195 mt lh ISO>6` | «(código)», marcas sin decimal, «últimas 6 muestras» |
+| `/incipiente antapaccay` | **CA3195 MT LH 🟥 cruzó LC · PQ 55.1→233.2 (+323%)** primero · 5 de 54 evaluados |
+| `/incipiente antapaccay 980` · `… hidr` | «980E» en el título · en hidráulicos columna **Modelo** y límites por modelo (Si 980E 9/10, D475A 30/60) |
+| `/historial 3195 MTLH 6 meses` | 35 muestras (el componente pegado ya no falla) |
+| `/historialmetal 3195 P mt lh` · `/historialmetal 3195 B` | solo P (título `LP 280.0 · LC 240.0`) · solo B, sin Pb |
+| `/triage 3195` | una línea («el triage es de la flota…») y el diagnóstico completo del CA3195 |
+
+---
+
 ## ⚠ Limitaciones conocidas — lo que KomfIA **no** hace hoy
 
 Conviene tenerlas a mano al enseñar el sistema, para no prometer de más.
@@ -155,10 +174,10 @@ Conviene tenerlas a mano al enseñar el sistema, para no prometer de más.
 | Limitación | Detalle |
 |---|---|
 | **Carga y límites del área** | 885 componentes sin ningún límite (salen sin evaluar) · 347 con ISO en 0 · 1 579 muestras de Cerro Verde sin componente · Antamina sin LP de Ca/Zn/Mg · ruedas de Antapaccay con el límite de otro aceite. Detalle para Carlos en `docs/copilot/PENDIENTES.md`, PASO 6 |
-| **El código ISO no cuenta igual en todos lados** | El triage y los historiales lo cuentan como observado; el panel y el barrido no (miran 9 metales + TBN). Decisión pendiente con el área |
+| **El código ISO no cuenta igual en todos lados** | Triage, historiales y tendencia lo cuentan para el Estado; panel, barrido y conteo no (9 metales + TBN). Queda dentro del estudio de **ponderación por parámetro** |
 | **`730E-` vs `730E`** | desajuste de texto entre `lc` y la flota: Cerro Verde 730E queda sin límites aunque el dato existe |
 | **Ventana de 12 meses** | la fundación rankea sobre 1 año por rendimiento: un equipo sin muestras en 12 meses **no aparece** en los módulos de estado actual, y el `Acum` suma dentro de esa ventana |
-| **Tiempos** | `/condicionmt` ~1,4 s · `/panel` 3-5 s · `/triage` ~3 s · `/grafica` ~7 s · `/diagcompleto` 7-11 s · `/tendencia` ~33 s · historiales ~34 s. Todos dentro del límite de Teams; los dos últimos tienen mejora pendiente |
+| **Tiempos** (03/10, SQL sin carga) | `/historialeq` 0,5 s · `/historialflota` 1,9 s · `/incipiente` 1,9 s · `/condicionmt` ~1,4 s · `/panel` 2-3 s · `/triage` ~3 s · `/ultimo` ~9 s · `/historial` ~10 s · `/diagcompleto` 7-11 s · `/tendencia` ~19 s. ⚠ La BD tiene un tope de CPU: con varias consultas a la vez **todas** tardan más (02/10) |
 | **Resumen tras los historiales** | después de `/historial*` la central agrega un resumen de varias viñetas (con cifras de la tabla, sin inventar). Pendiente de recortar a una línea |
 | **Teams no hace scroll horizontal** | las tablas anchas se comprimen (ej. «Acu m»). Por eso los historiales siguen en vertical |
 
@@ -175,10 +194,19 @@ Conviene tenerlas a mano al enseñar el sistema, para no prometer de más.
 | La IA de respaldo dibujaba tablas indistinguibles de las reales porque **se le pedía** | prompts e instrucciones: viñetas con 🔎 |
 | Un tema que responde **dos veces** (la primera vacía) = el flujo recibió un componente en otro vocabulario | todos los flujos por componente traducen (`MT` → `TRACCION`) |
 
-## Estado · 02/10
+## ✅ Resultados de la ronda 03/10 — y lo que enseñó
 
-📋 Presentado a gerencia el **02/10**: ronda de flota, rendimiento, comandos y los pedidos de forma
-(tabla única, panel, historiales). Acta actualizada (filas 58-62). A la espera del próximo feedback.
+| Lección | Dónde quedó |
+|---|---|
+| Una vista que arma su tabla con una **lista propia** de parámetros se queda atrás cuando la base crece (los 38 límites del 29/09 no llegaron a `/ultimo`) | `/ultimo` y `/tendencia` recorren el formato completo y leen `Estado_*` |
+| Una alerta temprana que descarta «lo ya observado» se pierde justo el salto que más importa | categoría «cruzó» en `/incipiente` |
+| Una tabla de límites con el MAX de varios modelos contradice la fila de arriba | límites por modelo |
+| La BD tiene un tope de CPU: reintentos y consultas abandonadas se apilan y todo se cae | reintentos = Ninguno; historiales con filtro abajo (`CONFIG_TIMEOUT.md`) |
+
+## Estado · 03/10
+
+📋 Presentado a gerencia el **02/10** (primera alfa, testigo CA3195). Lo que se vio quedó corregido y verificado en
+Teams el **03/10**. Acta: filas 63-64. En estudio: ponderación por parámetro. Aparcado: `/limites`.
 
 ## Cómo registrar la marcha
 

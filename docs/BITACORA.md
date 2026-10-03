@@ -31,7 +31,7 @@ un agente de IA que escribía SQL, hoy la propia base de datos.
 |---|---|---|---|
 | **1 · API REST en Python** | 2026-02-13 → 2026-06-06 | FastAPI + Gemini traducían la pregunta a SQL; Copilot Studio lo llamaba como herramienta | Murió por dos cosas: ~25 expresiones regulares frágiles y el **timeout de 240 s** de Copilot Studio |
 | **2 · Multiagente (SQL + vistas)** | 2026-06-13 → 2026-07-24 | Un sub-agente («KomfIA SQL») escribía el SQL; **vistas** de SQL Server hacían el cálculo; el central presentaba | Funcionó, pero cada respuesta pasaba por **dos LLM** → lento y no determinista |
-| **3 · Tópicos determinísticos (Tier 2)** | 2026-08-02 → hoy | La **vista devuelve el markdown ya armado** y el tópico lo imprime *verbatim*. Sin LLM en la ruta de render | Vivo. 47 vistas, 28 tópicos (25 activos), 20 comandos `/` |
+| **3 · Tópicos determinísticos (Tier 2)** | 2026-08-02 → hoy | La **vista devuelve el markdown ya armado** y el tópico lo imprime *verbatim*. Sin LLM en la ruta de render | Vivo. 52 vistas, 30 temas (24 activos), 18 comandos `/` |
 | **4 · Tarjetas con datos** | planificado | Adaptive Cards mostrando los datos de los módulos, no solo el menú | [copilot/tarjetas/PLAN_TARJETAS_DATOS.md](copilot/tarjetas/PLAN_TARJETAS_DATOS.md) |
 
 **Volumen de trabajo por mes** (commits): feb 19 · mar 35 · abr 37 · may 29 · jun 59 · jul 26 · ago 129 ·
@@ -220,7 +220,7 @@ Usuario (Teams)
    ├── escribe «/triage antapaccay»            → Tema 00 Comandos (cascada de condiciones Power Fx)
    └── escribe en lenguaje natural             → KomfIA Central (orquestador: rutea POR DESCRIPCIÓN)
         ↓
-   Tema NN  (28 temas; 25 activos)
+   Tema NN  (30 temas; 24 activos)
         ├── Acción → uno de los 4 flujos reutilizables (MD_equipo, MD_flota, MD_metal, MD_ranking)
         │              + flujos dedicados (MD_triage, MD_incipiente, MD_acumflota, …)
         │       └── Ejecutar consulta SQL (V2) → vista vw_*MD  →  columnas MD / Observados / Recomendaciones
@@ -236,8 +236,8 @@ Piezas y su documento canónico:
 
 | Pieza | Dónde se configura |
 |---|---|
-| 47 vistas (`vw_*`, `*_MD`) | [arquitectura/DDL_vistas.sql](arquitectura/DDL_vistas.sql) |
-| 28 temas + descripciones de ruteo | [copilot/CONFIG_TEMAS.md](copilot/CONFIG_TEMAS.md) |
+| 52 vistas (`vw_*`, `*_MD`) | [arquitectura/DDL_vistas.sql](arquitectura/DDL_vistas.sql) |
+| 30 temas + descripciones de ruteo | [copilot/CONFIG_TEMAS.md](copilot/CONFIG_TEMAS.md) |
 | 4 flujos reutilizables + dedicados | [copilot/CONFIG_FLUJOS.md](copilot/CONFIG_FLUJOS.md) |
 | 20 comandos `/` + tarjeta | [copilot/CONFIG_COMANDOS.md](copilot/CONFIG_COMANDOS.md) · [copilot/tarjetas/](copilot/tarjetas/) |
 | Prompts (análisis universal, ayuda, fallback) | [copilot/CONFIG_PROMPTS.md](copilot/CONFIG_PROMPTS.md) · [copilot/prompts/](copilot/prompts/) |
@@ -364,6 +364,8 @@ Porque el sistema cambió tanto por feedback como por arquitectura.
 | **07/08 y 14/08** | Gerencia | `Limites.xlsx` (Pb/Sn con LC); baseline de la tendencia incipiente = promedio de las 6 previas sin la última; límites de referencia en tabla aparte. |
 | **18/09** | **Gerencia (1ª alfa viva)** | Formato, rendimiento y determinismo **resueltos**. 5 pedidos nuevos. |
 | **23/09** | **Carlos** (analista de aceite del área) | 14 observaciones sobre «Por Equipo» → los 7 bloques A-G, cerrados el 27/09. Queda su respuesta sobre el universo de Σvida (bloque B). |
+| **28/09** | Carlos + gerencia | Ronda de los módulos **por flota** y los límites completos (38 parámetros) → cerrada el 02/10 (`/panel`, temas que preguntan lo que falta, historiales con las 5 familias). |
+| **02/10** | **Gerencia (1ª presentación de la alfa)** | Testigo CA3195. Se vieron límites que faltaban en `/ultimo` y `/tendencia`, un `/incipiente` que no detectó un salto real y esperas por la BD al tope. Cerrado el 03/10 (BLOQUES 194-199): límites completos, «cruzó», historiales de 34-80 s a 0,5-10 s. Queda en estudio una **ponderación por parámetro**. |
 
 Registro oficial: `docs/gerencia/ACTA DE REUNION_PROYECTOS DE DESARROLLO CONFIABILIDAD.xlsx` — se
 **edita vía XML directo**, nunca con openpyxl (borra el logo y los checkboxes).
