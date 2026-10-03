@@ -239,7 +239,7 @@ Piezas y su documento canónico:
 | 52 vistas (`vw_*`, `*_MD`) | [arquitectura/DDL_vistas.sql](arquitectura/DDL_vistas.sql) |
 | 30 temas + descripciones de ruteo | [copilot/CONFIG_TEMAS.md](copilot/CONFIG_TEMAS.md) |
 | 4 flujos reutilizables + dedicados | [copilot/CONFIG_FLUJOS.md](copilot/CONFIG_FLUJOS.md) |
-| 20 comandos `/` + tarjeta | [copilot/CONFIG_COMANDOS.md](copilot/CONFIG_COMANDOS.md) · [copilot/tarjetas/](copilot/tarjetas/) |
+| 18 comandos `/` + tarjeta | [copilot/CONFIG_COMANDOS.md](copilot/CONFIG_COMANDOS.md) · [copilot/tarjetas/](copilot/tarjetas/) |
 | Prompts (análisis universal, ayuda, fallback) | [copilot/CONFIG_PROMPTS.md](copilot/CONFIG_PROMPTS.md) · [copilot/prompts/](copilot/prompts/) |
 | Reintentos y cortes | [copilot/CONFIG_TIMEOUT.md](copilot/CONFIG_TIMEOUT.md) |
 | Pruebas | [arquitectura/VALIDACION_SSMS.sql](arquitectura/VALIDACION_SSMS.sql) (136 bloques) · [pruebas/](pruebas/) |
