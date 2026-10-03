@@ -319,6 +319,15 @@ y en el `Query` el filtro de componente pasa a comparar **sin espacios** contra 
 Casos: `MTLH` · `mt lh` · `MOTOR DE TRACCION LH` → `MTLH` · `hidráulico` · `hidr&#225;ulico` · `Sist. Hidr.` → `Hidr`
 (casa con `Sist.Hidr.`) · `rueda rh` · `rdrh` → `RDRH` · `motor` → `Motor` (no casa con `MTLH`) · `%` → `%`.
 ⚠ `mt` y `tracc` van **antes** que `motor` (MOTOR DE TRACCION contiene «motor»).
+**Tal como queda en el editor** (`text_2` = la entrada `compartimiento`):
+Redactar **`comp_key`** (nombre sin espacio):
+```
+if(equals(trim(coalesce(triggerBody()?['text_2'],'')),'%'),'%',if(contains(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'hid'),'Hidr',if(or(startsWith(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'mt'),contains(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'tracc')),concat('MT',if(endsWith(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'rh'),'RH',if(endsWith(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'lh'),'LH',''))),if(or(startsWith(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'rd'),contains(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'rueda')),concat('RD',if(endsWith(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'rh'),'RH',if(endsWith(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'lh'),'LH',''))),if(contains(toLower(replace(coalesce(triggerBody()?['text_2'],''),' ','')),'motor'),'Motor',replace(coalesce(triggerBody()?['text_2'],''),' ',''))))))
+```
+Query:
+```
+concat('WITH f AS (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila, COUNT(*) OVER () AS Tot FROM dbo.', triggerBody()?['text'], ' WITH (NOLOCK) WHERE Equipo LIKE ''%', outputs('eq'), '%'' AND REPLACE(compAbbr,'' '','''') COLLATE Latin1_General_CI_AI LIKE ''%', outputs('comp_key'), '%'' AND Parametro LIKE ''%', triggerBody()?['text_5'], '%'' AND Proyecto LIKE ''%', triggerBody()?['text_3'], '%'' AND FechaMuestreo >= ''', if(empty(triggerBody()?['text_4']),'1900-01-01',triggerBody()?['text_4']), '''), sel AS (SELECT TOP (', if(empty(triggerBody()?['text_6']),'200',triggerBody()?['text_6']), ') * FROM f ORDER BY rn) SELECT MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn) + CASE WHEN MAX(Tot) > COUNT(*) THEN NCHAR(10) + NCHAR(10) + N''_Mostrando las '' + CAST(COUNT(*) AS nvarchar(10)) + N'' más recientes de '' + CAST(MAX(Tot) AS nvarchar(10)) + N'' en el rango._'' ELSE N'''' END AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM sel')
+```
 ⚑ El mismo Redactar sirve a `MD_equipo_comp` y `MD_metal`, que hoy toleran `mtlh` pero no `hidráulico` ni la
 entidad HTML: ver el mapa 5.1b de [PENDIENTES](PENDIENTES.md).
 ⚠ Validado en SSMS antes de armarlo: **BLOQUE 72** (versión Tema 11) y **BLOQUE 74** (versión genérica).
