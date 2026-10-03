@@ -3789,7 +3789,22 @@ GO
 CREATE OR ALTER VIEW [dbo].[vw_HistorialFilasMD] AS
 /* F (02/10): una fila por muestra (vertical) con las 5 familias del formato -- solo lo fuera de limite,
    con su valor: «Fe (232.6) 🟥 · Zn (38.2) 🟥». Contrato *FilasMD sin cambios (lo arma MD_historial). */
-WITH s AS (
+/* 03/10 -- FILTRO ABAJO, la receta del tema 14 (BLOQUE 197: 79,8 s -> 9,1 s, CPU 7,3 -> 1,8 s). La lectura de
+   LaboratoryData no baja (un recorrido es el piso de vw_MuestrasHistorial); lo que se ahorra es calcular las
+   ventanas y las familias de la flota entera antes de filtrar. Misma salida. */
+SELECT me.[Code] AS Equipo, x.compAbbr, x.Parametro, x.Proyecto, x.FechaMuestreo, x.rn, x.TituloMD, x.SufijoMD, x.ColsMD, x.Fila
+FROM [Mine].[MiningEquipment] me
+CROSS APPLY (
+SELECT
+    s.Equipo, s.compAbbr, CAST(N'' AS nvarchar(20)) AS Parametro, s.Proyecto, s.FechaMuestreo,
+    s.rn_hist AS rn,
+    CAST(N'**Historial — ' + s.Equipo + N' · ' + s.compAbbr + N'** · ' AS nvarchar(max))         AS TituloMD,
+    CAST(N' muestras (recientes arriba)' AS nvarchar(max))                                      AS SufijoMD,
+    CAST(N'| Fecha | SMR | Hor. Aci. | Hrs Comp | T. muestra | Estado | Desgaste | Aditivos | Contaminación | Salud | Cód. Limpieza |' + NCHAR(10)
+       + N'|---|---|---|---|---|---|---|---|---|---|---|' AS nvarchar(max))                     AS ColsMD,
+    CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
+       + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(s.CM,N'—') + N' | ' + CASE mm.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END + N' | ' + ISNULL(mm.Desgaste, N'—') + N' | ' + ISNULL(mm.Aditivos, N'—') + N' | ' + ISNULL(mm.Contaminacion, N'—') + N' | ' + ISNULL(mm.Salud, N'—') + N' | ' + ISNULL(mm.Limpieza, N'—') + N' |' AS nvarchar(max)) AS Fila
+FROM (
     SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
         CompTipo,
         Fe_ppm, Estado_Fe, Indice_PQ, Estado_PQ, Cr_ppm, Estado_Cr, Ni_ppm, Estado_Ni, Cu_ppm, Estado_Cu,
@@ -3801,110 +3816,8 @@ WITH s AS (
         Agua, Estado_Agua, Hollin, Estado_Hollin, Diesel, Estado_Diesel,
         ISO4, Estado_ISO4, ISO6, Estado_ISO6, ISO14, Estado_ISO14
     FROM [dbo].[vw_MuestrasHistorial]
-    WHERE rn_hist <= 200
-)
-SELECT
-    s.Equipo, s.compAbbr, CAST(N'' AS nvarchar(20)) AS Parametro, s.Proyecto, s.FechaMuestreo,
-    s.rn_hist AS rn,
-    CAST(N'**Historial — ' + s.Equipo + N' · ' + s.compAbbr + N'** · ' AS nvarchar(max))         AS TituloMD,
-    CAST(N' muestras (recientes arriba)' AS nvarchar(max))                                      AS SufijoMD,
-    CAST(N'| Fecha | SMR | Hor. Aci. | Hrs Comp | T. muestra | Estado | Desgaste | Aditivos | Contaminación | Salud | Cód. Limpieza |' + NCHAR(10)
-       + N'|---|---|---|---|---|---|---|---|---|---|---|' AS nvarchar(max))                     AS ColsMD,
-    CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
-       + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(s.CM,N'—') + N' | ' + CASE mm.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END + N' | ' + ISNULL(mm.Desgaste, N'—') + N' | ' + ISNULL(mm.Aditivos, N'—') + N' | ' + ISNULL(mm.Contaminacion, N'—') + N' | ' + ISNULL(mm.Salud, N'—') + N' | ' + ISNULL(mm.Limpieza, N'—') + N' |' AS nvarchar(max)) AS Fila
-FROM s
-    OUTER APPLY (
-        SELECT MIN(g.peorFam) AS peor,
-               MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
-               MAX(CASE WHEN g.GrupoOrden = 2 THEN g.txt END) AS Aditivos,
-               MAX(CASE WHEN g.GrupoOrden = 3 THEN g.txt END) AS Contaminacion,
-               MAX(CASE WHEN g.GrupoOrden = 1 THEN g.txt END) AS Salud,
-               MAX(CASE WHEN g.GrupoOrden = 5 THEN g.txt END) AS Limpieza
-        FROM (
-            SELECT ff.GrupoOrden,
-                   MIN(CASE WHEN ff.Inf = 0 AND v.est = 'CRITICO'    THEN 1
-                            WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
-                            ELSE 3 END) AS peorFam,
-                   STRING_AGG(CONVERT(nvarchar(max),
-                       v.metal + N' (' + CASE WHEN v.metal LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(v.val AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) END + N')'
-                     + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N' · ')
-                       WITHIN GROUP (ORDER BY ff.Orden) AS txt
-            FROM (VALUES
-                (N'Fe',   s.Fe_ppm,      s.Estado_Fe),
-                (N'PQ',   s.Indice_PQ,   s.Estado_PQ),
-                (N'Cr',   s.Cr_ppm,      s.Estado_Cr),
-                (N'Ni',   s.Ni_ppm,      s.Estado_Ni),
-                (N'Cu',   s.Cu_ppm,      s.Estado_Cu),
-                (N'Pb',   s.Pb_ppm,      s.Estado_Pb),
-                (N'Sn',   s.Sn_ppm,      s.Estado_Sn),
-                (N'Al',   s.Al_ppm,      s.Estado_Al),
-                (N'Si',   s.Si_ppm,      s.Estado_Si),
-                (N'Ca',   s.Ca_ppm,      s.Estado_Ca),
-                (N'Zn',   s.Zn_ppm,      s.Estado_Zn),
-                (N'Mg',   s.Mg_ppm,      s.Estado_Mg),
-                (N'K',    s.K_ppm,       s.Estado_K),
-                (N'Na',   s.Na_ppm,      s.Estado_Na),
-                (N'B',    s.B_ppm,       s.Estado_B),
-                (N'P',    s.P_ppm,       s.Estado_P),
-                (N'Mo',   s.Mo_ppm,      s.Estado_Mo),
-                (N'V100', s.V100,        s.Estado_V100),
-                (N'V40',  s.V40,         s.Estado_V40),
-                (N'TAN',  s.TAN,         s.Estado_TAN),
-                (N'TBN',  s.TBN,         s.Estado_TBN),
-                (N'Oxidacion',   s.Oxidacion,   s.Estado_Oxi),
-                (N'Sulfatacion', s.Sulfatacion, s.Estado_Sulf),
-                (N'Nitracion',   s.Nitracion,   s.Estado_Nit),
-                (N'Agua',   s.Agua,   s.Estado_Agua),
-                (N'Hollin', s.Hollin, s.Estado_Hollin),
-                (N'Diesel', s.Diesel, s.Estado_Diesel),
-                (N'ISO>4',  s.ISO4,   s.Estado_ISO4),
-                (N'ISO>6',  s.ISO6,   s.Estado_ISO6),
-                (N'ISO>14', s.ISO14,  s.Estado_ISO14)
-            ) v(metal, val, est)
-            CROSS APPLY (
-                SELECT TOP 1 f.GrupoOrden, f.Orden, f.Inf
-                FROM [dbo].[vw_FormatoParametro] f
-                WHERE f.Parametro = v.metal AND f.CompTipo IN (s.CompTipo, N'(CRUZADO)')
-                ORDER BY CASE WHEN f.CompTipo = s.CompTipo THEN 0 ELSE 1 END
-            ) ff
-            WHERE v.est IN ('CRITICO','PRECAUCION')
-            GROUP BY ff.GrupoOrden
-        ) g
-    ) mm;
-GO
-
-
-/* ============================================================================
-   vw_HistorialEquipoFilasMD — P4 (8.2) · Tema 12 «Historial general del equipo».
-   Filas de vw_HistorialEquipoMD, con el CONTRATO UNICO *FilasMD. Tope 24 -> 200.
-   PERF: obsList fila a fila con STUFF(CONCAT(...)) — sin el CTE obs (GROUP BY + LEFT JOIN) del original.
-   ---------------------------------------------------------------------------- */
-CREATE OR ALTER VIEW [dbo].[vw_HistorialEquipoFilasMD] AS
-/* F (02/10): igual que vw_HistorialFilasMD pero con todos los componentes del equipo (columna Componente
-   en lugar de Hrs Comp). Tope 200 por equipo. */
-WITH s AS (
-    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM,
-        CompTipo,
-        Fe_ppm, Estado_Fe, Indice_PQ, Estado_PQ, Cr_ppm, Estado_Cr, Ni_ppm, Estado_Ni, Cu_ppm, Estado_Cu,
-        Pb_ppm, Estado_Pb, Sn_ppm, Estado_Sn, Al_ppm, Estado_Al, Si_ppm, Estado_Si,
-        Ca_ppm, Estado_Ca, Zn_ppm, Estado_Zn, Mg_ppm, Estado_Mg, K_ppm, Estado_K, Na_ppm, Estado_Na,
-        B_ppm, Estado_B, P_ppm, Estado_P, Mo_ppm, Estado_Mo,
-        V100, Estado_V100, V40, Estado_V40, TAN, Estado_TAN, TBN, Estado_TBN,
-        Oxidacion, Estado_Oxi, Sulfatacion, Estado_Sulf, Nitracion, Estado_Nit,
-        Agua, Estado_Agua, Hollin, Estado_Hollin, Diesel, Estado_Diesel,
-        ISO4, Estado_ISO4, ISO6, Estado_ISO6, ISO14, Estado_ISO14,
-        ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC, Compartimiento, LaboratoryDataId) AS grn
-    FROM [dbo].[vw_MuestrasHistorial]
-)
-SELECT
-    s.Equipo, s.compAbbr, CAST(N'' AS nvarchar(20)) AS Parametro, s.Proyecto, s.FechaMuestreo, s.grn AS rn,
-    CAST(N'**Historial del equipo — ' + s.Equipo + N'** · ' AS nvarchar(max))                   AS TituloMD,
-    CAST(N' muestras (todos los componentes, recientes arriba)' AS nvarchar(max))               AS SufijoMD,
-    CAST(N'| Fecha | SMR | Hor. Aci. | Componente | T. muestra | Estado | Desgaste | Aditivos | Contaminación | Salud | Cód. Limpieza |' + NCHAR(10)
-       + N'|---|---|---|---|---|---|---|---|---|---|---|' AS nvarchar(max))                     AS ColsMD,
-    CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
-       + N' | ' + s.compAbbr + N' | ' + ISNULL(s.CM,N'—') + N' | ' + CASE mm.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END + N' | ' + ISNULL(mm.Desgaste, N'—') + N' | ' + ISNULL(mm.Aditivos, N'—') + N' | ' + ISNULL(mm.Contaminacion, N'—') + N' | ' + ISNULL(mm.Salud, N'—') + N' | ' + ISNULL(mm.Limpieza, N'—') + N' |' AS nvarchar(max)) AS Fila
-FROM s
+    WHERE Equipo = me.[Code] AND rn_hist <= 200
+) s
     OUTER APPLY (
         SELECT MIN(g.peorFam) AS peor,
                MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
@@ -3963,7 +3876,107 @@ FROM s
             GROUP BY ff.GrupoOrden
         ) g
     ) mm
-WHERE s.grn <= 200;
+) x;
+GO
+
+
+/* ============================================================================
+   vw_HistorialEquipoFilasMD — P4 (8.2) · Tema 12 «Historial general del equipo».
+   Filas de vw_HistorialEquipoMD, con el CONTRATO UNICO *FilasMD. Tope 24 -> 200.
+   PERF: obsList fila a fila con STUFF(CONCAT(...)) — sin el CTE obs (GROUP BY + LEFT JOIN) del original.
+   ---------------------------------------------------------------------------- */
+CREATE OR ALTER VIEW [dbo].[vw_HistorialEquipoFilasMD] AS
+/* F (02/10): igual que vw_HistorialFilasMD pero con todos los componentes del equipo (columna Componente
+   en lugar de Hrs Comp). Tope 200 por equipo. */
+/* 03/10 -- FILTRO ABAJO, la receta del tema 14 (BLOQUE 197: 79,8 s -> 9,1 s, CPU 7,3 -> 1,8 s). La lectura de
+   LaboratoryData no baja (un recorrido es el piso de vw_MuestrasHistorial); lo que se ahorra es calcular las
+   ventanas y las familias de la flota entera antes de filtrar. Misma salida. */
+SELECT me.[Code] AS Equipo, x.compAbbr, x.Parametro, x.Proyecto, x.FechaMuestreo, x.rn, x.TituloMD, x.SufijoMD, x.ColsMD, x.Fila
+FROM [Mine].[MiningEquipment] me
+CROSS APPLY (
+SELECT
+    s.Equipo, s.compAbbr, CAST(N'' AS nvarchar(20)) AS Parametro, s.Proyecto, s.FechaMuestreo, s.grn AS rn,
+    CAST(N'**Historial del equipo — ' + s.Equipo + N'** · ' AS nvarchar(max))                   AS TituloMD,
+    CAST(N' muestras (todos los componentes, recientes arriba)' AS nvarchar(max))               AS SufijoMD,
+    CAST(N'| Fecha | SMR | Hor. Aci. | Componente | T. muestra | Estado | Desgaste | Aditivos | Contaminación | Salud | Cód. Limpieza |' + NCHAR(10)
+       + N'|---|---|---|---|---|---|---|---|---|---|---|' AS nvarchar(max))                     AS ColsMD,
+    CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
+       + N' | ' + s.compAbbr + N' | ' + ISNULL(s.CM,N'—') + N' | ' + CASE mm.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END + N' | ' + ISNULL(mm.Desgaste, N'—') + N' | ' + ISNULL(mm.Aditivos, N'—') + N' | ' + ISNULL(mm.Contaminacion, N'—') + N' | ' + ISNULL(mm.Salud, N'—') + N' | ' + ISNULL(mm.Limpieza, N'—') + N' |' AS nvarchar(max)) AS Fila
+FROM (
+    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, FechaMuestreo, Horometro, HorasDeAceite, CM,
+        CompTipo,
+        Fe_ppm, Estado_Fe, Indice_PQ, Estado_PQ, Cr_ppm, Estado_Cr, Ni_ppm, Estado_Ni, Cu_ppm, Estado_Cu,
+        Pb_ppm, Estado_Pb, Sn_ppm, Estado_Sn, Al_ppm, Estado_Al, Si_ppm, Estado_Si,
+        Ca_ppm, Estado_Ca, Zn_ppm, Estado_Zn, Mg_ppm, Estado_Mg, K_ppm, Estado_K, Na_ppm, Estado_Na,
+        B_ppm, Estado_B, P_ppm, Estado_P, Mo_ppm, Estado_Mo,
+        V100, Estado_V100, V40, Estado_V40, TAN, Estado_TAN, TBN, Estado_TBN,
+        Oxidacion, Estado_Oxi, Sulfatacion, Estado_Sulf, Nitracion, Estado_Nit,
+        Agua, Estado_Agua, Hollin, Estado_Hollin, Diesel, Estado_Diesel,
+        ISO4, Estado_ISO4, ISO6, Estado_ISO6, ISO14, Estado_ISO14,
+        ROW_NUMBER() OVER (PARTITION BY Equipo ORDER BY FechaMuestreo DESC, Compartimiento, LaboratoryDataId) AS grn
+    FROM [dbo].[vw_MuestrasHistorial]
+    WHERE Equipo = me.[Code]
+) s
+    OUTER APPLY (
+        SELECT MIN(g.peorFam) AS peor,
+               MAX(CASE WHEN g.GrupoOrden = 4 THEN g.txt END) AS Desgaste,
+               MAX(CASE WHEN g.GrupoOrden = 2 THEN g.txt END) AS Aditivos,
+               MAX(CASE WHEN g.GrupoOrden = 3 THEN g.txt END) AS Contaminacion,
+               MAX(CASE WHEN g.GrupoOrden = 1 THEN g.txt END) AS Salud,
+               MAX(CASE WHEN g.GrupoOrden = 5 THEN g.txt END) AS Limpieza
+        FROM (
+            SELECT ff.GrupoOrden,
+                   MIN(CASE WHEN ff.Inf = 0 AND v.est = 'CRITICO'    THEN 1
+                            WHEN ff.Inf = 0 AND v.est = 'PRECAUCION' THEN 2
+                            ELSE 3 END) AS peorFam,
+                   STRING_AGG(CONVERT(nvarchar(max),
+                       v.metal + N' (' + CASE WHEN v.metal LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(v.val AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(v.val AS decimal(18,1))) END + N')'
+                     + CASE v.est WHEN 'CRITICO' THEN N' 🟥' WHEN 'PRECAUCION' THEN N' 🟨' ELSE N'' END), N' · ')
+                       WITHIN GROUP (ORDER BY ff.Orden) AS txt
+            FROM (VALUES
+                (N'Fe',   s.Fe_ppm,      s.Estado_Fe),
+                (N'PQ',   s.Indice_PQ,   s.Estado_PQ),
+                (N'Cr',   s.Cr_ppm,      s.Estado_Cr),
+                (N'Ni',   s.Ni_ppm,      s.Estado_Ni),
+                (N'Cu',   s.Cu_ppm,      s.Estado_Cu),
+                (N'Pb',   s.Pb_ppm,      s.Estado_Pb),
+                (N'Sn',   s.Sn_ppm,      s.Estado_Sn),
+                (N'Al',   s.Al_ppm,      s.Estado_Al),
+                (N'Si',   s.Si_ppm,      s.Estado_Si),
+                (N'Ca',   s.Ca_ppm,      s.Estado_Ca),
+                (N'Zn',   s.Zn_ppm,      s.Estado_Zn),
+                (N'Mg',   s.Mg_ppm,      s.Estado_Mg),
+                (N'K',    s.K_ppm,       s.Estado_K),
+                (N'Na',   s.Na_ppm,      s.Estado_Na),
+                (N'B',    s.B_ppm,       s.Estado_B),
+                (N'P',    s.P_ppm,       s.Estado_P),
+                (N'Mo',   s.Mo_ppm,      s.Estado_Mo),
+                (N'V100', s.V100,        s.Estado_V100),
+                (N'V40',  s.V40,         s.Estado_V40),
+                (N'TAN',  s.TAN,         s.Estado_TAN),
+                (N'TBN',  s.TBN,         s.Estado_TBN),
+                (N'Oxidacion',   s.Oxidacion,   s.Estado_Oxi),
+                (N'Sulfatacion', s.Sulfatacion, s.Estado_Sulf),
+                (N'Nitracion',   s.Nitracion,   s.Estado_Nit),
+                (N'Agua',   s.Agua,   s.Estado_Agua),
+                (N'Hollin', s.Hollin, s.Estado_Hollin),
+                (N'Diesel', s.Diesel, s.Estado_Diesel),
+                (N'ISO>4',  s.ISO4,   s.Estado_ISO4),
+                (N'ISO>6',  s.ISO6,   s.Estado_ISO6),
+                (N'ISO>14', s.ISO14,  s.Estado_ISO14)
+            ) v(metal, val, est)
+            CROSS APPLY (
+                SELECT TOP 1 f.GrupoOrden, f.Orden, f.Inf
+                FROM [dbo].[vw_FormatoParametro] f
+                WHERE f.Parametro = v.metal AND f.CompTipo IN (s.CompTipo, N'(CRUZADO)')
+                ORDER BY CASE WHEN f.CompTipo = s.CompTipo THEN 0 ELSE 1 END
+            ) ff
+            WHERE v.est IN ('CRITICO','PRECAUCION')
+            GROUP BY ff.GrupoOrden
+        ) g
+    ) mm
+WHERE s.grn <= 200
+) x;
 GO
 
 

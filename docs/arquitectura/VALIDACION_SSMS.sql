@@ -8744,3 +8744,57 @@ SELECT COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - D
 FROM STRING_SPLIT(@h, NCHAR(10)) s;
 SELECT @h AS incipiente_hidr;
 GO
+-- RESULTADOS 197 (03/10)
+--   197.0 tema 14 9,1 s (CPU 1,8 s) contra 79,8 s · tema 13 9,2 s (la reversion de la columna Estado se confirma).
+--         ⚠ LaboratoryData sigue en 18 287 lecturas en LOS DOS -> el criterio escrito decia «revertir». No se revierte:
+--         el tema 13, sin filtro abajo, hace las MISMAS 18 287 en 9 s, asi que un recorrido es el piso de
+--         vw_MuestrasHistorial. Lo que costaba 80 s era el CPU de las ventanas sobre la flota (7,3 s -> 1,8 s). La
+--         metrica elegida era la equivocada para esta vista; el tiempo y el CPU si responden. Queda.
+--   197.1 salio NULL: se corrio suelto y perdio las variables del 197.0 -> repetido autocontenido en el 198.2.
+--   197.2 con_col_modelo = 1 · anchos 2 · limites por modelo: Si 980E 9/10 vs D475A 30/60 -> el «CA3191 Si 13.3
+--         cruzó LC» ya cuadra con su tabla. 1,8 s. ✅ R13 CERRADO.
+
+
+-- ==== BLOQUE 198 - /historial y /historialeq con FILTRO ABAJO (la receta del tema 14) ====
+-- CAMBIO (DDL escrito): vw_HistorialFilasMD y vw_HistorialEquipoFilasMD en CROSS APPLY sobre MiningEquipment.
+-- ⚑ ORDEN: 198.0 con el DDL VIEJO (anotar tiempo, CPU y el checksum) -> desplegar DDL_vistas.sql -> BLOQUE 89 ->
+--   198.0 otra vez -> 198.1.
+-- ⚑ DECISION escrita antes: por vista, queda si el tiempo baja a la mitad o menos Y el checksum y las filas son
+--   IGUALES a los de antes (misma salida). Si el checksum cambia -> revertir esa vista (etiqueta
+--   respaldo-antes-filtroabajo-histmetal-2026-10-03) aunque sea mas rapida.
+
+-- 198.0 ⭐ medicion (consultas EXACTAS de MD_historial) + huella de la salida
+DECLARE @h nvarchar(max), @e nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== /historial 3195 MTLH';
+SELECT @h = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE '%' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== /historialeq 3195';
+SELECT @e = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialEquipoFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%%%'
+        AND Parametro LIKE '%' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT v.caso, CHECKSUM(v.md) AS huella, DATALENGTH(v.md) / 2 AS chars,
+       SUM(CASE WHEN s.value LIKE N'| [0-9]%' THEN 1 ELSE 0 END) AS filas,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM (VALUES (N'historial 3195 MTLH', @h), (N'historialeq 3195', @e)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso, v.md;
+GO
+
+-- 198.1 (DDL nuevo) el 197.1 que salio NULL, autocontenido: tema 14 con 56 filas (las del 196.1) y anchos 1
+DECLARE @a nvarchar(max);
+SELECT @a = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE 'P' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SELECT SUM(CASE WHEN s.value LIKE N'| [0-9]%' THEN 1 ELSE 0 END) AS filas,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM STRING_SPLIT(@a, NCHAR(10)) s;
+SELECT @a AS historialmetal_P;
+GO
