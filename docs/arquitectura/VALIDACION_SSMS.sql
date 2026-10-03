@@ -8798,3 +8798,56 @@ SELECT SUM(CASE WHEN s.value LIKE N'| [0-9]%' THEN 1 ELSE 0 END) AS filas,
 FROM STRING_SPLIT(@a, NCHAR(10)) s;
 SELECT @a AS historialmetal_P;
 GO
+-- RESULTADOS 198 (03/10) -- los dos QUEDAN (corte: la mitad o menos Y la misma huella)
+--   /historial 3195 MTLH  34,4 s -> 10,2 s · huella 722174660 = 722174660 · 56 filas · anchos 1 ✅
+--   /historialeq 3195     34,0 s -> 0,46 s (LD 18 287 -> 802: por fin lee UN camion) · huella -393756176 = igual ✅
+--   198.1 /historialmetal 3195 MTLH P: 56 filas · anchos 1 · «LP 280.0 · LC 240.0» · P 264.6 🟨 bajo su LP ✅
+--   ⚑ Por que /historial siguio leyendo la tabla entera y /historialeq no: el filtro «rn_hist <= 200» cae sobre una
+--     VENTANA de vw_MuestrasHistorial y no deja bajar el del equipo. Sobra: el flujo ya hace TOP (200) ORDER BY rn.
+
+
+-- ==== BLOQUE 199 - la familia de historiales completa con filtro abajo ====
+-- CAMBIOS (DDL escrito):
+--   vw_HistorialFilasMD y vw_HistorialMetalFilasMD: fuera «rn_hist <= 200» (el TOP (200) del flujo recorta igual;
+--     unico efecto visible: con mas de 200 muestras el pie dice el total real en vez de 200).
+--   vw_HistorialMetalEquipoFilasMD (tema 13): filtro abajo por equipo.
+--   vw_HistorialFlotaFilasMD (/historialflota): filtro abajo por PROYECTO (MiningProject).
+-- ⚑ ORDEN: 199.0 con el DDL VIEJO -> desplegar DDL_vistas.sql -> BLOQUE 89 -> 199.0 otra vez.
+-- ⚑ DECISION escrita antes: por vista, queda si NO es mas lenta que antes Y la huella es IGUAL (en las tres de un
+--   camion, con 56 o menos muestras, el pie no cambia). Si la huella cambia -> revertir esa vista.
+--   Esperado: las tres de un camion en ~1 s y LD < 2 000 (como /historialeq); la de flota, bastante menos de 35 s.
+
+-- 199.0 ⭐ medicion + huella (consultas EXACTAS de MD_historial)
+DECLARE @h nvarchar(max), @m nvarchar(max), @e nvarchar(max), @f nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== /historial 3195 MTLH';
+SELECT @h = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE '%' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== tema 14: /historialmetal 3195 Fe MTLH';
+SELECT @m = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== tema 13: /historialmetal 3195 Fe';
+SELECT @e = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalEquipoFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%%%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== /historialflota antapaccay 1 mes';
+SELECT @f = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFlotaFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%%%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%%%'
+        AND Parametro LIKE '%' AND Proyecto LIKE '%antapaccay%' AND FechaMuestreo >= DATEADD(MONTH, -1, CAST(GETDATE() AS date))) f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT v.caso, CHECKSUM(v.md) AS huella, DATALENGTH(v.md) / 2 AS chars,
+       SUM(CASE WHEN s.value LIKE N'| [0-9]%' THEN 1 ELSE 0 END) AS filas,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM (VALUES (N'historial 3195 MTLH', @h), (N'tema 14 Fe MTLH', @m), (N'tema 13 Fe', @e), (N'historialflota antapaccay', @f)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso, v.md;
+GO
