@@ -51,6 +51,32 @@ Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada sa
 > — pero necesitan **el suyo**: ver la § FIX CANÓNICO de arriba. Dejarlos sin normalizar costó los dos
 > comandos el 25/09.
 
+## § W4 (04/10) · `comp_key` en `MD_equipo_comp` y `MD_metal` — paso a paso
+
+Por qué: por lenguaje natural el componente llega como lo escribe el usuario (`hidráulico`, `hidr&#225;ulico`, `mtlh`) y
+el flujo lo compara contra `compAbbr` (`Sist. Hidr.`, `MT LH`) → «No encontré datos». Los comandos ya llegan
+normalizados por el Tema 00; esto cubre el otro camino. Es el mismo arreglo que `MD_historial` (03/10).
+
+En **cada** flujo, entre el Redactar `eq` y «Ejecutar una consulta SQL (V2)»:
+1. **Redactar `comp_in`** — Entradas, en modo expresión (fx): `coalesce(` + ficha **compartimiento** (Contenido dinámico,
+   del desencadenador) + `,'')`.
+2. **Redactar `comp_key`** — Entradas (fx):
+```
+if(equals(trim(outputs('comp_in')),'%'),'%',if(contains(toLower(replace(outputs('comp_in'),' ','')),'hid'),'Hidr',if(or(startsWith(toLower(replace(outputs('comp_in'),' ','')),'mt'),contains(toLower(replace(outputs('comp_in'),' ','')),'tracc')),concat('MT',if(endsWith(toLower(replace(outputs('comp_in'),' ','')),'rh'),'RH',if(endsWith(toLower(replace(outputs('comp_in'),' ','')),'lh'),'LH',''))),if(or(startsWith(toLower(replace(outputs('comp_in'),' ','')),'rd'),contains(toLower(replace(outputs('comp_in'),' ','')),'rueda')),concat('RD',if(endsWith(toLower(replace(outputs('comp_in'),' ','')),'rh'),'RH',if(endsWith(toLower(replace(outputs('comp_in'),' ','')),'lh'),'LH',''))),if(contains(toLower(replace(outputs('comp_in'),' ','')),'motor'),'Motor',replace(outputs('comp_in'),' ',''))))))
+```
+3. **Query** — se reescribe con fichas (ningún `concat`); cada `‹x›` es una ficha de Contenido dinámico:
+   - `MD_equipo_comp`:
+     `SELECT ‹columna› AS MD, Observados, Recomendaciones FROM ‹vista› WHERE Equipo LIKE '%‹eq›%' AND REPLACE(compAbbr,' ','') LIKE '%‹comp_key›%'`
+   - `MD_metal`:
+     `SELECT MD, Observados, Recomendaciones FROM ‹vista› WHERE Equipo LIKE '%‹eq›%' AND REPLACE(compAbbr,' ','') LIKE '%‹comp_key›%' AND Parametro='‹parametro›'`
+   (`‹eq›` = la salida del Redactar `eq` de N4, no la entrada `equipo`.)
+4. «Reintentos = Ninguno» en la acción SQL (··· → Configuración).
+5. **Probar → Manualmente**, tres veces, mirando la salida de `comp_key` y que `md` no salga vacío:
+   - `MD_equipo_comp`: vista `vw_UltimoAnalisisMD` · equipo `3195` · columna `MD` · compartimiento `hidráulico` → `Hidr` ·
+     `mtlh` → `MTLH` · `MT LH` → `MTLH`.
+   - `MD_metal`: vista `vw_TendenciaGraficoMD` · equipo `3195` · parametro `PQ` · compartimiento `mt lh` → `MTLH`.
+6. Guardar. Las entradas no cambian, así que los temas (01 · 06 · 07 · 10 y 09) no se tocan.
+
 ## Descripción de ENTRADAS (una línea, lista para pegar)
 - `vista` — "Vista *MD a consultar (la fija cada tema; ej. vw_DiagnosticoMD)."
 - `equipo` — "Código de equipo (ej. CA3177)."
@@ -98,6 +124,10 @@ Query tal como queda en el editor (sintaxis de Power Automate: las entradas son 
 ```
 concat('SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS MD, CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones FROM dbo.vw_RankingMD WHERE Proyecto LIKE ''%', triggerBody()?['text_2'], '%'' AND Modelo LIKE ''%', triggerBody()?['text_3'], '%'' AND CompTipo = ''', outputs('comp_tipo'), ''' AND Metal LIKE ''%', triggerBody()?['text_5'], '%'' AND pos <= ', if(empty(triggerBody()?['text']),'10',triggerBody()?['text']))
 ```
+🔴 **(04/10) W4b · el metal sin comodines**, como en `MD_historial`: con `Metal LIKE ''%', ‹parametro›, '%''` un
+«ranking de P» casa con `Pb` **y** `PQ` y el flujo los mezcla en una tabla. Cambiar SOLO ese tramo por
+`Metal LIKE ''', ‹parametro›, ''''` (en el editor: `''', triggerBody()?['text_N'], '''` con la ficha de `parametro`).
+Desde el 04/10 la vista rankea también `Na`, `K`, `ISO>4`, `ISO>6`, `ISO>14` (ninguno contiene a otro: el filtro exacto los separa).
 ⚠ **Las tres comillas** alrededor de `outputs('comp_tipo')`: sin ellas el SQL queda `CompTipo = TRACCION` o
 `CompTipo =  AND` → `Incorrect syntax near the keyword 'AND'` (medido 02/10).
 ⚠ `comp_in` se arma con la **ficha** `compartimiento` de Contenido dinámico, no escribiendo `text_N` a mano.
