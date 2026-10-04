@@ -5282,7 +5282,9 @@ SELECT
         N'**Último análisis de ' + b.Metal + N' — ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motores de Traccion' WHEN 'HIDRAULICO' THEN N'Sistemas Hidraulicos' WHEN 'RUEDA' THEN N'Ruedas Delanteras' WHEN 'MANDO' THEN N'Mandos Finales' WHEN 'TRANSMISION' THEN N'Transmisiones' WHEN 'MOTOR' THEN N'Motores' ELSE b.CompTipo END + N' · ' + b.Proyecto
       + CASE WHEN b.ModeloG <> N'(todos)' THEN N' · ' + b.ModeloG ELSE N'' END + N'** · '
       + CAST(b.nTot AS nvarchar(10)) + N' equipos (' + CAST(b.nObs AS nvarchar(10)) + N' observados, ' + CAST(b.nCrit AS nvarchar(10)) + N' críticos)' + NCHAR(10)
-      + N'_Límites de referencia: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LPh AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LCh AS decimal(18,1))), N'—') + N' ppm._' + NCHAR(10) + NCHAR(10)
+      + CASE WHEN b.Metal LIKE N'ISO%'
+             THEN N'_Límites de referencia: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LPh AS decimal(18,0))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LCh AS decimal(18,0))), N'—') + N' (código)._'
+             ELSE N'_Límites de referencia: LP ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LPh AS decimal(18,1))), N'—') + N' · LC ' + ISNULL(CONVERT(nvarchar(20),CAST(b.LCh AS decimal(18,1))), N'—') + N' ppm._' END + NCHAR(10) + NCHAR(10)
       + N'| Equipo | Comp | Fecha | SMR | Hrs C. | T. muestra | ' + b.Metal + CASE WHEN b.Metal LIKE N'ISO%' THEN N' (código) |' ELSE N' (ppm) |' END + NCHAR(10)
       + N'|---|---|---|---|---|---|---|' + NCHAR(10) + b.bodyMD
     AS nvarchar(max)) AS MD

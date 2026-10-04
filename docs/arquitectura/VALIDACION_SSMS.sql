@@ -8959,3 +8959,14 @@ SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORD
 FROM dbo.vw_RankingMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION'
   AND Metal LIKE '%ISO>6%' AND pos <= 10;
 GO
+
+-- RESULTADOS 200 y 201 (04/10) -- TODO QUEDA (cortes cumplidos)
+--   /condicionmt 3195     1,31 -> 1,34 s · ISO>4 22|23 · ISO>6 20 🟨|21 🟥 · ISO>14 16|17 🟨 · Mo 3.5|7.9 · Agua 0|0 (antes «—») ✅
+--   /historial 3195 MTLH 10,4 -> 0,27 s · LD 18 287 -> 802 · huella 722174660 = igual ✅
+--   tema 14 Fe MTLH       9,5 -> 0,72 s · LD 802 · huella -1084527673 = igual ✅
+--   /barridodet 980      21,2 -> 17,7 s · 35 filas = 35 (mismos equipos) · CA3195 «PQ=233.2 🟥 · ISO>6=20 🟨» ✅
+--   /metalflota          2,9 -> 3,4 s (1,17x) · tablas de Mo (54 eq., sin limite en MT) e ISO>6 (48 eq., 43 obs.) ✅
+--     detalle corregido despues: la linea de limites del ISO decia «LP 19.0 · LC 20.0 ppm» -> entero y «(código)».
+--   /ranking ISO>6       1,5 s · top 10 enteros, LP/LC 19/20 ✅ (antes no existia)
+--   ⚠ HALLAZGO: /barridodet lee LaboratoryData 14 veces (256 032 lecturas, 17-21 s). Es el PASO 1 del flujo de uso:
+--     candidato numero uno de rendimiento (skill komfia-doctor; vw_ObservadosFlota se referencia 5 veces).

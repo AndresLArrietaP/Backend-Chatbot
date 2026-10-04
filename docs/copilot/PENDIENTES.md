@@ -33,11 +33,12 @@ completan respetando su forma actual. Esto es lo que falta:
 
 | # | Dónde | Qué | Paso del flujo | Estado |
 |---|---|---|---|---|
-| **W1** | SQL · `vw_CondicionMT_MD` | + V40, Mo, Agua, **ISO>4/6/14** (salían «—» con dato) | 6 (LH vs RH) | ✍ DDL · **BLOQUE 200** |
-| **W1b** | SQL · `/barridodet` | La celda «Observado» nombra también P, B, Mo, Agua, Hollín, Diésel, TAN, V40, oxidación, sulfatación, nitración e **ISO**. Quién entra al barrido **no** cambia (`Estado_General`, decisión T) | 1 | ✍ DDL · **BLOQUE 201** |
-| **W1c** | SQL · `/metalflota` | + Mo, TAN, V40, Agua, ISO; P y B con su límite. Las 14 filas de siempre, igual | 3 (variante) | ✍ DDL · **BLOQUE 201** |
-| **W1d** | SQL · `/ranking` | + Na, K e ISO (alertan por arriba). Los aditivos no: el ranking descendente los leería al revés. Tema 22 con la descripción nueva (700) | 3 | ✍ DDL · **BLOQUE 201** + Copilot (descripción) |
-| **W2** | SQL · `/historial` y tema 14 | numerar `rn_hist` en la vista: ~10 s → ~0,5 s, misma huella | 10 | ✍ DDL · **BLOQUE 200** |
+| **W1** | SQL · `vw_CondicionMT_MD` | + V40, Mo, Agua, **ISO>4/6/14** (salían «—» con dato) | 6 (LH vs RH) | ✅ **200**: 1,34 s, ISO>6 «20 🟨 · 21 🟥» |
+| **W1b** | SQL · `/barridodet` | La celda «Observado» nombra también P, B, Mo, Agua, Hollín, Diésel, TAN, V40, oxidación, sulfatación, nitración e **ISO**. Quién entra al barrido **no** cambia (`Estado_General`, decisión T) | 1 | ✅ **201**: mismas 35 filas; CA3195 «PQ=233.2 🟥 · ISO>6=20 🟨» |
+| **W1c** | SQL · `/metalflota` | + Mo, TAN, V40, Agua, ISO; P y B con su límite. Las 14 filas de siempre, igual | 3 (variante) | ✅ **201**: 3,4 s |
+| **W1d** | SQL · `/ranking` | + Na, K e ISO (alertan por arriba). Los aditivos no: el ranking descendente los leería al revés. Tema 22 con la descripción nueva (700) | 3 | ✅ **201** (1,5 s) · ⏳ Copilot: descripción del Tema 22 |
+| **W2** | SQL · `/historial` y tema 14 | numerar `rn_hist` en la vista: ~10 s → ~0,5 s, misma huella | 10 | ✅ **200**: `/historial` 10,4 → 0,27 s · tema 14 9,5 → 0,72 s, misma huella |
+| **W7** ⭐ | SQL · `/barridodet` | Lee `LaboratoryData` **14 veces** (256 032 lecturas, 17-21 s): es el **paso 1** del flujo. `vw_ObservadosFlota` se referencia 5 veces. Skill komfia-doctor, medición primero | 1 | 🔎 próximo de rendimiento |
 | **W3** | Copilot · **Tema 00** | **Pases** cuando un comando de flota recibe un equipo: `/barridodet` e `/incipiente` (alta), `/panel` y `/historialflota` (media), `/rankingacum`·`/rankinggraf` (baja) + la regex de `/triage` ampliada a `HT079`. Fórmulas, mensajes y destinos en [CONFIG_COMANDOS § Pases](CONFIG_COMANDOS.md) | 1→5, 2→8, 4→10 | ⏳ Copilot |
 | **W4b** | Copilot · flujo `MD_ranking` | El metal se compara **sin comodines** (como `MD_historial`): con `LIKE '%P%'`, «ranking de P» mezcla Pb y PQ en una sola tabla | 3 | ⏳ Copilot |
 | **W4** | Copilot · **flujos** `MD_equipo_comp` y `MD_metal` | `comp_key` (el mismo de `MD_historial`): solo hace falta por **lenguaje natural** («el último del hidráulico del 3195»). 3 pasos en [CONFIG_FLUJOS](CONFIG_FLUJOS.md), arriba del § Descripción de entradas | 7-9 por NL | ⏳ Copilot |
