@@ -187,6 +187,12 @@ Una sola conversación, en orden, siguiendo al CA3195 de la mina al metal ([CONF
 | 10 | `/historial 3195 mt lh` · `/historialmetal 3195 PQ mt lh` · `/historialeq 3195` | los tres rápidos (~0,5 s de SQL tras el 200) |
 | NL | «el último análisis del hidráulico del 3195» | sale la tabla (necesita el `comp_key` en `MD_equipo_comp`) |
 
+**✅ Corrida 04/10 (Teams, tiempos del tema):** 1 `/barridodet` 24 s (CA3195 «PQ=233.2 🟥 · ISO>6=20 🟨») · 1b `/panel` 4 s ·
+2 `/incipiente` 9 s · 3 `/triage` 9 s · `/ranking … ISO>6` **118,6 s** ⚠ (SQL 1,5 s en SSMS: revisar la Actividad de
+`MD_ranking`) · 3b pases OK (`/incipiente 3195` pregunta el componente) · 4 `/historialflota` 3 s · 5 `/diagcompleto` 12 s ·
+6 `/condicionmt` 6 s con ISO/Mo/Agua · 7-9 OK · 10 `/historial` 1,5 s · `/historialmetal` 1,4 s · `/historialeq` 2,7 s ·
+NL hidráulico → tema 01 con `Sist. Hidr.`, bandas de viscosidad e ISO. **El flujo de Carlos funciona de punta a punta.**
+
 ---
 
 ## ⚠ Limitaciones conocidas — lo que KomfIA **no** hace hoy

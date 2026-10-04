@@ -38,14 +38,15 @@ completan respetando su forma actual. Esto es lo que falta:
 | **W1c** | SQL · `/metalflota` | + Mo, TAN, V40, Agua, ISO; P y B con su límite. Las 14 filas de siempre, igual | 3 (variante) | ✅ **201**: 3,4 s |
 | **W1d** | SQL · `/ranking` | + Na, K e ISO (alertan por arriba). Los aditivos no: el ranking descendente los leería al revés. Tema 22 con la descripción nueva (700) | 3 | ✅ **201** (1,5 s) · ⏳ Copilot: descripción del Tema 22 |
 | **W2** | SQL · `/historial` y tema 14 | numerar `rn_hist` en la vista: ~10 s → ~0,5 s, misma huella | 10 | ✅ **200**: `/historial` 10,4 → 0,27 s · tema 14 9,5 → 0,72 s, misma huella |
+| **W8** | SQL · `/barridodet` (forma) | La tabla «Límites de referencia» del pie solo lista los metales de siempre: P, ISO, etc. salen marcados en «Observado» sin su límite debajo. Completarla junto con W7 | 1 | ⏳ con W7 |
 | **W7** ⭐ | SQL · `/barridodet` | Lee `LaboratoryData` **14 veces** (256 032 lecturas, 17-21 s): es el **paso 1** del flujo. `vw_ObservadosFlota` se referencia 5 veces. Skill komfia-doctor, medición primero | 1 | 🔎 próximo de rendimiento |
 | **W3** | Copilot · **Tema 00** | **Pases** cuando un comando de flota recibe un equipo: `/barridodet` e `/incipiente` (alta), `/panel` y `/historialflota` (media), `/rankingacum`·`/rankinggraf` (baja) + la regex de `/triage` ampliada a `HT079`. Fórmulas, mensajes y destinos en [CONFIG_COMANDOS § Pases](CONFIG_COMANDOS.md) | 1→5, 2→8, 4→10 | ✅ **montado 04/10** (7 ramas). ⚠ El Mensaje de `/triage` empieza con `` ` `` → letra de código: borrarlo |
-| **W4b** | Copilot · flujo `MD_ranking` | El metal se compara **sin comodines** (como `MD_historial`): con `LIKE '%P%'`, «ranking de P» mezcla Pb y PQ en una sola tabla | 3 | ⏳ Copilot |
-| **W4** | Copilot · **flujos** `MD_equipo_comp` y `MD_metal` | `comp_key` (el mismo de `MD_historial`): solo hace falta por **lenguaje natural** («el último del hidráulico del 3195»). 3 pasos en [CONFIG_FLUJOS](CONFIG_FLUJOS.md), arriba del § Descripción de entradas | 7-9 por NL | ⏳ Copilot |
+| **W4b** | Copilot · flujo `MD_ranking` | El metal se compara **sin comodines** (como `MD_historial`): con `LIKE '%P%'`, «ranking de P» mezcla Pb y PQ en una sola tabla | 3 | ✅ **04/10** · ⚠ en la N12 `/ranking … ISO>6` tardó 118,6 s (SQL 1,5 s): mirar la Actividad de esa corrida |
+| **W4** | Copilot · **flujos** `MD_equipo_comp` y `MD_metal` | `comp_key` (el mismo de `MD_historial`): solo hace falta por **lenguaje natural** («el último del hidráulico del 3195»). 3 pasos en [CONFIG_FLUJOS](CONFIG_FLUJOS.md), arriba del § Descripción de entradas | 7-9 por NL | ✅ **04/10** + N12 (NL hidráulico OK) |
 | **W5** | Copilot · comprobar | Tema 20 con la descripción nueva (910) · «Reintentos = Ninguno» en **todos** los flujos · el Mensaje de `/triage` sin `'` al inicio · Tema 09 piezas 4-6 de la receta | — | ⏳ verificar |
 | ✅ | — | El resumen de varias viñetas tras los historiales: en Teams 03/10 ya es **una** línea («📈 Tendencia registrada…») | 10 | cerrado |
 
-Prueba de cierre: [PRUEBAS_ALFA_COMANDOS § N12](../pruebas/PRUEBAS_ALFA_COMANDOS.md), el flujo entero con el CA3195.
+Prueba de cierre: [PRUEBAS_ALFA_COMANDOS § N12](../pruebas/PRUEBAS_ALFA_COMANDOS.md), el flujo entero con el CA3195. **✅ Corrida 04/10: pasa de punta a punta** (detalle allí).
 
 ## Abierto, en orden
 
