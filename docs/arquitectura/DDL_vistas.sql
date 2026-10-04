@@ -3277,7 +3277,15 @@ FROM (
                                                 (N'P', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(P AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(P AS nvarchar(40))),
                                                 (N'Mg', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mg AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Mg AS nvarchar(40))),
                                                 (N'V100', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V100 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(V100 AS nvarchar(40))),
-                                                (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(TBN AS nvarchar(40)))
+                                                (N'TBN', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(TBN AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(TBN AS nvarchar(40))),
+                                                /* 04/10: los 6 que el formato de TRACCION pide y aqui salian siempre «—» aunque hubiera dato; el ISO, para
+                                                   comparar LH contra RH, es el que mas falta hacia (paso 6 del flujo de uso). Vienen de vw_DiagnosticoEquipo. */
+                                                (N'V40', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(V40 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(V40 AS nvarchar(40))),
+                                                (N'Mo', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Mo AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Mo AS nvarchar(40))),
+                                                (N'Agua', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(Agua AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(Agua AS nvarchar(40))),
+                                                (N'ISO>4', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(ISO4 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(ISO4 AS nvarchar(40))),
+                                                (N'ISO>6', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(ISO6 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(ISO6 AS nvarchar(40))),
+                                                (N'ISO>14', ISNULL(REPLACE(REPLACE(REPLACE(REPLACE(CAST(ISO14 AS nvarchar(40)),':C',N' 🟥'),':P',N' 🟨'),':C',N' 🟥'),':P',N' 🟨'), N'—'), CAST(ISO14 AS nvarchar(40)))
                                             ) v(Parametro, cell, raw) WHERE v.Parametro = f.Parametro
                                         ) p
                                 ) u
@@ -3805,7 +3813,7 @@ SELECT
     CAST(N'| ' + ISNULL(FORMAT(s.FechaMuestreo,'dd-MMM-yy'),N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.Horometro AS decimal(18,0))), N'—') + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasDeAceite AS decimal(18,0))), N'—')
        + N' | ' + ISNULL(CONVERT(nvarchar(20),CAST(s.HorasComponente AS decimal(18,0))), N'—') + N' | ' + ISNULL(s.CM,N'—') + N' | ' + CASE mm.peor WHEN 1 THEN N'🟥' WHEN 2 THEN N'🟨' ELSE N'🟢' END + N' | ' + ISNULL(mm.Desgaste, N'—') + N' | ' + ISNULL(mm.Aditivos, N'—') + N' | ' + ISNULL(mm.Contaminacion, N'—') + N' | ' + ISNULL(mm.Salud, N'—') + N' | ' + ISNULL(mm.Limpieza, N'—') + N' |' AS nvarchar(max)) AS Fila
 FROM (
-    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
+    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, ROW_NUMBER() OVER (PARTITION BY Equipo, Compartimiento ORDER BY FechaMuestreo DESC, LaboratoryDataId DESC) AS rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
         CompTipo,
         Fe_ppm, Estado_Fe, Indice_PQ, Estado_PQ, Cr_ppm, Estado_Cr, Ni_ppm, Estado_Ni, Cu_ppm, Estado_Cu,
         Pb_ppm, Estado_Pb, Sn_ppm, Estado_Sn, Al_ppm, Estado_Al, Si_ppm, Estado_Si,
@@ -3816,7 +3824,7 @@ FROM (
         Agua, Estado_Agua, Hollin, Estado_Hollin, Diesel, Estado_Diesel,
         ISO4, Estado_ISO4, ISO6, Estado_ISO6, ISO14, Estado_ISO14
     FROM [dbo].[vw_MuestrasHistorial]
-    WHERE Equipo = me.[Code]   -- sin rn_hist <= 200: el TOP (200) del flujo ya recorta, y ese filtro sobre la ventana no dejaba bajar el del equipo (198: 18 287 lecturas; /historialeq sin el, 802)
+    WHERE Equipo = me.[Code]   -- rn_hist se numera AQUI, ya filtrado: la columna de vw_MuestrasHistorial obligaba a recorrer la flota (BLOQUE 199)
 ) s
     OUTER APPLY (
         SELECT MIN(g.peorFam) AS peor,
@@ -4122,7 +4130,7 @@ FROM (
         MAX(CAST(m.LC AS decimal(18,2))) OVER (PARTITION BY s.Equipo, s.Compartimiento, m.metal) AS LCg,
         CAST(m.LP AS decimal(18,2)) AS LP, CAST(m.LC AS decimal(18,2)) AS LC, m.Est
     FROM (
-    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
+    SELECT Equipo, Proyecto, Compartimiento, CASE WHEN Compartimiento LIKE '%TRACCION%LH' THEN N'MT LH' WHEN Compartimiento LIKE '%TRACCION%RH' THEN N'MT RH' WHEN Compartimiento LIKE '%RUEDA%LH' THEN N'RD LH' WHEN Compartimiento LIKE '%RUEDA%RH' THEN N'RD RH' WHEN Compartimiento LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN Compartimiento='MOTOR' THEN N'Motor' ELSE ISNULL(Compartimiento, N'(sin componente)') END AS compAbbr, ROW_NUMBER() OVER (PARTITION BY Equipo, Compartimiento ORDER BY FechaMuestreo DESC, LaboratoryDataId DESC) AS rn_hist, FechaMuestreo, Horometro, HorasDeAceite, HorasComponente, CM,
         CASE WHEN Estado_General LIKE '%CRITIC%' THEN N'🟥' WHEN Estado_General LIKE '%PRECAUC%' THEN N'🟨' WHEN Estado_General LIKE '%OK%' OR Estado_General LIKE '%NORMAL%' THEN N'🟢' ELSE ISNULL(Estado_General,N'—') END AS estadoChip,
         Fe_ppm, Fe_LP, Fe_LC, Indice_PQ, PQ_LP, PQ_LC, Cr_ppm, Cr_LP, Cr_LC, Ni_ppm, Ni_LP, Ni_LC,
         Cu_ppm, Cu_LP, Cu_LC, Pb_ppm, Pb_LP, Pb_LC, Sn_ppm, Sn_LP, Sn_LC, Al_ppm, Al_LP, Al_LC, Si_ppm, Si_LP, Si_LC,
@@ -4131,7 +4139,7 @@ FROM (
         Estado_Fe, Estado_PQ, Estado_Cr, Estado_Ni, Estado_Cu, Estado_Pb, Estado_Sn, Estado_Al, Estado_Si,
         Estado_Ca, Estado_Zn, Estado_K, Estado_Na, Estado_Mg, Estado_B, Estado_P, Estado_V100, Estado_TBN
     FROM [dbo].[vw_MuestrasHistorial]
-    WHERE Equipo = me.[Code]   -- sin rn_hist <= 200: el TOP (200) del flujo ya recorta, y ese filtro sobre la ventana no dejaba bajar el del equipo (198: 18 287 lecturas; /historialeq sin el, 802)
+    WHERE Equipo = me.[Code]   -- rn_hist se numera AQUI, ya filtrado: la columna de vw_MuestrasHistorial obligaba a recorrer la flota (BLOQUE 199)
     ) s CROSS APPLY (VALUES
             (N'Fe',Fe_ppm,Fe_LP,Fe_LC,Estado_Fe), (N'PQ',Indice_PQ,PQ_LP,PQ_LC,Estado_PQ), (N'Cr',Cr_ppm,Cr_LP,Cr_LC,Estado_Cr),
             (N'Ni',Ni_ppm,Ni_LP,Ni_LC,Estado_Ni), (N'Cu',Cu_ppm,Cu_LP,Cu_LC,Estado_Cu), (N'Pb',Pb_ppm,Pb_LP,Pb_LC,Estado_Pb),

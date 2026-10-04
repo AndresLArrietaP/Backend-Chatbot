@@ -167,6 +167,27 @@ Comando incompleto ⇒ **pregunta**, nunca «No encontré datos». En el panel d
 
 ---
 
+## N12 · El flujo de uso de Carlos, encadenado — **nuevo 04/10**
+
+Una sola conversación, en orden, siguiendo al CA3195 de la mina al metal ([CONFIG_COMANDOS](../copilot/CONFIG_COMANDOS.md) § Flujo de uso).
+
+| # | Consulta | Debe pasar |
+|---|---|---|
+| 1 | `/panel antapaccay 980` | CA3195 en «Dónde empezar» (MT LH con crítico) |
+| 2 | `/incipiente antapaccay` | CA3195 MT LH 🟥 cruzó LC primero |
+| 3 | `/triage tracción antapaccay 980` | CA3195 entre los observados de MT |
+| 3b | `/panel 3195` · `/incipiente 3195` | **pases**: diagnóstico del CA3195 · tendencia del CA3195 (pregunta el componente) |
+| 4 | `/historialflota antapaccay` | rápido (~2 s de SQL) |
+| 5 | `/diagcompleto 3195` | MT LH con PQ 🟥 |
+| 6 | `/condicionmt 3195` | LH vs RH **con ISO, Mo, V40 y Agua** (antes «—») |
+| 7 | `/ultimo 3195 mt lh` | P/B/V100/ISO con límite |
+| 8 | `/tendencia 3195 mt lh` | Estado = el del historial · ISO entero |
+| 9 | `/grafica 3195 mt lh PQ` | 233.2 🟥 sobre LC 150 |
+| 10 | `/historial 3195 mt lh` · `/historialmetal 3195 PQ mt lh` · `/historialeq 3195` | los tres rápidos (~0,5 s de SQL tras el 200) |
+| NL | «el último análisis del hidráulico del 3195» | sale la tabla (necesita el `comp_key` en `MD_equipo_comp`) |
+
+---
+
 ## ⚠ Limitaciones conocidas — lo que KomfIA **no** hace hoy
 
 Conviene tenerlas a mano al enseñar el sistema, para no prometer de más.

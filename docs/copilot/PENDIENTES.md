@@ -23,14 +23,32 @@ producción (`LIKE '%x%'`) · (6) tras desplegar DDL, smoke test (BLOQUE 89) · 
 > (síntoma → causa → cura → bloque) está en
 > [pendientes-legado/PENDIENTES_2026-10-03.md](pendientes-legado/PENDIENTES_2026-10-03.md).
 
+## ▶ Cableado del flujo de uso (04/10) — lo que queda, en orden
+
+El recorrido de Carlos (MACRO `/panel` → `/incipiente` → `/ranking`·`/triage` → `/historialflota` · MICRO `/diagcompleto` →
+`/condicionmt` → `/triage`·`/ultimo` → `/tendencia` → `/grafica` → `/historial*`) está en
+[CONFIG_COMANDOS § Flujo de uso](CONFIG_COMANDOS.md). Auditado paso a paso; esto es lo que falta:
+
+| # | Dónde | Qué | Paso del flujo | Estado |
+|---|---|---|---|---|
+| **W1** | SQL · `vw_CondicionMT_MD` | + V40, Mo, Agua, **ISO>4/6/14** (salían «—» con dato) | 6 (LH vs RH) | ✍ DDL · **BLOQUE 200** |
+| **W2** | SQL · `/historial` y tema 14 | numerar `rn_hist` en la vista: ~10 s → ~0,5 s, misma huella | 10 | ✍ DDL · **BLOQUE 200** |
+| **W3** | Copilot · **Tema 00** | **Pases** cuando un comando de flota recibe un equipo: `/panel` y `/incipiente` (alta), `/barridodet` y `/historialflota` (media), `/rankingacum`·`/rankinggraf` (baja) + la regex de `/triage` ampliada a `HT079`. Fórmulas, mensajes y destinos en [CONFIG_COMANDOS § Pases](CONFIG_COMANDOS.md) | 1→5, 2→8, 4→10 | ⏳ Copilot |
+| **W4** | Copilot · **flujos** `MD_equipo_comp` y `MD_metal` | `comp_key` (el mismo de `MD_historial`): solo hace falta por **lenguaje natural** («el último del hidráulico del 3195»). 3 pasos en [CONFIG_FLUJOS](CONFIG_FLUJOS.md), arriba del § Descripción de entradas | 7-9 por NL | ⏳ Copilot |
+| **W5** | Copilot · comprobar | Tema 20 con la descripción nueva (910) · «Reintentos = Ninguno» en **todos** los flujos · el Mensaje de `/triage` sin `'` al inicio · Tema 09 piezas 4-6 de la receta | — | ⏳ verificar |
+| **W6** | idea, sin decidir | **Siguiente paso sugerido** al pie de los módulos macro (`/panel` → «/diagcompleto CA3164», `/incipiente` → «/tendencia CA3195 MT LH»): una línea en la vista, el primer equipo de la lista. Cablea el puente 1→5 y 2→8 sin que el usuario tenga que armar el comando | 1→5, 2→8 | 💡 Andrés decide |
+| ✅ | — | El resumen de varias viñetas tras los historiales: en Teams 03/10 ya es **una** línea («📈 Tendencia registrada…») | 10 | cerrado |
+
+Prueba de cierre: [PRUEBAS_ALFA_COMANDOS § N12](../pruebas/PRUEBAS_ALFA_COMANDOS.md), el flujo entero con el CA3195.
+
 ## Abierto, en orden
 
 | # | Qué | Nota |
 |---|---|---|
 | 1 | **Ponderación por parámetro** (en estudio, 03/10) | Idea de Andrés, emparentada con el ranking de acumulados. La **decisión T** (¿el ISO cuenta en el Estado de panel, barrido y conteo?) queda **dentro** de esto: hoy el ISO cuenta en historial, triage y tendencia, y no en panel/barrido/conteo |
 | 2 | **«Acum» del PQ** | El PQ es un índice, no ppm: ¿el área lo suma? Si no, sale de la lista de Acum (`vw_TendenciaMD`, `vw_TendenciaGraficoMD`). Preguntar a Carlos |
-| 3 | **`comp_key` en `MD_equipo_comp` y `MD_metal`** | El mismo Redactar de `MD_historial` ([CONFIG_FLUJOS](CONFIG_FLUJOS.md)); hoy toleran `mtlh` pero no `hidráulico` ni la entidad HTML. Ver el mapa de abajo |
-| 4 | **`/historial` y tema 14 en ~10 s** (micro) | Usan `rn_hist` como columna y esa ventana pasa por la flota entera. Numerar en la propia vista (como `grn` del tema 13) → ~0,5 s. Medir con huella (BLOQUE 199) |
+| 3 | **`comp_key` en `MD_equipo_comp` y `MD_metal`** → **W4** | El mismo Redactar de `MD_historial` ([CONFIG_FLUJOS](CONFIG_FLUJOS.md)); hoy toleran `mtlh` pero no `hidráulico` ni la entidad HTML. Ver el mapa de abajo |
+| 4 | **`/historial` y tema 14 en ~10 s** (micro) → **W2** | Usan `rn_hist` como columna y esa ventana pasa por la flota entera. Numerar en la propia vista (como `grn` del tema 13) → ~0,5 s. Medir con huella (BLOQUE 199) |
 | 5 | **`vw_DiagnosticoMD`: 7 lecturas de `base`** | Recordatorio de cada ronda. Consolidar a 1 lectura; éxito = `Scan count` |
 | 6 | **`/tendencia` 19 s, de los cuales 7,6 s son compilar** | El flujo manda el equipo escrito en el texto → cada equipo recompila. La parametrización forzada es un ajuste de BD (DBA) |
 | 7 | **Pedir al DBA** | `GRANT VIEW DATABASE PERFORMANCE STATE` (solo métricas: la forense L9 no corre sin él) y evaluar el tier: el 194 midió **reloj = 4-8 × CPU** |

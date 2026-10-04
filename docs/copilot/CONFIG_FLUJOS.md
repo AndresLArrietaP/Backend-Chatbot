@@ -36,6 +36,15 @@ Toda vista `*MD` expone `MD`(+variantes)/`Observados`/`Recomendaciones`. Cada sa
 > ⚠ Esta capa es **necesaria además** de la normalización del dispatcher
 > ([CONFIG_COMANDOS §Fórmula canónica](CONFIG_COMANDOS.md)): por **lenguaje natural** el tema llena
 > `compartimiento` directamente y la fórmula del dispatcher **no corre**. Las dos capas cubren los dos caminos.
+> 🔴 **(04/10) Falta el `comp_key` en estos dos** (ya está en `MD_historial`). Por comando no hace falta: el Tema 00
+> normaliza. Por **lenguaje natural** sí: «el último del hidráulico del 3195» llega como `hidráulico` o `hidr&#225;ulico`
+> y `LIKE '%hidraulico%'` no casa con `Sist.Hidr.` → «No encontré datos». Pasos en cada flujo (`MD_equipo_comp`: temas
+> 01 · 06 · 07 · 10 — `MD_metal`: tema 09):
+> 1. Redactar nuevo **`comp_key`** antes del SQL, con esta expresión (cada `‹compartimiento›` = la **ficha** de esa entrada):
+>    `if(equals(trim(coalesce(‹compartimiento›,'')),'%'),'%',if(contains(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'hid'),'Hidr',if(or(startsWith(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'mt'),contains(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'tracc')),concat('MT',if(endsWith(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'rh'),'RH',if(endsWith(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'lh'),'LH',''))),if(or(startsWith(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'rd'),contains(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'rueda')),concat('RD',if(endsWith(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'rh'),'RH',if(endsWith(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'lh'),'LH',''))),if(contains(toLower(replace(coalesce(‹compartimiento›,''),' ','')),'motor'),'Motor',replace(coalesce(‹compartimiento›,''),' ',''))))))`
+> 2. En el Query, el tramo `'%' + REPLACE('‹compartimiento›',' ','') + '%'` pasa a **`'%‹comp_key›%'`** (la ficha de la
+>    salida del Redactar). El resto del Query no cambia.
+> 3. Probar el flujo a mano con `hidráulico`, `mtlh` y `MT LH`: los tres deben dar fila.
 > ⚠ `MD_triage` y `MD_incipiente` no usan ESE replace porque filtran por `CompTipo`, no por `compAbbr`
 > — pero necesitan **el suyo**: ver la § FIX CANÓNICO de arriba. Dejarlos sin normalizar costó los dos
 > comandos el 25/09.

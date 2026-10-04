@@ -91,6 +91,48 @@ de un día para otro, y el síntoma es el mensaje genérico de comando no recono
 acepta **los dos** nombres y apunta al mismo Tema 02.
 ⛔ Cuando se retire el alias, avisarlo en `/comandos` antes, no después.
 
+## § Flujo de uso principal (Carlos, reunión 02/10) — contra esto se audita el cableado
+
+| Paso | Comando | Para qué | Viene de / va a |
+|---|---|---|---|
+| **MACRO 1** | `/panel` (alias `/barrido`) | Los críticos de la mina («Dónde empezar»: el CA3195 salió ahí) | → 2, 3 o directo a 5 |
+| **2** | `/incipiente` | Lo que sube o acaba de cruzar el límite | en paralelo a 1 |
+| **3** | `/ranking` · `/triage` | **Puente** al micro: qué equipos de un componente están peor | → 5 |
+| **4** | `/historialflota` | Visión panorámica de lo observado | plus |
+| **MICRO 5** | `/diagnostico` · `/diagcompleto` | Todos los componentes del equipo contra los parámetros | ← 1 / 3 |
+| **6** | `/condicionmt` | MT LH contra MT RH | |
+| **7** | `/triage` del componente · `/ultimo` | El componente en su flota; su última muestra | |
+| **8** | `/tendencia` | El componente en el tiempo (y un metal en particular) | → 9 |
+| **9** | `/grafica` | La curva de ese metal | |
+| **10** | `/historial` · `/historialmetal` · `/historialeq` | La bitácora del componente, del metal o del equipo | |
+
+**Las transiciones son donde falla:** en el paso 3→5 o 1→5 el usuario ya tiene un **equipo** en la cabeza y puede
+escribirlo en un comando de flota (`/triage 3195`, visto el 02/10). Por eso los **pases** de abajo.
+
+### Pases: un comando de flota que recibe un EQUIPO (04/10)
+
+Mismo montaje que `/triage` (02/10): **Condición al inicio de la rama**, encima del «Ir a tema» que ya existe → rama
+verdadera: Mensaje → «Ir a tema» → **Finalizar tema actual** · rama «Todas las demás condiciones»: **vacía** (sigue al
+«Ir a tema» de siempre). ⛔ Ley 8: se agrega, no se mueve ni se borra nada.
+Condición (fórmula), la misma en todos:
+```
+IsMatch(Topic.p1, "(?i)((ca|t)?\d{4}|ht\d{3})")
+```
+`CA3195` · `3195` · `T3160` · `6114` (D475A) · `HT079` (Antamina) → equipo. Un modelo (`980`, `D475A`) o una mina, no.
+
+| Comando | Prioridad (flujo) | Mensaje | Ir a tema · entradas |
+|---|---|---|---|
+| `/triage` ✅ (02/10) | — | «El triage es de la flota; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` — ⚠ **cambiar su regex** por la de arriba (la vieja no reconoce `HT079`) |
+| `/panel` · `/barrido` · `/conteo` | **alta** (1→5) | «El panel es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
+| `/incipiente` | **alta** (2→8) | «La alerta temprana es de la flota; para un equipo es su tendencia.» | 06 · equipo=`Topic.p1` · compartimiento=`If(Topic.resto2 = "", Blank(), Topic.comp)` (vacío → el tema lo pregunta) |
+| `/barridodet` | media (1→5) | «El barrido es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
+| `/historialflota` | media (4→10) | «El historial de flota es de la mina; para un equipo es su historial.» | 12 · equipo=`Topic.p1` · rango=`Topic.rango` |
+| `/rankingacum` · `/rankinggraf` | baja | «El ranking es de la flota; para un equipo son sus acumulados.» | 28 · equipo=`Topic.p1` |
+
+⛔ **Sin pase** (a propósito): `/ranking` y `/metalflota` (con un equipo no hay un destino único: ¿qué metal, qué
+componente?) y los comandos por equipo (ya esperan un equipo).
+⚠ El texto del Mensaje sin `'` ni espacios al inicio: en Teams sale en letra de código (visto 03/10 en el de `/triage`).
+
 ### § FÓRMULA CANÓNICA de normalización de componente (2026-09-24) — **úsala en TODOS**
 
 🔴 **Bug que la originó (24/09):** `/ultimo 3160 mt lh` funcionaba y **`/ultimo 3160 mtlh` no**.
@@ -357,7 +399,7 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/acumulados` | 28 Acumulados equipo | equipo=p1 |
 | `/panel` · alias `/barrido`, `/conteo` | **16 Panel de flota** | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` — UNA Condición con las tres (`cmd = /barrido` **CUALQUIERA** `/panel` · `/conteo`, ley 8). La Condición vieja de `/conteo` queda inalcanzable: **no se borra** |
 | `/barridodet` | 17 Barrido detalle | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` |
-| `/triage` | 19 Triage | **acepta la mina primero** (02/10): `Topic.esComp1 = IsMatch(Lower(Topic.p1), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · compartimiento=`If(esComp1, p1, "tracción")` · proyecto=`If(esComp1, If(p2="","Antapaccay",p2), If(p1="","Antapaccay",p1))` · modelo=`If(esComp1, If(p3="","(todos)",p3), If(p2="","(todos)",p2))` — `/triage antapaccay` mandaba `CompTipo = 'antapaccay'` · **(03/10) con un EQUIPO** (`/triage 3195 antapaccay`, visto en la presentación): Condición al inicio de la rama, `IsMatch(Topic.p1, "(?i)(ca|t)?\d{4}")` → Mensaje «El triage es de la flota; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» → **Ir a tema 04 Diagnóstico completo** (equipo = `Topic.p1`; `/diagnostico` ya es alias del 04) → Finalizar. El `else` sigue como está. Hoy salía «No encontré datos» y la IA improvisaba la ayuda |
+| `/triage` | 19 Triage | **acepta la mina primero** (02/10): `Topic.esComp1 = IsMatch(Lower(Topic.p1), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · compartimiento=`If(esComp1, p1, "tracción")` · proyecto=`If(esComp1, If(p2="","Antapaccay",p2), If(p1="","Antapaccay",p1))` · modelo=`If(esComp1, If(p3="","(todos)",p3), If(p2="","(todos)",p2))` — `/triage antapaccay` mandaba `CompTipo = 'antapaccay'` · **(03/10) con un EQUIPO** (`/triage 3195 antapaccay`, visto en la presentación): Condición al inicio de la rama, `IsMatch(Topic.p1, "(?i)((ca|t)?\d{4}|ht\d{3})")` (04/10: + `HT079`; ver § Pases) → Mensaje «El triage es de la flota; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» → **Ir a tema 04 Diagnóstico completo** (equipo = `Topic.p1`; `/diagnostico` ya es alias del 04) → Finalizar. El `else` sigue como está. Hoy salía «No encontré datos» y la IA improvisaba la ayuda |
 | `/incipiente` | 20 Tendencia incipiente | **modelo (03/10)**, mismo patrón que `/triage`: `Topic.esComp2 = IsMatch(Lower(Topic.p2), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*")` · proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(Topic.esComp2, Topic.p2, "tracción")` · modelo=`If(Topic.esComp2, If(IsMatch(Topic.p3, ".*\d.*"), Topic.p3, If(IsMatch(Topic.p4, ".*\d.*"), Topic.p4, "(todos)")), If(Topic.p2 = "", "(todos)", Topic.p2))` — un modelo siempre lleva un dígito y un componente nunca, así que `antapaccay 980`, `antapaccay mtlh` y `antapaccay mt lh 980` caen bien. Antes `980` llegaba como componente → «Sin datos suficientes» |
 | `/conteo` | **16 Panel de flota** (alias desde el 02/10; antes 21) | proyecto=`If(p1="","Antapaccay",p1)` · modelo=`If(p2="","(todos)",p2)` — en el nodo «Tema» de la rama solo cambia el destino |
 | `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · **modelo y top desde p4/p5** — fórmulas en §`/ranking` |

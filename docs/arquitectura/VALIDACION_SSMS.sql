@@ -8861,3 +8861,48 @@ GO
 --     ROW_NUMBER (PARTITION BY Equipo, Compartimiento ORDER BY FechaMuestreo DESC, LaboratoryDataId DESC), como hace
 --     el tema 13 con grn -> deberia caer a ~0,5 s con la misma huella.
 --   Balance de la ronda en historiales: 34 / 34 / 35 / 80 / 9 s  ->  10 / 0,5 / 1,9 / 9,6 / 0,5 s.
+
+-- ==== BLOQUE 200 - el flujo de uso de Carlos (04/10): /condicionmt completo + /historial y tema 14 numerando en la vista ====
+-- Flujo de uso (reunion 02/10): MACRO /panel -> /incipiente -> /ranking|/triage -> /historialflota · MICRO /diagcompleto ->
+--   /condicionmt (LH vs RH) -> /triage|/ultimo -> /tendencia -> /grafica -> /historial|/historialmetal|/historialeq.
+-- CAMBIOS (DDL escrito):
+--   vw_CondicionMT_MD: + V40, Mo, Agua, ISO>4, ISO>6, ISO>14 (el formato de TRACCION los pide y salian «—» con dato).
+--     ⚠ zona caliente (ley 2): solo filas nuevas en el VALUES, ningun agregado ni referencia nueva.
+--   vw_HistorialFilasMD y vw_HistorialMetalFilasMD: rn_hist numerado en la vista, ya filtrado (misma definicion).
+-- ⚑ ORDEN: 200.0 con el DDL VIEJO -> desplegar DDL_vistas.sql -> BLOQUE 89 -> 200.0 otra vez -> 200.1.
+-- ⚑ DECISION escrita antes:
+--   condicionmt: queda si <= 2 x su tiempo de antes y <= 10 s. Si no -> revertir SOLO esa vista (git).
+--   historial / tema 14: queda si la huella es IGUAL a la del 199 (722174660 / -1084527673) y no es mas lento.
+--     Esperado: ~0,5 s y LaboratoryData ~800 lecturas, como /historialeq.
+
+-- 200.0 ⭐ medicion + huella
+DECLARE @c nvarchar(max), @h nvarchar(max), @m nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== /condicionmt 3195';
+SELECT @c = MD FROM vw_CondicionMT_MD WHERE Equipo LIKE '%3195%';
+PRINT N'===== /historial 3195 MTLH';
+SELECT @h = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE '%' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+PRINT N'===== tema 14: /historialmetal 3195 Fe MTLH';
+SELECT @m = MAX(TituloMD) + CAST(COUNT(*) AS nvarchar(10)) + MAX(SufijoMD) + NCHAR(10) + NCHAR(10) + MAX(ColsMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY rn)
+FROM (SELECT TOP (200) * FROM (SELECT Equipo, compAbbr, Parametro, Proyecto, rn, TituloMD, SufijoMD, ColsMD, Fila
+      FROM dbo.vw_HistorialMetalFilasMD WITH (NOLOCK)
+      WHERE Equipo LIKE '%3195%' AND REPLACE(compAbbr,' ','') COLLATE Latin1_General_CI_AI LIKE '%MTLH%'
+        AND Parametro LIKE 'Fe' AND Proyecto LIKE '%%%' AND FechaMuestreo >= '1900-01-01') f ORDER BY rn) sel;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT v.caso, CHECKSUM(v.md) AS huella, DATALENGTH(v.md) / 2 AS chars,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos
+FROM (VALUES (N'condicionmt 3195', @c), (N'historial 3195 MTLH', @h), (N'tema 14 Fe MTLH', @m)) v(caso, md)
+CROSS APPLY STRING_SPLIT(v.md, NCHAR(10)) s GROUP BY v.caso, v.md;
+GO
+
+-- 200.1 (DDL nuevo) /condicionmt 3195: las 6 filas con valor. Esperado ISO>6 «20 🟨 | …» en MT LH (como /ultimo).
+DECLARE @c nvarchar(max);
+SELECT @c = MD FROM vw_CondicionMT_MD WHERE Equipo LIKE '%3195%';
+SELECT s.value AS fila FROM STRING_SPLIT(@c, NCHAR(10)) s
+WHERE s.value LIKE N'| V40 |%' OR s.value LIKE N'| Mo |%' OR s.value LIKE N'| Agua |%' OR s.value LIKE N'| ISO%' OR s.value LIKE N'| PQ |%';
+SELECT @c AS condicionmt_3195;
+GO
