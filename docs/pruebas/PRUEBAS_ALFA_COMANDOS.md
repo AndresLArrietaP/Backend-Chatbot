@@ -173,10 +173,11 @@ Una sola conversación, en orden, siguiendo al CA3195 de la mina al metal ([CONF
 
 | # | Consulta | Debe pasar |
 |---|---|---|
-| 1 | `/panel antapaccay 980` | CA3195 en «Dónde empezar» (MT LH con crítico) |
+| 1 | `/barridodet antapaccay 980` | CA3195 en MOTOR DE TRACCION LH: «PQ=233.2 🟥» **y ahora también el ISO>6** (y P/B/Mo si estuvieran fuera) |
+| 1b | `/panel antapaccay 980` | el resumen: CA3195 en «Dónde empezar» |
 | 2 | `/incipiente antapaccay` | CA3195 MT LH 🟥 cruzó LC primero |
-| 3 | `/triage tracción antapaccay 980` | CA3195 entre los observados de MT |
-| 3b | `/panel 3195` · `/incipiente 3195` | **pases**: diagnóstico del CA3195 · tendencia del CA3195 (pregunta el componente) |
+| 3 | `/triage tracción antapaccay 980` · `/ranking antapaccay tracción ISO>6` | CA3195 entre los observados de MT · el ranking acepta Na, K e ISO |
+| 3b | `/barridodet 3195` · `/incipiente 3195` | **pases**: diagnóstico del CA3195 · tendencia del CA3195 (pregunta el componente) |
 | 4 | `/historialflota antapaccay` | rápido (~2 s de SQL) |
 | 5 | `/diagcompleto 3195` | MT LH con PQ 🟥 |
 | 6 | `/condicionmt 3195` | LH vs RH **con ISO, Mo, V40 y Agua** (antes «—») |

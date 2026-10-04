@@ -95,7 +95,7 @@ acepta **los dos** nombres y apunta al mismo Tema 02.
 
 | Paso | Comando | Para qué | Viene de / va a |
 |---|---|---|---|
-| **MACRO 1** | `/panel` (alias `/barrido`) | Los críticos de la mina («Dónde empezar»: el CA3195 salió ahí) | → 2, 3 o directo a 5 |
+| **MACRO 1** | **`/barridodet`** (el detalle, equipo por equipo) | Los críticos de la mina con lo que los marcó (el CA3195 salió ahí: «PQ=233.2 🟥») | → 2, 3 o directo a 5 |
 | **2** | `/incipiente` | Lo que sube o acaba de cruzar el límite | en paralelo a 1 |
 | **3** | `/ranking` · `/triage` | **Puente** al micro: qué equipos de un componente están peor | → 5 |
 | **4** | `/historialflota` | Visión panorámica de lo observado | plus |
@@ -123,9 +123,9 @@ IsMatch(Topic.p1, "(?i)((ca|t)?\d{4}|ht\d{3})")
 | Comando | Prioridad (flujo) | Mensaje | Ir a tema · entradas |
 |---|---|---|---|
 | `/triage` ✅ (02/10) | — | «El triage es de la flota; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` — ⚠ **cambiar su regex** por la de arriba (la vieja no reconoce `HT079`) |
-| `/panel` · `/barrido` · `/conteo` | **alta** (1→5) | «El panel es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
+| `/panel` · `/barrido` · `/conteo` | media (resumen de la mina) | «El panel es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
 | `/incipiente` | **alta** (2→8) | «La alerta temprana es de la flota; para un equipo es su tendencia.» | 06 · equipo=`Topic.p1` · compartimiento=`If(Topic.resto2 = "", Blank(), Topic.comp)` (vacío → el tema lo pregunta) |
-| `/barridodet` | media (1→5) | «El barrido es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
+| `/barridodet` | **alta** (1→5) | «El barrido es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
 | `/historialflota` | media (4→10) | «El historial de flota es de la mina; para un equipo es su historial.» | 12 · equipo=`Topic.p1` · rango=`Topic.rango` |
 | `/rankingacum` · `/rankinggraf` | baja | «El ranking es de la flota; para un equipo son sus acumulados.» | 28 · equipo=`Topic.p1` |
 

@@ -8906,3 +8906,56 @@ SELECT s.value AS fila FROM STRING_SPLIT(@c, NCHAR(10)) s
 WHERE s.value LIKE N'| V40 |%' OR s.value LIKE N'| Mo |%' OR s.value LIKE N'| Agua |%' OR s.value LIKE N'| ISO%' OR s.value LIKE N'| PQ |%';
 SELECT @c AS condicionmt_3195;
 GO
+
+-- ==== BLOQUE 201 - que cada modulo muestre todo el formato (04/10), sin cambiar su forma ni a quien muestra ====
+-- Pedido: «que se encuentre todo o la mayoria de parametros; que no pase lo del 3195 que faltaban», sin comprometer
+--   ningun comando. Auditados todos los modulos contra el formato (vw_FormatoParametro):
+--   ya completos: /ultimo · /tendencia · /grafica · /diagcompleto · /triage · los 3 historiales · /historialflota.
+-- CAMBIOS (DDL escrito):
+--   /barridodet (vw_ObservadosFlota + vw_ObservadosBarridoMD): la celda «Observado» nombra tambien P, B, Mo, Agua,
+--     Hollin, Diesel, TAN, V40, Oxidacion, Sulfatacion, Nitracion e ISO (entero) cuando estan fuera de limite. QUIEN
+--     entra al barrido NO cambia (sigue Estado_General: decision T, en estudio con la ponderacion).
+--   /metalflota (vw_UltimoMetalFlotaMD): + Mo, TAN, V40, Agua, ISO>4/6/14; P y B con su limite. Las 14 filas de
+--     siempre conservan su logica; las nuevas usan el semaforo de la base.
+--   /ranking (vw_RankingMD): + Na, K, ISO>4/6/14 (alertan por arriba). Los aditivos no: un ranking descendente los
+--     leeria al reves.
+--   (+ BLOQUE 200: /condicionmt con ISO/Mo/V40/Agua; /historial y tema 14 numerando en la vista.)
+-- ⚑ ORDEN: 200.0 y 201.0 con el DDL VIEJO -> desplegar DDL_vistas.sql -> BLOQUE 89 -> 200.0 y 201.0 otra vez ->
+--   200.1 y 201.1.
+-- ⚑ DECISION escrita antes: por vista, queda si <= 1,5 x su tiempo de antes. /barridodet ademas con el MISMO
+--   numero de filas de equipo y el mismo conteo de la cabecera (no puede ganar ni perder equipos). Si no -> revertir
+--   esa vista (git).
+
+-- 201.0 ⭐ medicion (consultas EXACTAS de MD_flota, MD_ultmetalflota y MD_ranking) + forma
+DECLARE @b nvarchar(max), @f nvarchar(max), @r nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== /barridodet antapaccay 980';
+SELECT @b = DetalleTodosMD FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%980%';
+PRINT N'===== /metalflota antapaccay traccion Fe,ISO>6,Mo';
+SELECT @f = STRING_AGG(MD, NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY MetalOrden)
+FROM vw_UltimoMetalFlotaMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION'
+  AND CHARINDEX(N',' + Metal + N',', N',Fe,ISO>6,Mo,') > 0;
+PRINT N'===== /ranking antapaccay traccion ISO>6 10';
+SELECT @r = MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos)
+FROM dbo.vw_RankingMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION'
+  AND Metal LIKE '%ISO>6%' AND pos <= 10;
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+SELECT v.caso, DATALENGTH(v.md) / 2 AS chars,
+       SUM(CASE WHEN s.value LIKE N'| %' AND s.value NOT LIKE N'|---%' AND s.value NOT LIKE N'| Equipo%' AND s.value NOT LIKE N'| #%' THEN 1 ELSE 0 END) AS filas,
+       COUNT(DISTINCT CASE WHEN s.value LIKE N'|%' THEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 END) AS anchos,
+       MAX(CASE WHEN s.value LIKE N'%ISO>6%' THEN 1 ELSE 0 END) AS nombra_ISO
+FROM (VALUES (N'barridodet 980', @b), (N'metalflota Fe,ISO>6,Mo', @f), (N'ranking ISO>6', @r)) v(caso, md)
+CROSS APPLY STRING_SPLIT(ISNULL(v.md, N''), NCHAR(10)) s GROUP BY v.caso, v.md;
+GO
+
+-- 201.1 (DDL nuevo) lo que se ve: la fila del CA3195 en el barrido, y las tablas de metalflota y ranking
+DECLARE @b nvarchar(max);
+SELECT @b = DetalleTodosMD FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%980%';
+SELECT s.value AS fila_CA3195 FROM STRING_SPLIT(@b, NCHAR(10)) s WHERE s.value LIKE N'%CA3195%';
+SELECT STRING_AGG(MD, NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY MetalOrden) AS metalflota
+FROM vw_UltimoMetalFlotaMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION'
+  AND CHARINDEX(N',' + Metal + N',', N',ISO>6,Mo,') > 0;
+SELECT MAX(HeaderMD) + NCHAR(10) + STRING_AGG(Fila, NCHAR(10)) WITHIN GROUP (ORDER BY pos) AS ranking_ISO6
+FROM dbo.vw_RankingMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%' AND CompTipo = 'TRACCION'
+  AND Metal LIKE '%ISO>6%' AND pos <= 10;
+GO

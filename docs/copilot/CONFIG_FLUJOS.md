@@ -104,7 +104,7 @@ En el Tema 22: la Acción fija nada de vista/columna (el query ya apunta a vw_Ra
 `proyecto`, `compartimiento`, `parametro`, `top`; `modelo` = `(todos)` por defecto.
 **Descripciones de entradas:** proyecto="Proyecto/mina." · modelo="Modelo; (todos) si no lo nombran." ·
 compartimiento="Tipo de componente (tracción/hidráulico/rueda/mando/transmisión/motor)." ·
-parametro="Metal (Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ)." · top="Cuántos equipos mostrar; vacío = 10."
+parametro="Metal o parámetro que alerta por arriba: Fe, Cu, Cr, Ni, Pb, Sn, Al, Si, PQ, Na, K, ISO>4, ISO>6, ISO>14." · top="Cuántos equipos mostrar; vacío = 10."
 
 
 ## Flujos DEDICADOS de gap-fillers (vista FIJA en el query → SIN scramble de fichas)
