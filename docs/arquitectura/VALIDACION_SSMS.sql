@@ -9011,3 +9011,10 @@ SELECT @b9 = DetalleTodosMD FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%an
 SELECT s.value AS seccion FROM STRING_SPLIT(@b9, NCHAR(10)) s WHERE s.value LIKE N'**%equipos)';
 SELECT @b9 AS barridodet_980;
 GO
+
+-- RESULTADOS 202 (04/10) -- QUEDA (todos los cortes)
+--   /barridodet 980      18,6 -> 2,0 s · LaboratoryData 14 scans / 256 032 -> 1 scan / 18 288
+--   /barridodet (todos)  27,3 -> 2,0 s · igual
+--   huella_equipos IDENTICA en las 4 variantes (980 todos, (todos) todos / criticos / precaucion) · filas 13/15/5/10 =
+--   conteos IGUALES (12/4/8 · 10/4/6 · 1/0/1 · 1/0/1) · filas de limite 21 -> 30 y 23 -> 33, con ISO y P ✅
+--   orden: MT LH, MT RH, SISTEMA HIDRAULICO, MOTOR, RUEDA DELANTERA LH, RUEDA DELANTERA RH ✅
