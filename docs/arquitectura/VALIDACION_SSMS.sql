@@ -8970,3 +8970,44 @@ GO
 --   /ranking ISO>6       1,5 s · top 10 enteros, LP/LC 19/20 ✅ (antes no existia)
 --   ⚠ HALLAZGO: /barridodet lee LaboratoryData 14 veces (256 032 lecturas, 17-21 s). Es el PASO 1 del flujo de uso:
 --     candidato numero uno de rendimiento (skill komfia-doctor; vw_ObservadosFlota se referencia 5 veces).
+
+-- ==== BLOQUE 202 - W7 + W8: /barridodet en UNA lectura, orden fijo de secciones, limites completos ====
+-- Paso 1 del flujo de uso. BLOQUE 201: LaboratoryData 14 scans, 256 032 lecturas, 17-21 s (5 lecturas de la cadena).
+-- CAMBIO (DDL escrito; etiqueta de respaldo respaldo-antes-W7-barridodet-2026-10-04):
+--   vw_ObservadosBarridoMD lee vw_ObservadosFlota UNA vez; las tres variantes (todos / criticos / precaucion), los
+--   conteos y la tabla de limites salen de la misma pasada.
+--   Pedido de Andres: secciones en orden MT LH, MT RH, Sist. Hidr., Motor, RD LH, RD RH y el resto (antes, por severidad).
+--   W8: la tabla de limites nombra tambien P, B, Mo, ISO (entero), TAN, viscosidad (banda)... y el LC de Pb/Sn.
+--   vw_ObservadosFlota: + las columnas de limite que faltaban (solo columnas).
+-- ⚑ ORDEN: 202.0 con el DDL VIEJO -> desplegar DDL_vistas.sql -> BLOQUE 89 -> 202.0 otra vez -> 202.1.
+-- ⚑ DECISION escrita antes de ver los numeros (por variante 980 y (todos)):
+--   QUEDA si: LaboratoryData <= 3 scans (antes 14) Y tiempo <= el de antes Y huella_equipos IGUAL (las filas de
+--   equipo, sin importar el orden) Y los tres conteos IGUALES. Si la huella o un conteo cambia -> revertir (la etiqueta).
+
+-- 202.0 ⭐ medicion + huellas
+DECLARE @b9 nvarchar(max), @bt nvarchar(max), @c nvarchar(max), @pr nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== /barridodet antapaccay 980 (DetalleTodosMD)';
+SELECT @b9 = DetalleTodosMD FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%980%';
+PRINT N'===== /barridodet antapaccay (todos)';
+SELECT @bt = DetalleTodosMD, @c = MD_Criticos, @pr = MD_Precaucion FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%todos%';
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+-- fila de equipo = 9 barras; fila de limite = 5. La huella de las filas de equipo no depende del orden.
+SELECT v.caso,
+       SUM(CASE WHEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 = 9 AND s.value NOT LIKE N'| Equipo%' AND s.value NOT LIKE N'|---%' THEN 1 ELSE 0 END) AS filas_equipo,
+       CHECKSUM_AGG(CASE WHEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 = 9 AND s.value NOT LIKE N'| Equipo%' AND s.value NOT LIKE N'|---%' THEN CHECKSUM(s.value) END) AS huella_equipos,
+       SUM(CASE WHEN (DATALENGTH(s.value) - DATALENGTH(REPLACE(s.value, N'|', N''))) / 2 = 5 AND s.value NOT LIKE N'| Componente%' AND s.value NOT LIKE N'|---%' THEN 1 ELSE 0 END) AS filas_limite,
+       MAX(CASE WHEN s.value LIKE N'| %| ISO>6 |%' THEN 1 ELSE 0 END) AS limite_ISO,
+       MAX(CASE WHEN s.value LIKE N'| %| P |%' THEN 1 ELSE 0 END) AS limite_P
+FROM (VALUES (N'980 todos', @b9), (N'(todos) todos', @bt), (N'(todos) criticos', @c), (N'(todos) precaucion', @pr)) v(caso, md)
+CROSS APPLY STRING_SPLIT(ISNULL(v.md, N''), NCHAR(10)) s GROUP BY v.caso;
+SELECT Modelo, NumEquipos, NumEquiposCriticos, NumEquiposSoloPrecau
+FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%antapaccay%' ORDER BY Modelo;
+GO
+
+-- 202.1 (DDL nuevo) el orden de las secciones y la tabla de limites
+DECLARE @b9 nvarchar(max);
+SELECT @b9 = DetalleTodosMD FROM vw_ObservadosBarridoMD WHERE Proyecto LIKE '%antapaccay%' AND Modelo LIKE '%980%';
+SELECT s.value AS seccion FROM STRING_SPLIT(@b9, NCHAR(10)) s WHERE s.value LIKE N'**%equipos)';
+SELECT @b9 AS barridodet_980;
+GO
