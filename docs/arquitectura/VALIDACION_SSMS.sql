@@ -9018,3 +9018,36 @@ GO
 --   huella_equipos IDENTICA en las 4 variantes (980 todos, (todos) todos / criticos / precaucion) · filas 13/15/5/10 =
 --   conteos IGUALES (12/4/8 · 10/4/6 · 1/0/1 · 1/0/1) · filas de limite 21 -> 30 y 23 -> 33, con ISO y P ✅
 --   orden: MT LH, MT RH, SISTEMA HIDRAULICO, MOTOR, RUEDA DELANTERA LH, RUEDA DELANTERA RH ✅
+
+-- ==== BLOQUE 203 - /diagcompleto y /diagnostico en UNA lectura (vw_DiagnosticoMD) ====
+-- Pendiente de cada ronda: vw_DiagnosticoMD leia su unpivot NUEVE veces (encabezado, cabeceras de las dos tablas,
+-- los dos cuerpos, observados y recomendaciones), cada copia con su lectura de vw_DiagnosticoEquipo. 6,6 s tras el
+-- filtro abajo del 30/09, pero con LaboratoryData en varios scans por camion.
+-- CAMBIO (DDL escrito; etiqueta respaldo-antes-1lectura-diagnostico-2026-10-07; la vista vieja, lista para ejecutar,
+-- en respaldo/vw_DiagnosticoMD_2026-10-07_antes_1lectura.sql): el unpivot se lee UNA vez y cada fila se duplica en dos
+-- papeles (fila de parametro / fila de componente); un GROUP BY arma todo y las recomendaciones salen de un OUTER APPLY.
+-- ⚑ ORDEN: 203.0 con el DDL VIEJO -> desplegar SOLO vw_DiagnosticoMD (de DDL_vistas.sql) -> BLOQUE 89 -> 203.0 otra vez.
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   QUEDA si: /diagcompleto 3195 con LaboratoryData <= 2 scans Y la huella de los equipos IDENTICA (todas las columnas)
+--   Y el tiempo no peor que antes. Si una huella cambia -> revertir con el archivo de respaldo y traer esa fila.
+--   Si los scans bajan pero el tiempo sube -> decide el CPU: queda si baja, se revierte si sube.
+
+-- 203.0 ⭐ medicion (la consulta EXACTA del flujo MD_equipo) + huellas
+DECLARE @c nvarchar(max), @m nvarchar(max), @o nvarchar(max), @r nvarchar(max);
+SET ARITHABORT OFF; SET STATISTICS IO ON; SET STATISTICS TIME ON;
+PRINT N'===== /diagcompleto 3195 (MD_Completo)';
+SELECT @c = MD_Completo, @o = Observados, @r = Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%3195%';
+PRINT N'===== /diagnostico 3195 (MD)';
+SELECT @m = MD, @o = Observados, @r = Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%3195%';
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF; SET ARITHABORT ON;
+-- huella por equipo: observados y sanos, Antapaccay y Antamina (un codigo que no exista simplemente no sale)
+SELECT Equipo, NumCompObs, NumCompTotal, LEN(MD) AS len_md, LEN(MD_Completo) AS len_mdc,
+       CHECKSUM(MD) AS h_md, CHECKSUM(MD_Completo) AS h_mdc, CHECKSUM(Observados) AS h_obs, CHECKSUM(Recomendaciones) AS h_rec
+FROM vw_DiagnosticoMD
+WHERE Equipo IN ('CA3195', 'CA3160', 'CA3161', 'CA3171', 'CA3177', 'T3160', 'HT079')
+ORDER BY Equipo;
+GO
+
+-- 203.1 (DDL nuevo) a la vista, para mirar la tabla del 3195 completa
+SELECT MD_Completo, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%3195%';
+GO
