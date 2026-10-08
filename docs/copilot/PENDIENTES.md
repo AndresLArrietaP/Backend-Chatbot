@@ -60,7 +60,7 @@ Prueba de cierre: [PRUEBAS_ALFA_COMANDOS § N12](../pruebas/PRUEBAS_ALFA_COMANDO
 | 6 | **`/tendencia` 19 s, de los cuales 7,6 s son compilar** | El flujo manda el equipo escrito en el texto → cada equipo recompila. La parametrización forzada es un ajuste de BD (DBA) |
 | 7 | **Pedir al DBA** | `GRANT VIEW DATABASE PERFORMANCE STATE` (solo métricas: la forense L9 no corre sin él) y evaluar el tier: el 194 midió **reloj = 4-8 × CPU** |
 | 8 | 🅿 **A largo plazo: `/limites` y `/limitesc` + el «siguiente paso sugerido»** | `vw_LimitesMD` desplegada y medida (196.4); Copilot sin montar y fuera de la tarjeta. Plan abajo. **Siguiente paso sugerido** (ex W6, 04/10): una línea al pie de `/barridodet` e `/incipiente` con el comando listo para el primer equipo; aparcado por Andrés. **Pase con pregunta** (idea 04/10): que el pase pregunte (o tarjeta) antes de redirigir; hoy no compensa — la regex solo reconoce códigos de equipo y la pregunta añadiría un clic al caso normal |
-| 9 | **Conexión «Obsoleta»** (Teams pide «Conectar para continuar») | **Causa confirmada 07/10:** `MD_ranking` tiene la conexión SQL como «Proporcionada por el usuario de solo ejecución» → cada usuario la enlaza y ese enlace caduca (la SQL en sí está bien). Cura: en Power Automate, `MD_ranking` → Usuarios de solo ejecución → «Usar esta conexión»; revisar los 13 restantes; publicar. Pasos en [CONFIG_FLUJOS § Conexión «Obsoleta»](CONFIG_FLUJOS.md). ⏳ aplicar y probar `/ranking` |
+| 9 | **Conexión «Obsoleta»** (Teams pide «Conectar para continuar») | **Causa confirmada 07/10:** `MD_ranking` tiene la conexión SQL como «Proporcionada por el usuario de solo ejecución» → cada usuario la enlaza y ese enlace caduca (la SQL en sí está bien). Cura: en Power Automate, `MD_ranking` → Usuarios de solo ejecución → «Usar esta conexión»; revisar los 13 restantes; publicar. Pasos en [CONFIG_FLUJOS § Conexión «Obsoleta»](CONFIG_FLUJOS.md). ✅ **Cerrado 07/10**: `MD_ranking` en «Usar esta conexión», publicado y `/ranking antapaccay tracción Fe` sin tarjeta |
 
 ### R12 · Plan de `/limites` y `/limitesc`
 - **Qué:** como `/comandos` o `/ayuda`, pero con la tabla de límites. `/limites ‹proj› [modelo] [comp]` = solo los
@@ -147,7 +147,7 @@ flujo muestra **dos ejecuciones** para una sola consulta.
 | Vista | Hoy | Siguiente paso |
 |---|---|---|
 | `vw_TendenciaMD` (`/tendencia`) | **19,0 s** (03/10, BLOQUE 194; antes 32-36 s): sin derrame a disco; 7,6 s son compilar | Ver «Abierto» #6 |
-| `vw_DiagnosticoMD` (`/diagcompleto`) | 6,6 s tras el filtro abajo, pero `LaboratoryData` sigue en **7 scans** (uno por referencia a `base`) | Consolidar a 1 lectura; éxito = `Scan count`, no tiempo |
+| `vw_DiagnosticoMD` (`/diagcompleto`) | ✅ **07/10, BLOQUE 203**: 19,5 → 2,7 s (`/diagnostico` 25,5 → 2,9 s), `LaboratoryData` 1 scan, misma huella | El scan único lee la ventana entera (18 304 páginas): margen si algún día hace falta |
 | `vw_HistorialFlotaMD` | el radar lista `s ×2` | medir antes de tocar |
 | `vw_TendenciaMetalMD` | ~30 s con el operador real | — |
 | Familia de historiales (`*FilasMD`) | ✅ **03/10, BLOQUES 197-199** con filtro abajo y la misma huella: `/historialeq` 34 → 0,46 s · `/historialflota` 35 → 1,9 s · tema 13 9,6 → 0,54 s · tema 14 80 → 9,6 s · `/historial` 34 → 10,2 s | Los dos de ~10 s: «Abierto» #4 |
@@ -158,7 +158,6 @@ flujo muestra **dos ejecuciones** para una sola consulta.
 - **3 de las 4 fórmulas de componente** del Tema 00 (`comp1`, `comp2`, `comp3`) sin confirmar.
 - **G2 modo B** y **G3**.
 - **`Disponible`**: bandera mal planteada (depende de la mina, no del `CompTipo`); nadie la consume.
-- **`/condicionmt`**: las celdas ISO nunca entran en su `VALUES` (preexistente).
 - **Tarjetas con datos** → [tarjetas/PLAN_TARJETAS_DATOS.md](tarjetas/PLAN_TARJETAS_DATOS.md). Sin scroll: la palanca es paginar.
 - **Gráfico ASCII opcional en Historial**, solo en variantes con serie limpia.
 - **Consultas compuestas.**
