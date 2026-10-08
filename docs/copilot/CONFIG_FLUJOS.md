@@ -77,53 +77,43 @@ if(equals(trim(outputs('comp_in')),'%'),'%',if(contains(toLower(replace(outputs(
    - `MD_metal`: vista `vw_TendenciaGraficoMD` · equipo `3195` · parametro `PQ` · compartimiento `mt lh` → `MTLH`.
 6. Guardar. Las entradas no cambian, así que los temas (01 · 06 · 07 · 10 y 09) no se tocan.
 
-## § Conexión SQL — que no quede «Obsoleta» (07/10)
+## § Conexión «Obsoleta» en Teams (07/10)
 
 **Síntoma (recurrente en pruebas):** un comando tarda o no responde y Teams muestra la tarjeta «Conectar para
-continuar»; en Copilot Studio (Configuración → Configuración de conexión) la conexión SQL figura **Obsoleta**
-(*Stale*). Se reconecta y vuelve a pasar días después. Los 118,6 s de `/ranking` en la N12 fueron eso.
+continuar»; en Copilot Studio la conexión figura **Obsoleta** (*Stale*). Se reconecta y vuelve a pasar días después.
+Los 118,6 s de `/ranking` en la N12 fueron eso.
 
-**Causa probable:** el tipo de autenticación de la conexión del conector SQL Server. El que ofrece por defecto es
-**Microsoft Entra ID** (la cuenta de quien la creó, por OAuth), y en la documentación del conector figura como
-**no compartible**: vive de un token de esa sesión. Cuando el token caduca o se revoca (cambio de contraseña, MFA o
-directivas de acceso condicional de la empresa, inactividad), la conexión queda *Stale* y Copilot pide reconectar.
-En producción sería peor: cada usuario de Teams tendría que crear su propia conexión.
+**Descartado (07/10): la conexión SQL.** Es `bd_kmmp_osconfiabilidad serverbd-osconfiabilidad.database.windows.net`,
+tipo **Autenticación de SQL Server** (usuario de lectura), propietario Confiabilidad OyS, creada el 11/05/2026,
+**Conectado**. Es compartible y no vive de un token, y la usan todos los `MD_*` y los dos `TEST - SQL - V2`. No es la
+que caduca.
 
-**Cura de fondo — una conexión compartible, que no dependa de una sesión:**
+**Sospechosa:** otra conexión del **agente**, de las que sí son OAuth del usuario y caducan. En la cuenta hay dos
+**Work IQ MCP (versión preliminar)**, creadas hace 2 meses: si KomfIA tiene uno como herramienta, Teams pide su
+conexión aunque el comando no la use, y mientras tanto el tema no corre. También puede ser la conexión con que el agente
+llama a los flujos.
 
-| Opción | Qué hace falta | Nota |
-|---|---|---|
-| **SQL Server Authentication** | Un usuario SQL **de solo lectura** (usuario y contraseña) | La más directa. Si el usuario con el que se entra a SSMS es un login SQL, sirve ese mismo |
-| **Service principal (aplicación de Microsoft Entra ID)** | TI: registrar una aplicación + `CREATE USER … FROM EXTERNAL PROVIDER` y `db_datareader` en la BD (lo corre el DBA: la BD es de solo lectura para nosotros) | La recomendada por Microsoft para agentes compartidos; el secreto de la app **sí vence** (renovarlo antes) |
+**Para confirmarlo, la próxima vez que pase (antes de reconectar):**
+1. Captura de la tarjeta de Teams: **qué conector** nombra.
+2. Copilot Studio → KomfIA → **Configuración → Configuración de conexión**: captura de la fila **Obsoleta** (nombre del
+   conector y «Herramientas que la usan»).
+3. Copilot Studio → KomfIA → **Herramientas**: ¿hay algún **MCP** (Work IQ) u otra herramienta que no sea un `MD_*`?
 
-**Pasos (una vez creada la conexión nueva):**
-1. **Ver cuál hay hoy:** make.powerautomate.com → **Datos → Conexiones** → la de SQL Server → su tipo de
-   autenticación. Si dice Microsoft Entra ID, es esta causa.
-2. **Crear la conexión nueva** (SQL Server → tipo **SQL Server Authentication** o **Service principal**; servidor y
-   base `bd_kmmp_osconfiabilidad` como valor personalizado).
-3. **En cada flujo** con «Ejecutar una consulta SQL (V2)» — `MD_equipo`, `MD_equipo_comp`, `MD_metal`, `MD_flota`,
-   `MD_ranking`, `MD_historial`, `MD_triage`, `MD_incipiente`, `MD_acumflota`, `MD_acumequipo`, `MD_condcomp`,
-   `MD_ultmetalflota` y `MD_tendmetalflota` (el «TEST SQL V2» del fallback es de TI: avisarles si ven lo mismo): en la acción SQL → **··· → Mis conexiones** →
-   elegir la nueva. Guardar. (Si los flujos están en una solución con *referencia de conexión*, se cambia una vez en
-   la referencia.)
-4. **Detalles del flujo → Usuarios de solo ejecución → Editar** → SQL Server: **«Usar esta conexión»** (la nueva),
-   **no** «Proporcionada por el usuario de solo ejecución».
-5. **Copilot Studio → Configuración → Configuración de conexión:** la SQL en **Conectado**. Si los flujos están como
-   herramientas, en su **Autenticación** elegir las **credenciales del creador** (*maker-provided*). Si esa opción no
-   aparece, el entorno la tiene bloqueada por directiva: es de TI (Power Platform Admin Center → entorno →
-   Configuración → Producto → Características → «Maker-provided credentials»).
-6. **Publicar** el agente y, en Teams, `/debug clearstate` una vez (borra la conexión guardada en la conversación).
-7. Probar un comando de cada flujo (la N12 sirve) y, días después, confirmar que la conexión sigue en **Conectado**.
+**Cura según lo que salga:**
+- **Un MCP u otra herramienta que KomfIA no usa** → quitarla del agente y publicar. Es lo más probable y lo más simple.
+- **La conexión de un flujo** → en el flujo, **Detalles → Usuarios de solo ejecución**: SQL Server en «Usar esta
+  conexión», no «Proporcionada por el usuario de solo ejecución»; y en Copilot Studio, si el flujo es herramienta,
+  autenticación con las **credenciales del creador**.
+- **En todos los casos:** si sigue *Stale* tras reconectar, borrar esa conexión, crearla de nuevo, volver a elegirla y
+  publicar; en Teams, `/debug clearstate` una vez.
 
-**Mientras tanto (paliativo):** ante la tarjeta, reconectar; si insiste, `/debug clearstate` en el chat de Teams.
-Si la conexión sigue *Stale*: borrarla en Datos → Conexiones, crearla de nuevo y volver a elegirla en los flujos.
-Reintentos = **Ninguno** sigue vigente ([CONFIG_TIMEOUT](CONFIG_TIMEOUT.md)): sin eso, una conexión caída se
-apila en reintentos.
+⚠ En `Flujos que usan esta conexión` aparecen además ~13 **«Sin título»**: borradores o copias que también usan la
+conexión SQL. Antes de borrar alguno, confirmar que ningún tema lo llama.
 
 Fuentes: [Conexiones en Copilot Studio (estados, *Stale*)](https://learn.microsoft.com/en-us/microsoft-copilot-studio/authoring-connections) ·
 [Conector SQL Server (tipos de autenticación y cuáles son compartibles)](https://learn.microsoft.com/en-us/connectors/sql/) ·
 [Agentes en Teams (tokens que caducan, `/debug clearstate`)](https://microsoft.github.io/mcscatblog/posts/copilot-studio-teams-deployment-ux/) ·
-[Q&A: credenciales del creador bloqueadas por directiva](https://learn.microsoft.com/en-us/answers/questions/5873529/credential-issue-for-tool-call-with-copilot-studio).
+[MCP a nivel de agente bloquea los temas en Teams](https://techcommunity.microsoft.com/discussions/copilot-studio/platform-issue-agent-level-mcp-initialization-blocks-all-topics-for-users-withou/4524846).
 
 ## Descripción de ENTRADAS (una línea, lista para pegar)
 - `vista` — "Vista *MD a consultar (la fija cada tema; ej. vw_DiagnosticoMD)."
