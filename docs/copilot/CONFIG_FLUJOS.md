@@ -88,24 +88,27 @@ tipo **Autenticación de SQL Server** (usuario de lectura), propietario Confiabi
 **Conectado**. Es compartible y no vive de un token, y la usan todos los `MD_*` y los dos `TEST - SQL - V2`. No es la
 que caduca.
 
-**Sospechosa:** otra conexión del **agente**, de las que sí son OAuth del usuario y caducan. En la cuenta hay dos
-**Work IQ MCP (versión preliminar)**, creadas hace 2 meses: si KomfIA tiene uno como herramienta, Teams pide su
-conexión aunque el comando no la use, y mientras tanto el tema no corre. También puede ser la conexión con que el agente
-llama a los flujos.
+**Causa (confirmada 07/10, en Actividad, `/ranking` del 04/10):** la tarjeta dice *«Usaré **sus** credenciales…
+SQL Server»* y en **Administrar sus conexiones** del agente aparece **`MD_ranking`** como conexión propia. Es decir:
+`MD_ranking` tiene la conexión SQL como **«Proporcionada por el usuario de solo ejecución»**. Así, cada usuario debe
+enlazar su conexión en el *Connection Manager* (la tarjeta, «Enviar»), y ese enlace por usuario es el que queda
+*Obsoleto* de vez en cuando. Los demás `MD_*` corren con la conexión del creador («Usar esta conexión»): no piden nada
+y no aparecen en esa lista. Con la herramienta vieja de Python pasaba más seguido por la misma razón (conector
+personalizado con credenciales del usuario).
 
-**Para confirmarlo, la próxima vez que pase (antes de reconectar):**
-1. Captura de la tarjeta de Teams: **qué conector** nombra.
-2. Copilot Studio → KomfIA → **Configuración → Configuración de conexión**: captura de la fila **Obsoleta** (nombre del
-   conector y «Herramientas que la usan»).
-3. Copilot Studio → KomfIA → **Herramientas**: ¿hay algún **MCP** (Work IQ) u otra herramienta que no sea un `MD_*`?
+**Cura:**
+1. make.powerautomate.com → **Soluciones** (o Mis flujos) → **`MD_ranking`** → **Detalles → Usuarios de solo
+   ejecución → Editar** → en *Conexiones usadas*, SQL Server: **«Usar esta conexión (bd_kmmp_osconfiabilidad…)»** en
+   lugar de «Proporcionada por el usuario de solo ejecución». Guardar.
+2. Mirar lo mismo en los otros 13 flujos (`MD_equipo` es la referencia: nunca pidió conexión). Ninguno debe quedar en
+   «Proporcionada por el usuario».
+3. Copilot Studio → **Publicar** KomfIA. En **Administrar sus conexiones**, `MD_ranking` debería dejar de figurar (o se
+   puede quitar con su casilla).
+4. Probar `/ranking antapaccay tracción Fe` en Teams: sin tarjeta. Si la pide una última vez, `/debug clearstate`.
 
-**Cura según lo que salga:**
-- **Un MCP u otra herramienta que KomfIA no usa** → quitarla del agente y publicar. Es lo más probable y lo más simple.
-- **La conexión de un flujo** → en el flujo, **Detalles → Usuarios de solo ejecución**: SQL Server en «Usar esta
-  conexión», no «Proporcionada por el usuario de solo ejecución»; y en Copilot Studio, si el flujo es herramienta,
-  autenticación con las **credenciales del creador**.
-- **En todos los casos:** si sigue *Stale* tras reconectar, borrar esa conexión, crearla de nuevo, volver a elegirla y
-  publicar; en Teams, `/debug clearstate` una vez.
+**Limpieza opcional:** las 4 herramientas del conector **«Backend SQL KomfIA Python»** (Health Check, Human Query,
+Schema Get, Schema Refresh) están desactivadas pero siguen enlazadas al agente; el backend está archivado desde junio.
+Quitarlas deja la lista de conexiones solo con lo que se usa.
 
 ⚠ En `Flujos que usan esta conexión` aparecen además ~13 **«Sin título»**: borradores o copias que también usan la
 conexión SQL. Antes de borrar alguno, confirmar que ningún tema lo llama.
@@ -113,7 +116,7 @@ conexión SQL. Antes de borrar alguno, confirmar que ningún tema lo llama.
 Fuentes: [Conexiones en Copilot Studio (estados, *Stale*)](https://learn.microsoft.com/en-us/microsoft-copilot-studio/authoring-connections) ·
 [Conector SQL Server (tipos de autenticación y cuáles son compartibles)](https://learn.microsoft.com/en-us/connectors/sql/) ·
 [Agentes en Teams (tokens que caducan, `/debug clearstate`)](https://microsoft.github.io/mcscatblog/posts/copilot-studio-teams-deployment-ux/) ·
-[MCP a nivel de agente bloquea los temas en Teams](https://techcommunity.microsoft.com/discussions/copilot-studio/platform-issue-agent-level-mcp-initialization-blocks-all-topics-for-users-withou/4524846).
+[Usuarios de solo ejecución en flujos llamados desde Copilot Studio](https://learn.microsoft.com/en-us/power-platform/release-plan/2024wave1/power-automate/use-flows-connections-users-copilot-studio).
 
 ## Descripción de ENTRADAS (una línea, lista para pegar)
 - `vista` — "Vista *MD a consultar (la fija cada tema; ej. vw_DiagnosticoMD)."
