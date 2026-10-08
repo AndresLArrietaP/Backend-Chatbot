@@ -9070,3 +9070,7 @@ SELECT d.Compartimiento,
 FROM vw_DiagnosticoEquipo d WHERE d.Equipo = 'HT079' ORDER BY compOrd, d.Compartimiento;
 SELECT LEFT(MD_Completo, 400) AS cabecera_nueva FROM vw_DiagnosticoMD WHERE Equipo = 'HT079';
 GO
+
+-- RESULTADOS 203.2 (07/10) -- QUEDA. Empate confirmado: HT079 tiene «MOTOR DE TRACCION RH» y «MOTORO DE TRACCION RH»
+--   (el typo conocido, PENDIENTES datos #6), los dos con compOrd 2. Ahora sale MT LH | MT RH | MT RH | Motor | Sist. Hidr.,
+--   el del typo tercero (ultima muestra 17-Jan), fijo y con cabecera y celdas en el mismo orden.
