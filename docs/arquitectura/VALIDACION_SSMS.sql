@@ -9051,3 +9051,22 @@ GO
 -- 203.1 (DDL nuevo) a la vista, para mirar la tabla del 3195 completa
 SELECT MD_Completo, Observados, Recomendaciones FROM vw_DiagnosticoMD WHERE Equipo LIKE '%3195%';
 GO
+
+-- RESULTADOS 203.0 (07/10) -- antes -> despues (compilar + ejecutar)
+--   /diagcompleto 3195  19,5 s (10,4 + 9,1) -> 2,7 s (1,2 + 1,5) · LaboratoryData 6 scans / 59 013 -> 1 scan / 18 304
+--   /diagnostico 3195   25,5 s (14,3 + 11,2) -> 2,9 s (1,4 + 1,5) · LaboratoryData 9 scans / 113 925 -> 1 scan / 18 304
+--   huella IDENTICA en CA3160, CA3161, CA3171, CA3177, CA3195 (las 8 columnas) y en HT079 salvo h_mdc:
+--   2105293288 -> 1570227864 con el MISMO largo (1956) -> mismo texto en otro orden. Hipotesis: dos componentes de
+--   HT079 con el mismo compOrd (9 = fuera de los 6 de siempre); antes el empate quedaba al azar y, ademas, cabecera
+--   y celdas salian de lecturas distintas, asi que podian no coincidir. La vista nueva desempata por Compartimiento.
+--   El corte decia «huella distinta -> revertir»: antes de revertir, el 203.2 comprueba si es el empate.
+--   (T3160 no salio: no tiene fila en la vista, ni antes ni despues.)
+
+-- 203.2 HT079: ¿hay componentes empatados en compOrd?
+-- ⚑ DECISION: si 2+ filas comparten compOrd -> es el orden del empate; QUEDA (ahora fijo y con cabecera y celdas en
+--   el mismo orden). Si ningun compOrd se repite -> la diferencia es otra: revertir con el respaldo y traer la tabla.
+SELECT d.Compartimiento,
+       CASE WHEN d.Compartimiento LIKE '%TRACCION%LH' THEN 1 WHEN d.Compartimiento LIKE '%TRACCION%RH' THEN 2 WHEN d.Compartimiento LIKE '%RUEDA%LH' THEN 3 WHEN d.Compartimiento LIKE '%RUEDA%RH' THEN 4 WHEN d.Compartimiento LIKE '%HIDRAUL%' THEN 6 WHEN d.Compartimiento = 'MOTOR' THEN 5 ELSE 9 END AS compOrd
+FROM vw_DiagnosticoEquipo d WHERE d.Equipo = 'HT079' ORDER BY compOrd, d.Compartimiento;
+SELECT LEFT(MD_Completo, 400) AS cabecera_nueva FROM vw_DiagnosticoMD WHERE Equipo = 'HT079';
+GO
