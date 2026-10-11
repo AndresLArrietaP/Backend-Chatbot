@@ -320,7 +320,7 @@ concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaIncipienteMD
 DECLARE @proy nvarchar(60) = N'‹proyecto›', @mod nvarchar(30) = N'‹modelo›', @comp nvarchar(40) = N'‹comp tipo›',
         @met nvarchar(300) = N'‹met›', @c char(1) = '‹completo›';
 SELECT CASE WHEN x.n = 0 THEN NULL ELSE
-      N'**Límites' + CASE WHEN @c = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10)
+      N'**Límites' + CASE WHEN @c = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10) + NCHAR(10)
     + N'_LP / LC de cada componente, como están cargados en Eqpcare.lc. **↓** = la alerta es por **debajo** (aditivo que se agota). Viscosidad: banda piso–techo. ISO: código entero. «—» = sin límite cargado: no se evalúa._'
     + NCHAR(10) + NCHAR(10) + x.cuerpo
     + ISNULL(NCHAR(10) + NCHAR(10) + N'_Sin límite cargado para: **' + m.faltan + N'**'
@@ -355,7 +355,9 @@ CROSS APPLY (
 ) m
 ```
 Las 5 fichas (solo en el `DECLARE`): `‹proyecto›`, `‹modelo›` y `‹completo›` del desencadenador; `‹comp tipo›` y `‹met›`,
-salidas de los Redactar. Si el conector no aceptara el `DECLARE`, la versión con las fichas en línea es el 204.1. Es la misma consulta del BLOQUE 204.1 (allí cada ficha es una columna de `@casos`):
+salidas de los Redactar. El conector acepta el `DECLARE` (probado 11/10). ⚠ La prueba manual del flujo pide todas las entradas (ahí se pone
+un modelo); desde el tema, `modelo` vacío = todos.
+(11/10, tras verlo en Teams) el título lleva **dos** saltos: con uno, Teams pega la leyenda al título en el mismo párrafo. Es la misma consulta del BLOQUE 204.1 (allí cada ficha es una columna de `@casos`):
 probarla primero en SSMS. Salidas: `md` = `first(...)?['MD']`, `observados`, `recomendaciones` (NULL los dos).
 **Por qué el flujo arma la tabla:** el filtro por metales es una lista libre y una vista no recibe parámetros (crear
 funciones está denegado). Mismo patrón que `MD_ultmetalflota`. `vw_LimitesMD` trae una fila por parámetro.

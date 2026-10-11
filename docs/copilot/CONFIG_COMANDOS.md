@@ -428,7 +428,7 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` · **rango=`Topic.rango`** |
 | `/rankingmod` · alias `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` — en la Condición que ya existe de `/rankingacum`: **+ Nueva condición** `cmd = "/rankingmod"` y cambiar «Cumple TODAS» por **«CUALQUIERA»** (ley 8: no se borra ni se mueve nada; el pase del 04/10 sigue dentro) |
 | `/rankinggraf` | 29 Ranking gráfico | proyecto=`If(p1="","Antapaccay",p1)` |
-| `/limites` · `/limitesc` (11/10) | 30 Límites | **Rama nueva** con UNA Condición, **CUALQUIERA**: `cmd = "/limites"` · `cmd = "/limitesc"` (ley 8: al final de la cascada, sin tocar nada). Los parámetros van **en cualquier orden**: cada uno se reconoce por su forma (ver § `/limites` abajo). Entradas del nodo «Tema»: proyecto · modelo · compartimiento · metales · completo |
+| `/limites` · `/limitesc` (11/10) ✅ | 30 Límites | **Rama nueva** con UNA Condición, **CUALQUIERA**: `cmd = "/limites"` · `cmd = "/limitesc"`, como **penúltima** de la cascada. **Práctica de Andrés:** `/comandos` va siempre **última**; al agregar una rama, se quita la de `/comandos` y se rehace al final con su «Todas las demás» (Mensaje «No reconocí…» + Finalizar). Los parámetros van **en cualquier orden**: cada uno se reconoce por su forma (ver § `/limites` abajo). Entradas del nodo «Tema»: proyecto · modelo · compartimiento · metales · completo |
 | `/comandos` ó `/ayuda` | (nodo Mensaje, ver 4) | — |
 | (ninguna coincide) | **«Ir a otro tema» → Conversación** | — (era NL con `/`, no un comando) |
 
