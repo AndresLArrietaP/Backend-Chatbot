@@ -9157,3 +9157,78 @@ CROSS APPLY (
 ) q;
 SET STATISTICS TIME OFF;
 GO
+
+-- RESULTADOS 204.0 (11/10): lc = 64 filas · 1 clave repetida en CERRO VERDE (la vista aplica MIN/MAX del semaforo) ·
+--   con valor: Ba 0 · Cd 4 · V 3 · Ag 6 · Sb 4 · Li 4 · Glicol 3 · AW% 0 · proyectos: Antamina, Antapaccay (3 modelos),
+--   Cerro Verde (2), Quellaveco (3), Toromocho. 204.1 corrio (compilar 1 s) pero el texto de SSMS no muestra un MD tan
+--   largo: el 204.2 comprueba los cortes solo y muestra las tablas linea por linea.
+
+-- 204.2 los cortes del 204 de forma automatica + dos tablas legibles
+DECLARE @casos TABLE (caso nvarchar(60), proyecto nvarchar(40), modelo nvarchar(20), comp_tipo nvarchar(20), met nvarchar(100), completo char(1));
+INSERT @casos VALUES
+    (N'/limites',                          N'Antapaccay',  N'',    N'(todos)',    N'',           '0'),
+    (N'/limitesc',                         N'Antapaccay',  N'',    N'(todos)',    N'',           '1'),
+    (N'/limitesc antapaccay 980',          N'Antapaccay',  N'980', N'(todos)',    N'',           '1'),
+    (N'/limites traccion Fe,Cu,Pb',        N'Antapaccay',  N'',    N'TRACCION',   N'Fe,Cu,Pb',   '0'),
+    (N'/limites hidraulico ISO',           N'Antapaccay',  N'',    N'HIDRAULICO', N'ISO',        '0'),
+    (N'/limites antamina motor TBN,Hollin',N'Antamina',    N'',    N'MOTOR',      N'TBN,Hollin', '0'),
+    (N'/limites traccion Ba,Fx',           N'Antapaccay',  N'',    N'TRACCION',   N'Ba,Fx',      '0'),
+    (N'/limites cerro verde 730',          N'Cerro Verde', N'730', N'(todos)',    N'',           '0'),
+    (N'/limites toquepala',                N'Toquepala',   N'',    N'(todos)',    N'',           '0');
+DECLARE @r TABLE (caso nvarchar(60), MD nvarchar(max));
+SET STATISTICS TIME ON;
+INSERT @r (caso, MD)
+SELECT c.caso, q.MD
+FROM @casos c
+CROSS APPLY (
+    SELECT CASE WHEN x.n = 0 THEN NULL ELSE
+          N'**Límites' + CASE WHEN c.completo = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10)
+        + N'_LP / LC de cada componente, como están cargados en Eqpcare.lc. **↓** = la alerta es por **debajo** (aditivo que se agota). Viscosidad: banda piso–techo. ISO: código entero. «—» = sin límite cargado: no se evalúa._'
+        + NCHAR(10) + NCHAR(10) + x.cuerpo
+        + ISNULL(NCHAR(10) + NCHAR(10) + N'_Sin límite cargado para: **' + m.faltan + N'**'
+                 + CASE WHEN c.completo = '1' THEN N' (no lo reconozco como parámetro)._' ELSE N'. Con **/limitesc** se ven también las filas sin límite._' END, N'')
+        END AS MD
+    FROM (
+        SELECT COUNT(*) AS n, MAX(b.Proyecto) AS Proyecto,
+               STRING_AGG(CAST(b.bloque AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Proyecto, b.Modelo) AS cuerpo
+        FROM (
+            SELECT f.Proyecto, f.Modelo,
+                N'**' + f.Modelo + N'**' + NCHAR(10) + NCHAR(10) + MAX(f.Cab) + NCHAR(10)
+              + STRING_AGG(CAST(CASE WHEN f.ini = 1 THEN f.FilaGrupo + NCHAR(10) ELSE N'' END + f.Fila AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY f.Orden) AS bloque
+            FROM (
+                SELECT v.Proyecto, v.Modelo, v.Orden, v.Cab, v.Fila, v.FilaGrupo,
+                       ROW_NUMBER() OVER (PARTITION BY v.Proyecto, v.Modelo, v.Grupo ORDER BY v.Orden) AS ini
+                FROM dbo.vw_LimitesMD v
+                WHERE v.Proyecto LIKE N'%' + c.proyecto + N'%' AND v.Modelo LIKE N'%' + c.modelo + N'%' AND v.CompTipo = c.comp_tipo
+                  AND (v.ConLim = 1 OR (c.completo = '1' AND v.EsFormato = 1))
+                  AND (c.met = N'' OR EXISTS (SELECT 1 FROM STRING_SPLIT(c.met, ',') s WHERE s.value <> N'' AND v.Clave LIKE N'%,' + s.value + N',%'))
+            ) f
+            GROUP BY f.Proyecto, f.Modelo
+        ) b
+    ) x
+    CROSS APPLY (
+        SELECT STRING_AGG(s.value, N', ') AS faltan
+        FROM STRING_SPLIT(c.met, ',') s
+        WHERE s.value <> N''
+          AND NOT EXISTS (SELECT 1 FROM dbo.vw_LimitesMD v
+                          WHERE v.Proyecto LIKE N'%' + c.proyecto + N'%' AND v.Modelo LIKE N'%' + c.modelo + N'%' AND v.CompTipo = c.comp_tipo
+                            AND v.Clave LIKE N'%,' + s.value + N',%' AND (v.ConLim = 1 OR c.completo = '1'))
+    ) m
+) q;
+SET STATISTICS TIME OFF;
+SELECT CAST(caso AS nvarchar(40)) AS caso, LEN(MD) AS largo,
+    CASE WHEN MD IS NULL THEN N'(NULL)' ELSE N'' END AS nulo,
+    CASE WHEN MD LIKE N'%| Fe | 200 / 230 | 200 / 230 |%' THEN 1 ELSE 0 END AS a_Fe,
+    CASE WHEN MD LIKE N'%| PQ | 130 / 150 | 130 / 150 |%' THEN 1 ELSE 0 END AS a_PQ,
+    CASE WHEN MD LIKE N'%| Pb | 3 / 5 | 3 / 5 |%' THEN 1 ELSE 0 END AS a_Pb,
+    CASE WHEN LEN(MD) < 28000 THEN 1 ELSE 0 END AS b_tope,
+    CASE WHEN MD LIKE N'%Sin límite cargado para: **%Fx**%' THEN 1 ELSE 0 END AS d_Fx,
+    (LEN(MD) - LEN(REPLACE(MD, N'| Par. |', N''))) / 8 AS matrices
+FROM @r;
+SELECT s.ordinal AS n, CAST(s.value AS nvarchar(400)) AS linea
+FROM @r r CROSS APPLY STRING_SPLIT(r.MD, NCHAR(10), 1) s
+WHERE r.caso = N'/limites traccion Fe,Cu,Pb' ORDER BY s.ordinal;
+SELECT s.ordinal AS n, CAST(s.value AS nvarchar(400)) AS linea
+FROM @r r CROSS APPLY STRING_SPLIT(r.MD, NCHAR(10), 1) s
+WHERE r.caso = N'/limitesc antapaccay 980' ORDER BY s.ordinal;
+GO
