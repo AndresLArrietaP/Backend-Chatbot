@@ -19,12 +19,17 @@ FLOTA = [
  ("/ranking <proj> <comp> <metal> [modelo] [top]", "Ranking de un metal"),
  ("/metalflota <proj> <comp> <metal(es)> [modelo]", "Último de un metal en la flota"),
  ("/historialflota <proj> [rango]", "Historial de observados de la flota"),
- ("/rankingacum <proj>", "Ranking de acumulados (motor diésel)"),
+ ("/rankingmod <proj>", "Ranking de acumulados del motor diésel"),
  ("/rankinggraf <proj>", "Ranking de acumulados en gráfica de barras"),
+]
+LIMITES = [
+ ("/limites [proj] [modelo] [comp] [metal(es)]", "Límites con valor cargado, en cualquier orden — ej. /limites traccion Fe,Cu,Pb"),
+ ("/limitesc [proj] [modelo]", "Límites del formato completo, también los vacíos"),
 ]
 # Adaptive Card borra los <...> (los lee como etiqueta HTML) -> usar guillemets ‹ › para requeridos
 EQUIPO=[(c.replace("<","‹").replace(">","›"), q) for c,q in EQUIPO]
 FLOTA =[(c.replace("<","‹").replace(">","›"), q) for c,q in FLOTA]
+LIMITES=[(c.replace("<","‹").replace(">","›"), q) for c,q in LIMITES]
 def cell(t, bold=False):
     return {"type":"TableCell","items":[{"type":"TextBlock","text":t,"wrap":True,"size":"Small",**({"weight":"Bolder"} if bold else {})}]}
 def table(rows):
@@ -54,11 +59,13 @@ card={
    table(EQUIPO),
    {"type":"TextBlock","text":"🚛 Por flota","weight":"Bolder","spacing":"Medium","color":"Accent"},
    table(FLOTA),
-   {"type":"TextBlock","text":"También funcionan **/diagnostico** (= /diagcompleto), **/tendenciadet** (= /tendencia), **/barrido** y **/conteo** (= /panel).","wrap":True,"isSubtle":True,"size":"Small","spacing":"Medium"},
+   {"type":"TextBlock","text":"📏 Límites (por defecto Antapaccay, todo)","weight":"Bolder","spacing":"Medium","color":"Accent"},
+   table(LIMITES),
+   {"type":"TextBlock","text":"También funcionan **/diagnostico** (= /diagcompleto), **/tendenciadet** (= /tendencia), **/barrido** y **/conteo** (= /panel), **/rankingacum** (= /rankingmod).","wrap":True,"isSubtle":True,"size":"Small","spacing":"Medium"},
    {"type":"TextBlock","text":"Si falta un dato requerido, te lo pido en el chat. El `/` solo actúa pegado a un comando; tu lenguaje natural sigue igual.","wrap":True,"isSubtle":True,"size":"Small","spacing":"None"}
  ]
 }
 json.dumps(card)  # valida
 out="docs/copilot/tarjetas"; os.makedirs(out,exist_ok=True)
 open(out+"/comandos_card.json","w",encoding="utf-8").write(json.dumps(card,ensure_ascii=False,indent=2))
-print("OK card escrita:", out+"/comandos_card.json", "| filas:", len(EQUIPO)+len(FLOTA))
+print("OK card escrita:", out+"/comandos_card.json", "| filas:", len(EQUIPO)+len(FLOTA)+len(LIMITES))

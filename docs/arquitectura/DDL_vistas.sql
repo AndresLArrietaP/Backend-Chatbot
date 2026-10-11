@@ -4450,125 +4450,129 @@ FROM cuerpo c;
 GO
 
 
-/* ==== vw_LimitesMD (R12, 03/10: /limites y /limitesc) ====
-   La tabla de limites que KomfIA USA para el semaforo: vw_LimitesPorComponente (lc agregado por CompTipo, con
-   las reglas MIN/MAX de alla), no [Eqpcare].[lc] crudo. Asi lo que se ve es exactamente contra que se compara.
-   El orden y los grupos salen de vw_FormatoParametro; el sentido (↓ = la alerta es por debajo) de su Inv.
-   'OTRO' fuera: la fundacion nunca usa esos limites (guard anti-colision de vw_MuestrasEstado).
-     MD          = solo los parametros CON limite cargado      (/limites)
-     MD_Completo = el formato entero, con «—» donde no hay      (/limitesc)
-   Filas: (modelo, componente) · (todos los modelos, componente) · (modelo, todos los componentes) ·
-   (todos, todos) = resumen. Las cuatro salen del mismo 'blk'; lc tiene 64 filas, releerlo no cuesta. */
+/* ==== vw_LimitesMD (/limites y /limitesc, 11/10) ====
+   Los limites TAL COMO ESTAN CARGADOS en [Eqpcare].[lc], sin agregar por CompTipo: una columna por componente
+   real (MT LH y MT RH aparte; PTO, caja de giro o damper tambien, aunque el semaforo no los use) y todos los
+   parametros con valor, incluidos los que KomfIA no evalua (bario, cadmio, vanadio, plata, antimonio, litio,
+   AW%). El glicol de lc es el «Refrigerante» del formato.
+   UNA FILA POR PARAMETRO de cada (proyecto, modelo, seleccion de componente): el flujo MD_limites filtra por
+   metal y arma la matriz parametro x componente (como MD_ultmetalflota arma sus tablas por metal). CompTipo es
+   la seleccion: el tipo real o '(todos)'. Fila y Cab traen las celdas y la cabecera ya en markdown.
+   ConLim = la fila tiene al menos un limite (/limites) · EsFormato = es de los 31 del formato (/limitesc).
+   Clave = los nombres que acepta el filtro de metales, entre comas.
+   El sentido (↓ = la alerta es por debajo) sale del formato del componente: Ca/Zn/Mg/Mo son contaminantes en
+   el MT y aditivos en el resto. Si lc trajera dos filas para el mismo componente, manda la regla del semaforo
+   (MIN en lo normal, MAX en lo invertido y en los pisos de viscosidad). */
 CREATE OR ALTER VIEW [dbo].[vw_LimitesMD] AS
-WITH p AS (
-    SELECT ISNULL(mp.[Name], l.ProyKey) AS Proyecto, l.ModeloKey AS Modelo, l.CompTipo,
-        f.Parametro, f.Grupo, f.Orden, f.Inv,
-        v.LP, v.LC, v.LPs, v.LCs, ISNULL(v.esBanda, 0) AS esBanda,
-        CASE WHEN COALESCE(v.LP, v.LC, v.LPs, v.LCs) IS NOT NULL THEN 1 ELSE 0 END AS conLim
-    FROM [dbo].[vw_LimitesPorComponente] l
-    LEFT JOIN [Mine].[MiningProject] mp ON UPPER(LTRIM(RTRIM(mp.[Name]))) = l.ProyKey
-    INNER JOIN [dbo].[vw_FormatoParametro] f ON f.CompTipo = l.CompTipo
-    OUTER APPLY (
-        SELECT x.LP, x.LC, x.LPs, x.LCs, x.esBanda
-        FROM (VALUES
-            (N'Fe', l.Fe_LP, l.Fe_LC, NULL, NULL, 0), (N'PQ', l.PQ_LP, l.PQ_LC, NULL, NULL, 0),
-            (N'Cr', l.Cr_LP, l.Cr_LC, NULL, NULL, 0), (N'Ni', l.Ni_LP, l.Ni_LC, NULL, NULL, 0),
-            (N'Cu', l.Cu_LP, l.Cu_LC, NULL, NULL, 0), (N'Pb', l.Pb_LP, l.Pb_LC, NULL, NULL, 0),
-            (N'Sn', l.Sn_LP, l.Sn_LC, NULL, NULL, 0), (N'Al', l.Al_LP, l.Al_LC, NULL, NULL, 0),
-            (N'Si', l.Si_LP, l.Si_LC, NULL, NULL, 0), (N'Ca', l.Ca_LP, l.Ca_LC, NULL, NULL, 0),
-            (N'Zn', l.Zn_LP, l.Zn_LC, NULL, NULL, 0), (N'Mg', l.Mg_LP, l.Mg_LC, NULL, NULL, 0),
-            (N'K', l.K_LP, l.K_LC, NULL, NULL, 0), (N'Na', l.Na_LP, l.Na_LC, NULL, NULL, 0),
-            (N'B', l.B_LP, l.B_LC, NULL, NULL, 0), (N'P', l.P_LP, l.P_LC, NULL, NULL, 0),
-            (N'Mo', l.Mo_LP, l.Mo_LC, NULL, NULL, 0), (N'TBN', l.TBN_LP, l.TBN_LC, NULL, NULL, 0),
-            (N'TAN', l.TAN_LP, l.TAN_LC, NULL, NULL, 0),
-            (N'Oxidacion', l.Oxi_LP, l.Oxi_LC, NULL, NULL, 0), (N'Sulfatacion', l.Sulf_LP, l.Sulf_LC, NULL, NULL, 0),
-            (N'Nitracion', l.Nit_LP, l.Nit_LC, NULL, NULL, 0), (N'Hollin', l.Hollin_LP, l.Hollin_LC, NULL, NULL, 0),
-            (N'Diesel', l.Diesel_LP, l.Diesel_LC, NULL, NULL, 0), (N'Agua', l.Agua_LP, l.Agua_LC, NULL, NULL, 0),
-            (N'V100', l.V100_LPI, l.V100_LCI, l.V100_LPS, l.V100_LCS, 1),
-            (N'V40', l.V40_LPI, l.V40_LCI, l.V40_LPS, l.V40_LCS, 1),
-            (N'ISO>4', l.ISO4_LP, l.ISO4_LC, NULL, NULL, 0), (N'ISO>6', l.ISO6_LP, l.ISO6_LC, NULL, NULL, 0),
-            (N'ISO>14', l.ISO14_LP, l.ISO14_LC, NULL, NULL, 0)
-        ) x(Parametro, LP, LC, LPs, LCs, esBanda)
-        WHERE x.Parametro = f.Parametro
-    ) v
-    WHERE l.CompTipo <> 'OTRO'
-),
-fila AS (
-    SELECT p.*,
-        /* la cabecera de grupo va en la primera fila del grupo; en MD, en la primera CON limite */
-        CASE WHEN ROW_NUMBER() OVER (PARTITION BY Proyecto, Modelo, CompTipo, Grupo ORDER BY Orden) = 1
-             THEN N'| **' + Grupo + N'** | | |' + NCHAR(10) ELSE N'' END AS cabC,
-        CASE WHEN conLim = 1 AND ROW_NUMBER() OVER (PARTITION BY Proyecto, Modelo, CompTipo, Grupo ORDER BY conLim DESC, Orden) = 1
-             THEN N'| **' + Grupo + N'** | | |' + NCHAR(10) ELSE N'' END AS cabD,
-        N'| ' + Parametro + CASE WHEN Inv = 1 THEN N' ↓' ELSE N'' END + N' | '
-      + CASE WHEN esBanda = 1 THEN COALESCE(t.LP + N'–' + t.LPs, N'≥ ' + t.LP, N'≤ ' + t.LPs, N'—') ELSE ISNULL(t.LP, N'—') END + N' | '
-      + CASE WHEN esBanda = 1 THEN COALESCE(t.LC + N'–' + t.LCs, N'≥ ' + t.LC, N'≤ ' + t.LCs, N'—') ELSE ISNULL(t.LC, N'—') END + N' |' AS rowMD
-    FROM p
-    CROSS APPLY (SELECT
-        CASE WHEN p.Parametro LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(p.LP AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(p.LP AS decimal(18,2))) END AS LP,
-        CASE WHEN p.Parametro LIKE N'ISO%' THEN CONVERT(nvarchar(20), CAST(p.LC AS decimal(18,0))) ELSE CONVERT(nvarchar(20), CAST(p.LC AS decimal(18,2))) END AS LC,
-        CONVERT(nvarchar(20), CAST(p.LPs AS decimal(18,2))) AS LPs,
-        CONVERT(nvarchar(20), CAST(p.LCs AS decimal(18,2))) AS LCs) t
-),
-blk AS (   -- un bloque por (proyecto, modelo, componente)
-    SELECT Proyecto, Modelo, CompTipo,
-        CASE CompTipo WHEN 'TRACCION' THEN 1 WHEN 'RUEDA' THEN 2 WHEN 'MOTOR' THEN 3 WHEN 'HIDRAULICO' THEN 4 WHEN 'MANDO' THEN 5 WHEN 'TRANSMISION' THEN 6 ELSE 9 END AS compOrd,
-        SUM(conLim) AS nLim, COUNT(*) AS nFmt,
-        N'**' + CASE CompTipo WHEN 'TRACCION' THEN N'Motor de Tracción (LH y RH)' WHEN 'HIDRAULICO' THEN N'Sistema Hidráulico' WHEN 'RUEDA' THEN N'Rueda Delantera (LH y RH)' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmisión' WHEN 'MOTOR' THEN N'Motor' ELSE CompTipo END
-      + N' · ' + Modelo + N'** · ' + CAST(SUM(conLim) AS nvarchar(10)) + N' de ' + CAST(COUNT(*) AS nvarchar(10)) + N' parámetros con límite' + NCHAR(10) + NCHAR(10)
-      + N'| Par. | LP | LC |' + NCHAR(10) + N'|---|---|---|' AS cab,
-        STRING_AGG(CAST(cabC + rowMD AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyC,
-        STRING_AGG(CASE WHEN conLim = 1 THEN CAST(cabD + rowMD AS nvarchar(max)) END, NCHAR(10)) WITHIN GROUP (ORDER BY Orden) AS bodyD
-    FROM fila
-    GROUP BY Proyecto, Modelo, CompTipo
-)
-SELECT b.Proyecto, b.Modelo, b.CompTipo,
-    CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones,
-    CAST(N'**Límites — ' + b.Proyecto + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
-         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
-         + N'El ISO es un código entero._') + NCHAR(10) + NCHAR(10)
-       + b.cab + NCHAR(10) + ISNULL(b.bodyD, N'| _sin límites cargados_ | | |') AS nvarchar(max)) AS MD,
-    CAST(N'**Límites (formato completo) — ' + b.Proyecto + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
-         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
-         + N'El ISO es un código entero._')
-       + N' _«—» = sin límite cargado: ese parámetro no se evalúa._' + NCHAR(10) + NCHAR(10)
-       + b.cab + NCHAR(10) + b.bodyC AS nvarchar(max)) AS MD_Completo
-FROM blk b
-UNION ALL   -- todos los modelos de un componente
-SELECT b.Proyecto, N'(todos)', b.CompTipo, NULL, NULL,
-    CAST(N'**Límites — ' + b.Proyecto + N'** · ' + CAST(COUNT(*) AS nvarchar(10)) + N' modelos' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
-         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
-         + N'El ISO es un código entero._') + NCHAR(10) + NCHAR(10)
-       + STRING_AGG(CAST(b.cab + NCHAR(10) + ISNULL(b.bodyD, N'| _sin límites cargados_ | | |') AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo) AS nvarchar(max)),
-    CAST(N'**Límites (formato completo) — ' + b.Proyecto + N'** · ' + CAST(COUNT(*) AS nvarchar(10)) + N' modelos' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
-         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
-         + N'El ISO es un código entero._')
-       + N' _«—» = sin límite cargado: ese parámetro no se evalúa._' + NCHAR(10) + NCHAR(10)
-       + STRING_AGG(CAST(b.cab + NCHAR(10) + b.bodyC AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo) AS nvarchar(max))
-FROM blk b GROUP BY b.Proyecto, b.CompTipo
-UNION ALL   -- todos los componentes de un modelo
-SELECT b.Proyecto, b.Modelo, N'(todos)', NULL, NULL,
-    CAST(N'**Límites — ' + b.Proyecto + N' · ' + b.Modelo + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
-         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
-         + N'El ISO es un código entero._') + NCHAR(10) + NCHAR(10)
-       + STRING_AGG(CAST(b.cab + NCHAR(10) + ISNULL(b.bodyD, N'| _sin límites cargados_ | | |') AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.compOrd) AS nvarchar(max)),
-    CAST(N'**Límites (formato completo) — ' + b.Proyecto + N' · ' + b.Modelo + N'**' + NCHAR(10) + (N'_Los límites que KomfIA usa para el semáforo (Eqpcare.lc, agregados por componente: LH y RH comparten). '
-         + N'**↓** = la alerta es por **debajo** (aditivo que se agota). La viscosidad es una **banda**: piso–techo. '
-         + N'El ISO es un código entero._')
-       + N' _«—» = sin límite cargado: ese parámetro no se evalúa._' + NCHAR(10) + NCHAR(10)
-       + STRING_AGG(CAST(b.cab + NCHAR(10) + b.bodyC AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.compOrd) AS nvarchar(max))
-FROM blk b GROUP BY b.Proyecto, b.Modelo
-UNION ALL   -- todo el proyecto: resumen (completo seria ~20 KB, roza el tope de Teams)
-SELECT b.Proyecto, N'(todos)', N'(todos)', NULL, NULL,
-    CAST(N'**Límites cargados — ' + b.Proyecto + N'** · qué tiene límite (los que usa el semáforo)' + NCHAR(10) + NCHAR(10)
-       + N'| Modelo | Componente | Con límite | Del formato |' + NCHAR(10) + N'|---|---|---|---|' + NCHAR(10)
-       + STRING_AGG(CAST(N'| ' + b.Modelo + N' | ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motor de Tracción' WHEN 'HIDRAULICO' THEN N'Sist. Hidráulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmisión' WHEN 'MOTOR' THEN N'Motor' ELSE b.CompTipo END
-           + N' | ' + CAST(b.nLim AS nvarchar(10)) + N' | ' + CAST(b.nFmt AS nvarchar(10)) + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo, b.compOrd)
-       + NCHAR(10) + NCHAR(10) + N'_Pide la tabla de uno: **/limites ' + b.Proyecto + N' ‹modelo› ‹componente›** (o **/limitesc** para ver también los que no tienen límite)._' AS nvarchar(max)),
-    CAST(N'**Límites cargados — ' + b.Proyecto + N'** · qué tiene límite (los que usa el semáforo)' + NCHAR(10) + NCHAR(10)
-       + N'| Modelo | Componente | Con límite | Del formato |' + NCHAR(10) + N'|---|---|---|---|' + NCHAR(10)
-       + STRING_AGG(CAST(N'| ' + b.Modelo + N' | ' + CASE b.CompTipo WHEN 'TRACCION' THEN N'Motor de Tracción' WHEN 'HIDRAULICO' THEN N'Sist. Hidráulico' WHEN 'RUEDA' THEN N'Rueda Delantera' WHEN 'MANDO' THEN N'Mando Final' WHEN 'TRANSMISION' THEN N'Transmisión' WHEN 'MOTOR' THEN N'Motor' ELSE b.CompTipo END
-           + N' | ' + CAST(b.nLim AS nvarchar(10)) + N' | ' + CAST(b.nFmt AS nvarchar(10)) + N' |' AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY b.Modelo, b.compOrd)
-       + NCHAR(10) + NCHAR(10) + N'_Pide la tabla de uno: **/limitesc ' + b.Proyecto + N' ‹modelo› ‹componente›**._' AS nvarchar(max))
-FROM blk b GROUP BY b.Proyecto;
+SELECT r.Proyecto, r.Modelo, r.CompTipo, r.Parametro, r.Grupo, r.Orden, r.ConLim, r.EsFormato, r.Clave,
+       CAST(N'| ' + r.Disp + N' | ' + r.celdas + N' |' AS nvarchar(max)) AS Fila,
+       CAST(N'| **' + r.Grupo + N'** |' + REPLICATE(N' |', r.nCols) AS nvarchar(max)) AS FilaGrupo,
+       CAST(N'| Par. | ' + r.cols + N' |' + NCHAR(10) + N'|---|' + REPLICATE(N'---|', r.nCols) AS nvarchar(max)) AS Cab,
+       CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones
+FROM (
+    SELECT c.Proyecto, c.Modelo, s.CompSel AS CompTipo, c.Parametro, c.Disp, c.Grupo, c.Orden, c.EsFormato, c.Clave,
+        MAX(c.conVal) AS ConLim, COUNT(*) AS nCols,
+        STRING_AGG(CONVERT(nvarchar(max), c.celda), N' | ') WITHIN GROUP (ORDER BY c.compOrd, c.Componente) AS celdas,
+        STRING_AGG(CONVERT(nvarchar(max), c.compAbbr), N' | ') WITHIN GROUP (ORDER BY c.compOrd, c.Componente) AS cols
+    FROM (
+        SELECT a.*,
+            CASE WHEN COALESCE(a.LP, a.LC, a.LPs, a.LCs) IS NOT NULL THEN 1 ELSE 0 END AS conVal,
+            CASE WHEN COALESCE(a.LP, a.LC, a.LPs, a.LCs) IS NULL THEN N'—'
+                 WHEN a.esBanda = 1 THEN
+                      ISNULL(COALESCE(n.LP + N'–' + n.LPs, N'≥ ' + n.LP, N'≤ ' + n.LPs), N'—') + N' / '
+                    + ISNULL(COALESCE(n.LC + N'–' + n.LCs, N'≥ ' + n.LC, N'≤ ' + n.LCs), N'—')
+                 ELSE CASE WHEN a.Inv = 1 THEN N'↓ ' ELSE N'' END + ISNULL(n.LP, N'—') + N' / ' + ISNULL(n.LC, N'—')
+            END AS celda
+        FROM (
+            SELECT u.Proyecto, u.Modelo, u.Componente, u.CompTipo, u.compAbbr, u.compOrd,
+                   u.Parametro, u.Disp, u.esBanda, u.Inv,
+                   ISNULL(fx.Grupo, N'Otros (KomfIA no los evalúa)') AS Grupo,
+                   ISNULL(fx.Orden, u.ordExtra) AS Orden,
+                   CASE WHEN fx.Parametro IS NULL THEN 0 ELSE 1 END AS EsFormato,
+                   u.Clave,
+                   CASE WHEN u.Inv = 1 OR u.esBanda = 1 THEN MAX(u.LP) ELSE MIN(u.LP) END AS LP,
+                   CASE WHEN u.Inv = 1 OR u.esBanda = 1 THEN MAX(u.LC) ELSE MIN(u.LC) END AS LC,
+                   MIN(u.LPs) AS LPs, MIN(u.LCs) AS LCs
+            FROM (
+                SELECT k.Proyecto, k.Modelo, k.Componente, k.CompTipo, k.compAbbr, k.compOrd,
+                       v.Parametro, v.Disp, v.esBanda, v.ordExtra, v.Clave, v.LP, v.LC, v.LPs, v.LCs,
+                       COALESCE(fc.Inv, fz.Inv, 0) AS Inv
+                FROM [Eqpcare].[lc] l
+                LEFT JOIN [Mine].[MiningProject] mp ON UPPER(LTRIM(RTRIM(mp.[Name]))) = UPPER(LTRIM(RTRIM(l.[Proyecto])))
+                CROSS APPLY (SELECT
+                    ISNULL(mp.[Name], LTRIM(RTRIM(l.[Proyecto]))) AS Proyecto,
+                    LTRIM(RTRIM(l.[MODELO])) AS Modelo,
+                    LTRIM(RTRIM(l.[COMPONENTE])) AS Componente,
+                    CASE WHEN l.[COMPONENTE] LIKE '%TRACCION%'    THEN 'TRACCION'
+                         WHEN l.[COMPONENTE] LIKE '%HIDRAUL%'     THEN 'HIDRAULICO'
+                         WHEN l.[COMPONENTE] LIKE '%RUEDA%'       THEN 'RUEDA'
+                         WHEN l.[COMPONENTE] LIKE '%MANDO%'       THEN 'MANDO'
+                         WHEN l.[COMPONENTE] LIKE '%TRANSMISION%' THEN 'TRANSMISION'
+                         WHEN l.[COMPONENTE] LIKE '%MOTOR%'       THEN 'MOTOR'
+                         ELSE 'OTRO' END AS CompTipo,
+                    CASE WHEN l.[COMPONENTE] LIKE '%TRACCION%LH' THEN N'MT LH' WHEN l.[COMPONENTE] LIKE '%TRACCION%RH' THEN N'MT RH'
+                         WHEN l.[COMPONENTE] LIKE '%RUEDA%LH' THEN N'RD LH' WHEN l.[COMPONENTE] LIKE '%RUEDA%RH' THEN N'RD RH'
+                         WHEN l.[COMPONENTE] LIKE '%HIDRAUL%' THEN N'Sist. Hidr.' WHEN LTRIM(RTRIM(l.[COMPONENTE])) = 'MOTOR' THEN N'Motor'
+                         ELSE LTRIM(RTRIM(l.[COMPONENTE])) END AS compAbbr,
+                    CASE WHEN l.[COMPONENTE] LIKE '%TRACCION%LH' THEN 1 WHEN l.[COMPONENTE] LIKE '%TRACCION%RH' THEN 2
+                         WHEN l.[COMPONENTE] LIKE '%HIDRAUL%' THEN 3 WHEN LTRIM(RTRIM(l.[COMPONENTE])) = 'MOTOR' THEN 4
+                         WHEN l.[COMPONENTE] LIKE '%RUEDA%LH' THEN 5 WHEN l.[COMPONENTE] LIKE '%RUEDA%RH' THEN 6 ELSE 9 END AS compOrd
+                ) k
+                CROSS APPLY (VALUES
+                    (N'Fe', N'Fe', 0, 0, N',Fe,Hierro,Fierro,', l.[FIERRO - LP], l.[FIERRO - LC], NULL, NULL),
+                    (N'PQ', N'PQ', 0, 0, N',PQ,', l.[PQ - LP], l.[PQ - LC], NULL, NULL),
+                    (N'Cr', N'Cr', 0, 0, N',Cr,Cromo,', l.[CROMO - LP], l.[CROMO - LC], NULL, NULL),
+                    (N'Ni', N'Ni', 0, 0, N',Ni,Niquel,Níquel,', l.[NIQUEL - LP], l.[NIQUEL - LC], NULL, NULL),
+                    (N'Cu', N'Cu', 0, 0, N',Cu,Cobre,', l.[COBRE - LP], l.[COBRE - LC], NULL, NULL),
+                    (N'Pb', N'Pb', 0, 0, N',Pb,Plomo,', l.[PLOMO - LP], l.[PLOMO - LC], NULL, NULL),
+                    (N'Sn', N'Sn', 0, 0, N',Sn,Estaño,Estano,', l.[ESTAÑO - LP], l.[ESTAÑO - LC], NULL, NULL),
+                    (N'Al', N'Al', 0, 0, N',Al,Aluminio,', l.[ALUMINIO - LP], l.[ALUMINIO - LC], NULL, NULL),
+                    (N'Si', N'Si', 0, 0, N',Si,Silicio,', l.[SILICIO - LP], l.[SILICIO - LC], NULL, NULL),
+                    (N'Ca', N'Ca', 0, 0, N',Ca,Calcio,', l.[CALCIO - LP], l.[CALCIO - LC], NULL, NULL),
+                    (N'Zn', N'Zn', 0, 0, N',Zn,Zinc,', l.[ZINC - LP], l.[ZINC - LC], NULL, NULL),
+                    (N'Mg', N'Mg', 0, 0, N',Mg,Magnesio,', l.[MAGNESIO - LP], l.[MAGNESIO - LC], NULL, NULL),
+                    (N'K', N'K', 0, 0, N',K,Potasio,', l.[POTASIO - LP], l.[POTASIO - LC], NULL, NULL),
+                    (N'Na', N'Na', 0, 0, N',Na,Sodio,', l.[SODIO - LP], l.[SODIO - LC], NULL, NULL),
+                    (N'B', N'B', 0, 0, N',B,Boro,', l.[BORO - LP], l.[BORO - LC], NULL, NULL),
+                    (N'P', N'P', 0, 0, N',P,Fosforo,Fósforo,', l.[FOSFORO - LP], l.[FOSFORO - LC], NULL, NULL),
+                    (N'Mo', N'Mo', 0, 0, N',Mo,Molibdeno,', l.[MOLIBDENO - LP], l.[MOLIBDENO - LC], NULL, NULL),
+                    (N'TBN', N'TBN', 0, 0, N',TBN,', l.[TBN - LP], l.[TBN - LC], NULL, NULL),
+                    (N'TAN', N'TAN', 0, 0, N',TAN,', l.[TAN - LP], l.[TAN - LC], NULL, NULL),
+                    (N'Oxidacion', N'Oxidacion', 0, 0, N',Oxidacion,Oxidación,Oxi,', l.[OXI - LP], l.[OXI - LC], NULL, NULL),
+                    (N'Sulfatacion', N'Sulfatacion', 0, 0, N',Sulfatacion,Sulfatación,Sulf,', l.[SULF - LP], l.[SULF - LC], NULL, NULL),
+                    (N'Nitracion', N'Nitracion', 0, 0, N',Nitracion,Nitración,Nit,', l.[NIT - LP], l.[NIT - LC], NULL, NULL),
+                    (N'Hollin', N'Hollin', 0, 0, N',Hollin,Hollín,', l.[HOLLIN - LP], l.[HOLLIN - LC], NULL, NULL),
+                    (N'Diesel', N'Diesel', 0, 0, N',Diesel,Diésel,', l.[Diesel - LP], l.[Diesel - LC], NULL, NULL),
+                    (N'Agua', N'Agua', 0, 0, N',Agua,H2O,H20,', l.[H20 - LP], l.[H20 - LC], NULL, NULL),
+                    (N'Refrigerante', N'Refrigerante (glicol)', 0, 0, N',Refrigerante,Glicol,Glycol,', l.[Glycol - LP], l.[Glycol - LC], NULL, NULL),
+                    (N'V100', N'V100', 1, 0, N',V100,Viscosidad,Visc,', l.[VISC - LPI], l.[VISC - LCI], l.[VISC - LPS], l.[VISC - LCS]),
+                    (N'V40', N'V40', 1, 0, N',V40,Visc40,', l.[VISC40 - LPI], l.[VISC40 - LCI], l.[VISC40 - LPS], l.[VISC40 - LCS]),
+                    (N'ISO>4', N'ISO>4', 0, 0, N',ISO>4,ISO4,ISO,', l.[ISO 4um - LP], l.[ISO 4um - LC], NULL, NULL),
+                    (N'ISO>6', N'ISO>6', 0, 0, N',ISO>6,ISO6,ISO,', l.[ISO 6um - LP], l.[ISO 6um - LC], NULL, NULL),
+                    (N'ISO>14', N'ISO>14', 0, 0, N',ISO>14,ISO14,ISO,', l.[ISO 14um - LP], l.[ISO 14um - LC], NULL, NULL),
+                    (N'Ba', N'Ba (bario)', 0, 41, N',Ba,Bario,', l.[BARIO - LP], l.[BARIO - LC], NULL, NULL),
+                    (N'Cd', N'Cd (cadmio)', 0, 42, N',Cd,Cadmio,', l.[CADMIO - LP], l.[CADMIO - LC], NULL, NULL),
+                    (N'V', N'V (vanadio)', 0, 43, N',V,Vanadio,', l.[VANADIO - LP], l.[VANADIO - LC], NULL, NULL),
+                    (N'Ag', N'Ag (plata)', 0, 44, N',Ag,Plata,', l.[PLATA- LP], l.[PLATA - LC], NULL, NULL),
+                    (N'Sb', N'Sb (antimonio)', 0, 45, N',Sb,Antimonio,', l.[ANTIMONIO - LP], l.[ANTIMONIO - LC], NULL, NULL),
+                    (N'Li', N'Li (litio)', 0, 46, N',Li,Litio,', l.[LITIO - LP], l.[LITIO - LC], NULL, NULL),
+                    (N'AW%', N'AW%', 1, 47, N',AW%,AW,', l.[AW% - LPI], l.[AW% - LCI], NULL, NULL)
+                ) v(Parametro, Disp, esBanda, ordExtra, Clave, LP, LC, LPs, LCs)
+                LEFT JOIN [dbo].[vw_FormatoParametro] fc ON fc.CompTipo = k.CompTipo   AND fc.Parametro = v.Parametro
+                LEFT JOIN [dbo].[vw_FormatoParametro] fz ON fz.CompTipo = '(CRUZADO)' AND fz.Parametro = v.Parametro
+            ) u
+            LEFT JOIN [dbo].[vw_FormatoParametro] fx ON fx.CompTipo = '(CRUZADO)' AND fx.Parametro = u.Parametro
+            GROUP BY u.Proyecto, u.Modelo, u.Componente, u.CompTipo, u.compAbbr, u.compOrd, u.Parametro, u.Disp, u.esBanda,
+                     u.Inv, u.ordExtra, u.Clave, fx.Grupo, fx.Orden, fx.Parametro
+        ) a
+        /* ISO entero; el resto sin ceros de relleno (200, 0.4, 9.5) */
+        CROSS APPLY (SELECT
+            FORMAT(a.LP,  CASE WHEN a.Parametro LIKE N'ISO%' THEN '0' ELSE '0.##' END, 'en-US') AS LP,
+            FORMAT(a.LC,  CASE WHEN a.Parametro LIKE N'ISO%' THEN '0' ELSE '0.##' END, 'en-US') AS LC,
+            FORMAT(a.LPs, '0.##', 'en-US') AS LPs,
+            FORMAT(a.LCs, '0.##', 'en-US') AS LCs) n
+    ) c
+    CROSS APPLY (VALUES (c.CompTipo), (N'(todos)')) s(CompSel)
+    GROUP BY c.Proyecto, c.Modelo, s.CompSel, c.Parametro, c.Disp, c.Grupo, c.Orden, c.EsFormato, c.Clave
+) r;
 GO

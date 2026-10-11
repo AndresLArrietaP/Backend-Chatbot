@@ -9074,3 +9074,86 @@ GO
 -- RESULTADOS 203.2 (07/10) -- QUEDA. Empate confirmado: HT079 tiene «MOTOR DE TRACCION RH» y «MOTORO DE TRACCION RH»
 --   (el typo conocido, PENDIENTES datos #6), los dos con compOrd 2. Ahora sale MT LH | MT RH | MT RH | Motor | Sist. Hidr.,
 --   el del typo tercero (ultima muestra 17-Jan), fijo y con cabecera y celdas en el mismo orden.
+
+
+-- ==== BLOQUE 204 - /limites y /limitesc (11/10): vw_LimitesMD desde lc directo + la consulta del flujo MD_limites ====
+-- CAMBIO (etiqueta respaldo-antes-limites-2026-10-11): vw_LimitesMD deja de agregar por CompTipo. Una columna por
+-- componente real de lc (MT LH y RH aparte, y PTO/caja de giro/damper), una fila por parametro y por (proyecto,
+-- modelo, seleccion de componente), con TODOS los parametros que lc trae con valor: los 31 del formato y los que
+-- KomfIA no evalua (Ba, Cd, V, Ag, Sb, Li, AW%; el glicol es el Refrigerante). El flujo filtra por metal y arma la
+-- matriz parametro x componente, una por modelo.
+-- ⚑ ORDEN: 204.0 -> desplegar SOLO vw_LimitesMD (de DDL_vistas.sql) -> BLOQUE 89 -> 204.1.
+-- ⚑ DECISION escrita antes de ver los numeros:
+--   QUEDA si: (a) el MT LH 980E de Antapaccay da Fe 200 / 230, PQ 130 / 150, Pb 3 / 5 (los de /ultimo) ·
+--   (b) /limites y /limitesc de Antapaccay entero < 28 000 caracteres (tope de Teams) · (c) Toquepala da NULL
+--   (no tiene limites: el tema lo dice) · (d) «Fx» sale en el pie como sin limite · (e) cada caso < 2 s.
+--   Si (b) falla -> /limitesc sin modelo responde por modelo (pedir la flota). Si (a) falla -> no se monta.
+
+-- 204.0 lc antes de desplegar: ¿una fila por (proyecto, componente, modelo)? ¿cuantos traen los parametros extra?
+SELECT [Proyecto], [COMPONENTE], [MODELO], COUNT(*) AS filas
+FROM [Eqpcare].[lc] GROUP BY [Proyecto], [COMPONENTE], [MODELO] HAVING COUNT(*) > 1;
+SELECT COUNT(*) AS filas_lc,
+    SUM(CASE WHEN COALESCE([BARIO - LP], [BARIO - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS Ba,
+    SUM(CASE WHEN COALESCE([CADMIO - LP], [CADMIO - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS Cd,
+    SUM(CASE WHEN COALESCE([VANADIO - LP], [VANADIO - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS V,
+    SUM(CASE WHEN COALESCE([PLATA- LP], [PLATA - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS Ag,
+    SUM(CASE WHEN COALESCE([ANTIMONIO - LP], [ANTIMONIO - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS Sb,
+    SUM(CASE WHEN COALESCE([LITIO - LP], [LITIO - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS Li,
+    SUM(CASE WHEN COALESCE([Glycol - LP], [Glycol - LC]) IS NOT NULL THEN 1 ELSE 0 END) AS Glicol,
+    SUM(CASE WHEN COALESCE([AW% - LPI], [AW% - LCI]) IS NOT NULL THEN 1 ELSE 0 END) AS AW
+FROM [Eqpcare].[lc];
+SELECT [Proyecto], [MODELO], COUNT(*) AS componentes FROM [Eqpcare].[lc] GROUP BY [Proyecto], [MODELO] ORDER BY 1, 2;
+GO
+
+-- 204.1 (DDL nuevo) la consulta EXACTA del flujo MD_limites, caso por caso (cada columna de @casos es una ficha)
+DECLARE @casos TABLE (caso nvarchar(60), proyecto nvarchar(40), modelo nvarchar(20), comp_tipo nvarchar(20), met nvarchar(100), completo char(1));
+INSERT @casos VALUES
+    (N'/limites',                          N'Antapaccay',  N'',    N'(todos)',    N'',           '0'),
+    (N'/limitesc',                         N'Antapaccay',  N'',    N'(todos)',    N'',           '1'),
+    (N'/limitesc antapaccay 980',          N'Antapaccay',  N'980', N'(todos)',    N'',           '1'),
+    (N'/limites traccion Fe,Cu,Pb',        N'Antapaccay',  N'',    N'TRACCION',   N'Fe,Cu,Pb',   '0'),
+    (N'/limites hidraulico ISO',           N'Antapaccay',  N'',    N'HIDRAULICO', N'ISO',        '0'),
+    (N'/limites antamina motor TBN,Hollin',N'Antamina',    N'',    N'MOTOR',      N'TBN,Hollin', '0'),
+    (N'/limites traccion Ba,Fx',           N'Antapaccay',  N'',    N'TRACCION',   N'Ba,Fx',      '0'),
+    (N'/limites cerro verde 730',          N'Cerro Verde', N'730', N'(todos)',    N'',           '0'),
+    (N'/limites toquepala',                N'Toquepala',   N'',    N'(todos)',    N'',           '0');
+SET STATISTICS TIME ON;
+SELECT c.caso, LEN(q.MD) AS largo, q.MD
+FROM @casos c
+CROSS APPLY (
+    SELECT CASE WHEN x.n = 0 THEN NULL ELSE
+          N'**Límites' + CASE WHEN c.completo = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10)
+        + N'_LP / LC de cada componente, como están cargados en Eqpcare.lc. **↓** = la alerta es por **debajo** (aditivo que se agota). Viscosidad: banda piso–techo. ISO: código entero. «—» = sin límite cargado: no se evalúa._'
+        + NCHAR(10) + NCHAR(10) + x.cuerpo
+        + ISNULL(NCHAR(10) + NCHAR(10) + N'_Sin límite cargado para: **' + m.faltan + N'**'
+                 + CASE WHEN c.completo = '1' THEN N' (no lo reconozco como parámetro)._' ELSE N'. Con **/limitesc** se ven también las filas sin límite._' END, N'')
+        END AS MD
+    FROM (
+        SELECT COUNT(*) AS n, MAX(b.Proyecto) AS Proyecto,
+               STRING_AGG(CAST(b.bloque AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Proyecto, b.Modelo) AS cuerpo
+        FROM (
+            SELECT f.Proyecto, f.Modelo,
+                N'**' + f.Modelo + N'**' + NCHAR(10) + NCHAR(10) + MAX(f.Cab) + NCHAR(10)
+              + STRING_AGG(CAST(CASE WHEN f.ini = 1 THEN f.FilaGrupo + NCHAR(10) ELSE N'' END + f.Fila AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY f.Orden) AS bloque
+            FROM (
+                SELECT v.Proyecto, v.Modelo, v.Orden, v.Cab, v.Fila, v.FilaGrupo,
+                       ROW_NUMBER() OVER (PARTITION BY v.Proyecto, v.Modelo, v.Grupo ORDER BY v.Orden) AS ini
+                FROM dbo.vw_LimitesMD v
+                WHERE v.Proyecto LIKE N'%' + c.proyecto + N'%' AND v.Modelo LIKE N'%' + c.modelo + N'%' AND v.CompTipo = c.comp_tipo
+                  AND (v.ConLim = 1 OR (c.completo = '1' AND v.EsFormato = 1))
+                  AND (c.met = N'' OR EXISTS (SELECT 1 FROM STRING_SPLIT(c.met, ',') s WHERE s.value <> N'' AND v.Clave LIKE N'%,' + s.value + N',%'))
+            ) f
+            GROUP BY f.Proyecto, f.Modelo
+        ) b
+    ) x
+    CROSS APPLY (
+        SELECT STRING_AGG(s.value, N', ') AS faltan
+        FROM STRING_SPLIT(c.met, ',') s
+        WHERE s.value <> N''
+          AND NOT EXISTS (SELECT 1 FROM dbo.vw_LimitesMD v
+                          WHERE v.Proyecto LIKE N'%' + c.proyecto + N'%' AND v.Modelo LIKE N'%' + c.modelo + N'%' AND v.CompTipo = c.comp_tipo
+                            AND v.Clave LIKE N'%,' + s.value + N',%' AND (v.ConLim = 1 OR c.completo = '1'))
+    ) m
+) q;
+SET STATISTICS TIME OFF;
+GO

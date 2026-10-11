@@ -300,20 +300,63 @@ concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaIncipienteMD
 > **Deuda conocida:** `MD_triage` y `MD_incipiente` tienen la MISMA forma y solo cambian de vista. Se podrían
 > fusionar en uno con entrada `vista` (como `MD_flota`). No se hizo ahora para no tocar el Tema 19, que funciona.
 
-### Flujo `MD_limites` (Tema 30 — `/limites`, `/limitesc`; R12, 03/10) — entradas: proyecto, compartimiento, modelo, columna
-**Se arma copiando `MD_incipiente`** (··· → Guardar como): ya trae `proyecto`, `compartimiento`, `modelo` y los Redactar
-`comp in` / `comp tipo`. Se agrega la entrada **`columna`** (Texto: «MD o MD_Completo; la fija el tema.») y el `Query` queda:
+### Flujo `MD_limites` (Tema 30 — `/limites`, `/limitesc`; 11/10) — entradas: proyecto, modelo, compartimiento, metales, completo
+**Se arma copiando `MD_incipiente`** (··· → Guardar como): ya trae los Redactar `comp in` / `comp tipo`.
+⚠ Al guardarlo: **Detalles → Usuario de solo ejecución → Editar → SQL Server: «Usar esta conexión»** (lo de `MD_ranking`, 07/10).
+
+**Entradas** (las 5 Texto):
+- `proyecto` — «Mina o proyecto; por defecto Antapaccay (lo pone el tema).»
+- `modelo` — «Modelo o flota (980E, D475A…); vacío = todos.»
+- `compartimiento` — «Componente en palabra base (tracción, hidráulico…); (todos) = todos.»
+- `metales` — «Símbolos de los parámetros separados por coma (Fe,Cu,Pb); vacío = todos.»
+- `completo` — «1 = también los parámetros sin límite (/limitesc); 0 = solo los que tienen límite.»
+
+**Redactar** (en este orden, antes del SQL):
+1. `comp in` y `comp tipo` — los de `MD_incipiente`, sin cambios: `(todos)` pasa tal cual por el `else`.
+2. **`met`** (nuevo) — fx: `replace(replace(coalesce(‹metales›,''),' ',''),'''','')` (sin espacios ni comillas).
+
+**Query** (Ejecutar una consulta SQL (V2), con fichas; ningún `concat`). Reintentos = **Ninguno**, tiempo `PT100S`:
 ```
-SELECT ‹columna› AS MD, Observados, Recomendaciones
-FROM dbo.vw_LimitesMD
-WHERE Proyecto LIKE '%‹proyecto›%'
-  AND CompTipo = '‹comp tipo›'
-  AND Modelo LIKE '%‹modelo›%'
+SELECT CASE WHEN x.n = 0 THEN NULL ELSE
+      N'**Límites' + CASE WHEN '‹completo›' = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10)
+    + N'_LP / LC de cada componente, como están cargados en Eqpcare.lc. **↓** = la alerta es por **debajo** (aditivo que se agota). Viscosidad: banda piso–techo. ISO: código entero. «—» = sin límite cargado: no se evalúa._'
+    + NCHAR(10) + NCHAR(10) + x.cuerpo
+    + ISNULL(NCHAR(10) + NCHAR(10) + N'_Sin límite cargado para: **' + m.faltan + N'**'
+             + CASE WHEN '‹completo›' = '1' THEN N' (no lo reconozco como parámetro)._' ELSE N'. Con **/limitesc** se ven también las filas sin límite._' END, N'')
+    END AS MD,
+    CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones
+FROM (
+    SELECT COUNT(*) AS n, MAX(b.Proyecto) AS Proyecto,
+           STRING_AGG(CAST(b.bloque AS nvarchar(max)), NCHAR(10) + NCHAR(10)) WITHIN GROUP (ORDER BY b.Proyecto, b.Modelo) AS cuerpo
+    FROM (
+        SELECT f.Proyecto, f.Modelo,
+            N'**' + f.Modelo + N'**' + NCHAR(10) + NCHAR(10) + MAX(f.Cab) + NCHAR(10)
+          + STRING_AGG(CAST(CASE WHEN f.ini = 1 THEN f.FilaGrupo + NCHAR(10) ELSE N'' END + f.Fila AS nvarchar(max)), NCHAR(10)) WITHIN GROUP (ORDER BY f.Orden) AS bloque
+        FROM (
+            SELECT v.Proyecto, v.Modelo, v.Orden, v.Cab, v.Fila, v.FilaGrupo,
+                   ROW_NUMBER() OVER (PARTITION BY v.Proyecto, v.Modelo, v.Grupo ORDER BY v.Orden) AS ini
+            FROM dbo.vw_LimitesMD v
+            WHERE v.Proyecto LIKE N'%‹proyecto›%' AND v.Modelo LIKE N'%‹modelo›%' AND v.CompTipo = N'‹comp tipo›'
+              AND (v.ConLim = 1 OR ('‹completo›' = '1' AND v.EsFormato = 1))
+              AND (N'‹met›' = N'' OR EXISTS (SELECT 1 FROM STRING_SPLIT(N'‹met›', ',') s WHERE s.value <> N'' AND v.Clave LIKE N'%,' + s.value + N',%'))
+        ) f
+        GROUP BY f.Proyecto, f.Modelo
+    ) b
+) x
+CROSS APPLY (
+    SELECT STRING_AGG(s.value, N', ') AS faltan
+    FROM STRING_SPLIT(N'‹met›', ',') s
+    WHERE s.value <> N''
+      AND NOT EXISTS (SELECT 1 FROM dbo.vw_LimitesMD v
+                      WHERE v.Proyecto LIKE N'%‹proyecto›%' AND v.Modelo LIKE N'%‹modelo›%' AND v.CompTipo = N'‹comp tipo›'
+                        AND v.Clave LIKE N'%,' + s.value + N',%' AND (v.ConLim = 1 OR '‹completo›' = '1'))
+) m
 ```
-`(todos)` llega igual por `comp tipo` (el `else` de la traducción devuelve el texto tal cual) y casa con la fila resumen.
-Reintentos = **Ninguno**. Salidas: `md` = `first(...)?['MD']`, `observados`, `recomendaciones` (NULL).
-⚠ `‹columna›` va **sin comillas** (es un nombre de columna); como solo puede ser `MD` o `MD_Completo` (lo fija el tema),
-no hay inyección posible desde el chat.
+Cada `‹x›` es una ficha de Contenido dinámico: `‹proyecto›`, `‹modelo›` y `‹completo›` del desencadenador; `‹comp tipo›`
+y `‹met›`, salidas de los Redactar. Es la misma consulta del BLOQUE 204.1 (allí cada ficha es una columna de `@casos`):
+probarla primero en SSMS. Salidas: `md` = `first(...)?['MD']`, `observados`, `recomendaciones` (NULL los dos).
+**Por qué el flujo arma la tabla:** el filtro por metales es una lista libre y una vista no recibe parámetros (crear
+funciones está denegado). Mismo patrón que `MD_ultmetalflota`. `vw_LimitesMD` trae una fila por parámetro.
 
 ### Flujo `MD_triage` (Tema 19 EVOLUCIONADO) — entradas: proyecto, modelo, compartimiento
 > ✅ **Verificado en el editor (02/10):** lleva los Redactar `comp in`/`comp tipo` y la consulta real es

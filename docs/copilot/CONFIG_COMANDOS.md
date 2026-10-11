@@ -36,10 +36,10 @@ POR-FLOTA
 /ranking <proyecto> <componente> <metal> [modelo] [top] → 22 Ranking de un metal
 /metalflota <proyecto> <componente> <metal(es)> [modelo] → 25 Último por metal en la flota  (metales: coma-sin-espacio Fe,Cu)
 /historialflota <proyecto> [rango]           → 15 Historial de observados de flota
-/rankingacum <proyecto>                      → 27 Ranking de acumulados (motor diésel)
+/rankingmod <proyecto>                       → 27 Ranking de acumulados del motor diésel (alias: /rankingacum)
 /rankinggraf <proyecto>                      → 29 Ranking gráfico (mismas cifras, en barras)
-/limites <proyecto> [modelo] [componente]    → 🅿 APARCADO (03/10): 30 Límites (solo los cargados). No está en la tarjeta
-/limitesc <proyecto> [modelo] [componente]   → 🅿 APARCADO (03/10): 30 Límites (formato completo). No está en la tarjeta
+/limites [proyecto] [modelo] [componente] [metal(es)] → 30 Límites: solo los parámetros CON límite, en cualquier orden
+/limitesc [proyecto] [modelo]                → 30 Límites: el formato completo, con «—» donde no hay límite
 
 META
 /comandos  ó  /ayuda                         → lista de comandos
@@ -85,6 +85,7 @@ porque para todo lo no-abreviado `compAbbr` **es** el nombre completo.
 | `/condicionmt` | `/condicion` | **decidir** — ver abajo |
 | `/tendencia` | `/tendenciadet` | alias — los dos van al Tema 06 fusionado (25/09) |
 | `/diagcompleto` | `/diagnostico` | alias — los dos van al Tema 04 (24/09) |
+| `/rankingmod` (ranking del **mo**tor **d**iésel) | `/rankingacum` | alias — los dos van al Tema 27 (11/10). El nombre deja sitio a los acumulados por componente (módulo G) |
 
 ⚠ **Por qué un alias y no un corte seco:** quien memorizó `/condicion` se queda sin respuesta si desaparece
 de un día para otro, y el síntoma es el mensaje genérico de comando no reconocido. La rama del dispatcher
@@ -127,11 +128,31 @@ IsMatch(Topic.p1, "(?i)((ca|t)?\d{4}|ht\d{3})")
 | `/incipiente` | **alta** (2→8) | «La alerta temprana es de la flota; para un equipo es su tendencia.» | 06 · equipo=`Topic.p1` · compartimiento=`If(Topic.resto2 = "", Blank(), Topic.comp)` (vacío → el tema lo pregunta) |
 | `/barridodet` | **alta** (1→5) | «El barrido es de la mina; para un equipo es el diagnóstico. Te muestro el del {Topic.p1}.» | 04 · equipo=`Topic.p1` |
 | `/historialflota` | media (4→10) | «El historial de flota es de la mina; para un equipo es su historial.» | 12 · equipo=`Topic.p1` · rango=`Topic.rango` |
-| `/rankingacum` · `/rankinggraf` | baja | «El ranking es de la flota; para un equipo son sus acumulados.» | 28 · equipo=`Topic.p1` |
+| `/rankingmod` (y su alias) · `/rankinggraf` | baja | «El ranking es de la flota; para un equipo son sus acumulados.» | 28 · equipo=`Topic.p1` |
 
 ⛔ **Sin pase** (a propósito): `/ranking` y `/metalflota` (con un equipo no hay un destino único: ¿qué metal, qué
 componente?) y los comandos por equipo (ya esperan un equipo).
 ⚠ El texto del Mensaje sin `'` ni espacios al inicio: en Teams sale en letra de código (visto 03/10 en el de `/triage`).
+
+### § `/limites` y `/limitesc` — parámetros por su forma, no por posición (11/10)
+
+`/limites traccion Fe,Cu,Pb` · `/limites antamina motor TBN` · `/limites 980 hidraulico ISO` · `/limitesc antapaccay 980`
+→ todos funcionan. Sin nada: **Antapaccay, todos los modelos, todos los componentes, todos los parámetros**.
+En el nodo «Tema» (→ 30 Límites) de la rama, las 5 entradas en fórmula. `Topic.toks` sin el comando es
+`LastN(Topic.toks, CountRows(Topic.toks) - 1)`:
+
+| Entrada | Fórmula | Reconoce |
+|---|---|---|
+| `proyecto` | `With({m: Match(Topic.txt, "(?i)antapaccay\|antamina\|cerro\s*verde\|toromocho\|cuajone\|toquepala\|quellaveco")}, If(IsBlank(m), Blank(), m.FullMatch))` | la mina (Cerro Verde en dos palabras) |
+| `modelo` | `With({t: Filter(LastN(Topic.toks, CountRows(Topic.toks) - 1), IsMatch(Value, "(?i)[a-z]{0,2}\d{3,4}[a-z]?-?") && !IsMatch(Value, "(?i)v(40\|100)"))}, If(IsEmpty(t), Blank(), First(t).Value))` | `980`, `980E`, `D475A`, `PC1250`, `730E-` (un modelo lleva 3-4 dígitos; `V100` y `V40` no cuentan) |
+| `compartimiento` | `With({t: Filter(LastN(Topic.toks, CountRows(Topic.toks) - 1), IsMatch(Value, "(?i)(mt\|rd\|sh\|tracc\|hidr\|rueda\|motor\|mando\|transm).*"))}, If(IsEmpty(t), Blank(), Concat(t, Value, " ")))` | `traccion`, `mtlh`, `motor de traccion` (el flujo busca `tracc` antes que `motor`), `hidraulico`… |
+| `metales` | `With({t: Filter(LastN(Topic.toks, CountRows(Topic.toks) - 1), !IsMatch(Value, "(?i)(antapaccay\|antamina\|cerro\|verde\|toromocho\|cuajone\|toquepala\|quellaveco\|de\|del\|en\|y\|la\|el\|lh\|rh)") && !IsMatch(Value, "(?i)(mt\|rd\|sh\|tracc\|hidr\|rueda\|motor\|mando\|transm).*") && !(IsMatch(Value, "(?i)[a-z]{0,2}\d{3,4}[a-z]?-?") && !IsMatch(Value, "(?i)v(40\|100)")))}, If(IsEmpty(t), Blank(), Concat(t, Value, ",")))` | **lo que sobra**: `Fe,Cu,Pb`, `Fe Cu`, `TBN`, `ISO` (los tres códigos), `V100`, `bario`… |
+| `completo` | `If(Topic.cmd = "/limitesc", "1", Blank())` | el comando |
+
+⚠ En la tabla de arriba `\|` es solo el escape del markdown: en Copilot va `|` a secas.
+⚠ Lo que falta va como **`Blank()`** (receta, pieza 1): el Tema 30 pone los defaults en la Acción, no pregunta nada.
+⚠ Un metal que no existe (`Fx`) o sin límite cargado no rompe nada: la tabla sale con los demás y el pie lo nombra
+(«Sin límite cargado para: Fx»). Si **ninguno** tiene límite, el tema lo dice y sugiere `/limitesc`.
 
 ### § FÓRMULA CANÓNICA de normalización de componente (2026-09-24) — **úsala en TODOS**
 
@@ -244,7 +265,7 @@ en la 2.ª tanda (paso 8).
 | 09 Gráfica | `/grafica` | 23/24 flota | — *(DESACTIVADOS; los cubre el fallback)* |
 | 10 Gráficas obs. | — *(continuación de 09)* | 25 Metal en flota | `/metalflota` |
 | 11 Historial comp. | `/historial` | 26 Ayuda/Glosario | — *(NL; `/comandos` da la ayuda de comandos)* |
-| 12 Historial equipo | `/historialeq` | 27 Ranking acum. | `/rankingacum` |
+| 12 Historial equipo | `/historialeq` | 27 Ranking acum. | `/rankingmod` (`/rankingacum`) |
 | 13/14 Historial metal | `/historialmetal` | 28 Acumulados eq. | `/acumulados` |
 > **Sin comando (a propósito):** 07/10 (continuaciones que se piden tras su tema base), 18 (filtro del barrido),
 > 23/24 (desactivados), 26 (conceptual, va por lenguaje natural). Todo lo demás tiene su comando.
@@ -332,7 +353,7 @@ Cada comando mapea 1:1 a un tema existente (arriba). Se incluyen los nuevos: `/m
         │  cmd="/ultimo"      → «Ir a tema» 01  (equipo,comp)     │
         │  cmd="/tendencia"   → «Ir a tema» 05  (equipo,comp)     │
         │  cmd="/acumulados"  → «Ir a tema» 28  (equipo)          │
-        │  cmd="/rankingacum" → «Ir a tema» 27  (proyecto)        │
+        │  cmd="/rankingmod"  → «Ir a tema» 27  (proyecto)        │
         │  cmd="/rankinggraf" → «Ir a tema» 29  (proyecto)        │
         │  cmd="/metalflota"  → «Ir a tema» 25  (proyecto,modelo,comp,metales ← 4)│
         │  … (resto de la tabla de mapeo)                        │
@@ -405,9 +426,9 @@ Por cada rama: `Topic.cmd = "/xxx"` → mapear los inputs del tema destino y red
 | `/ranking` | 22 Ranking | proyecto=p1 · compartimiento=p2 · parametro=p3 · **modelo y top desde p4/p5** — fórmulas en §`/ranking` |
 | `/metalflota` | 25 Último por metal flota | proyecto=`If(p1="","Antapaccay",p1)` · compartimiento=`If(p2="","tracción",p2)` · parametros=p3 · **modelo=`If(p4="","(todos)",p4)`** ⟵ 4º input |
 | `/historialflota` | 15 Historial obs. flota | proyecto=`If(p1="","Antapaccay",p1)` · **rango=`Topic.rango`** |
-| `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` |
+| `/rankingmod` · alias `/rankingacum` | 27 Ranking acumulados | proyecto=`If(p1="","Antapaccay",p1)` — en la Condición que ya existe de `/rankingacum`: **+ Nueva condición** `cmd = "/rankingmod"` y cambiar «Cumple TODAS» por **«CUALQUIERA»** (ley 8: no se borra ni se mueve nada; el pase del 04/10 sigue dentro) |
 | `/rankinggraf` | 29 Ranking gráfico | proyecto=`If(p1="","Antapaccay",p1)` |
-| 🅿 **APARCADO** `/limites` · `/limitesc` (03/10; la vista existe, el tema no) | 30 Límites | **UNA** Condición con **CUALQUIERA**: `cmd = "/limites"` o `cmd = "/limitesc"` (ley 8: rama nueva, no se toca nada) · proyecto=`If(Topic.p1 = "", "Antapaccay", Topic.p1)` · modelo=`If(IsMatch(Topic.p2, ".*\d.*"), Topic.p2, If(IsMatch(Topic.p3, ".*\d.*"), Topic.p3, "(todos)"))` · compartimiento=`If(IsMatch(Lower(Topic.p2), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*"), Topic.p2, If(IsMatch(Lower(Topic.p3), "^(mt|tracc|rd|rueda|hidr|sh|motor|mando|transm).*"), Topic.p3, "(todos)"))` · columna=`If(Topic.cmd = "/limitesc", "MD_Completo", "MD")` — modelo y componente en cualquier orden: el modelo lleva dígito, el componente no |
+| `/limites` · `/limitesc` (11/10) | 30 Límites | **Rama nueva** con UNA Condición, **CUALQUIERA**: `cmd = "/limites"` · `cmd = "/limitesc"` (ley 8: al final de la cascada, sin tocar nada). Los parámetros van **en cualquier orden**: cada uno se reconoce por su forma (ver § `/limites` abajo). Entradas del nodo «Tema»: proyecto · modelo · compartimiento · metales · completo |
 | `/comandos` ó `/ayuda` | (nodo Mensaje, ver 4) | — |
 | (ninguna coincide) | **«Ir a otro tema» → Conversación** | — (era NL con `/`, no un comando) |
 
@@ -475,7 +496,7 @@ POR-EQUIPO:  /ultimo ‹eq› ‹comp› · /condicionmt ‹eq› · /diagcomple
              /historialmetal ‹eq› ‹metal› [comp] · /acumulados ‹eq›
 POR-FLOTA:   /panel ‹proj› [modelo] · /barridodet ‹proj› [modelo] · /triage ‹comp› ‹proj› [modelo]
              /incipiente ‹proj› [comp] [modelo] · /ranking ‹proj› ‹comp› ‹metal› [modelo] [top]
-             /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingacum ‹proj› · /rankinggraf ‹proj›
+             /metalflota ‹proj› ‹comp› ‹metal(es)› [modelo] · /historialflota ‹proj› · /rankingmod ‹proj› · /rankinggraf ‹proj›
 ```
 
 ### 5) Rama «ninguna coincide» (comando `/xxx` no reconocido) → Mensaje + Finalizar
@@ -485,7 +506,7 @@ Como el disparador ya evita que entre NL, llegar aquí = un `/palabra` que fue i
 > (son desambiguación / reset de contexto / escalado a humano, respectivamente).
 
 ### 6) Probar en el test de Copilot
-`/comandos` → lista · `/rankingacum Antapaccay` → tema 27 · `/acumulados CA3197` → tema 28 ·
+`/comandos` → lista · `/rankingmod Antapaccay` → tema 27 · `/acumulados CA3197` → tema 28 ·
 `/triage rueda Antamina` → tema 19 · `/barrido Antapaccay 980E` → tema 16. Verifica que redirige y que los inputs llegan.
 
 ### 7) Teams (después de que el dispatcher funcione)
