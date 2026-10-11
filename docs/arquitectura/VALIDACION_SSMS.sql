@@ -9232,3 +9232,11 @@ SELECT s.ordinal AS n, CAST(s.value AS nvarchar(400)) AS linea
 FROM @r r CROSS APPLY STRING_SPLIT(r.MD, NCHAR(10), 1) s
 WHERE r.caso = N'/limitesc antapaccay 980' ORDER BY s.ordinal;
 GO
+
+-- RESULTADOS 204.1/204.2 (11/10) -- QUEDA (todos los cortes)
+--   (a) Fe 200 / 230 · PQ 130 / 150 · Pb 3 / 5 en MT LH y MT RH del 980E: 1/1/1 en /limites, /limitesc y /limitesc 980
+--   (b) largos: /limites 4 170 · /limitesc 5 607 (3 matrices: 980E, D475A, PC1250) · /limitesc 980 2 191 · cerro verde 730 1 524
+--   (c) Toquepala NULL · «Ba,Fx» NULL (ninguno tiene limite: el tema lo dice y sugiere /limitesc; el pie aparece cuando
+--       hay al menos uno con limite) · (e) 9 casos en 0,9-1,5 s de CPU
+--   Columnas en el orden MT LH, MT RH, Sist. Hidr., Motor, RD LH, RD RH; D475A y PC1250 con DAMPER, MANDO FINAL, PTO,
+--   CAJA GIRO; ↓ por celda (Ca del MT sin flecha, de la rueda con flecha); V100 en banda; ISO entero; glicol = Refrigerante.

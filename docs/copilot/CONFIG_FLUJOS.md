@@ -315,14 +315,16 @@ concat('SELECT MD, Observados, Recomendaciones FROM dbo.vw_TendenciaIncipienteMD
 1. `comp in` y `comp tipo` — los de `MD_incipiente`, sin cambios: `(todos)` pasa tal cual por el `else`.
 2. **`met`** (nuevo) — fx: `replace(replace(coalesce(‹metales›,''),' ',''),'''','')` (sin espacios ni comillas).
 
-**Query** (Ejecutar una consulta SQL (V2), con fichas; ningún `concat`). Reintentos = **Ninguno**, tiempo `PT100S`:
+**Query** (Ejecutar una consulta SQL (V2)). Cada ficha va **una sola vez**, en el `DECLARE` de la primera línea; el resto se pega tal cual. Reintentos = **Ninguno**, tiempo `PT100S`:
 ```
+DECLARE @proy nvarchar(60) = N'‹proyecto›', @mod nvarchar(30) = N'‹modelo›', @comp nvarchar(40) = N'‹comp tipo›',
+        @met nvarchar(300) = N'‹met›', @c char(1) = '‹completo›';
 SELECT CASE WHEN x.n = 0 THEN NULL ELSE
-      N'**Límites' + CASE WHEN '‹completo›' = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10)
+      N'**Límites' + CASE WHEN @c = '1' THEN N' (formato completo)' ELSE N'' END + N' — ' + x.Proyecto + N'**' + NCHAR(10)
     + N'_LP / LC de cada componente, como están cargados en Eqpcare.lc. **↓** = la alerta es por **debajo** (aditivo que se agota). Viscosidad: banda piso–techo. ISO: código entero. «—» = sin límite cargado: no se evalúa._'
     + NCHAR(10) + NCHAR(10) + x.cuerpo
     + ISNULL(NCHAR(10) + NCHAR(10) + N'_Sin límite cargado para: **' + m.faltan + N'**'
-             + CASE WHEN '‹completo›' = '1' THEN N' (no lo reconozco como parámetro)._' ELSE N'. Con **/limitesc** se ven también las filas sin límite._' END, N'')
+             + CASE WHEN @c = '1' THEN N' (no lo reconozco como parámetro)._' ELSE N'. Con **/limitesc** se ven también las filas sin límite._' END, N'')
     END AS MD,
     CAST(NULL AS nvarchar(max)) AS Observados, CAST(NULL AS nvarchar(max)) AS Recomendaciones
 FROM (
@@ -336,24 +338,24 @@ FROM (
             SELECT v.Proyecto, v.Modelo, v.Orden, v.Cab, v.Fila, v.FilaGrupo,
                    ROW_NUMBER() OVER (PARTITION BY v.Proyecto, v.Modelo, v.Grupo ORDER BY v.Orden) AS ini
             FROM dbo.vw_LimitesMD v
-            WHERE v.Proyecto LIKE N'%‹proyecto›%' AND v.Modelo LIKE N'%‹modelo›%' AND v.CompTipo = N'‹comp tipo›'
-              AND (v.ConLim = 1 OR ('‹completo›' = '1' AND v.EsFormato = 1))
-              AND (N'‹met›' = N'' OR EXISTS (SELECT 1 FROM STRING_SPLIT(N'‹met›', ',') s WHERE s.value <> N'' AND v.Clave LIKE N'%,' + s.value + N',%'))
+            WHERE v.Proyecto LIKE N'%' + @proy + N'%' AND v.Modelo LIKE N'%' + @mod + N'%' AND v.CompTipo = @comp
+              AND (v.ConLim = 1 OR (@c = '1' AND v.EsFormato = 1))
+              AND (@met = N'' OR EXISTS (SELECT 1 FROM STRING_SPLIT(@met, ',') s WHERE s.value <> N'' AND v.Clave LIKE N'%,' + s.value + N',%'))
         ) f
         GROUP BY f.Proyecto, f.Modelo
     ) b
 ) x
 CROSS APPLY (
     SELECT STRING_AGG(s.value, N', ') AS faltan
-    FROM STRING_SPLIT(N'‹met›', ',') s
+    FROM STRING_SPLIT(@met, ',') s
     WHERE s.value <> N''
       AND NOT EXISTS (SELECT 1 FROM dbo.vw_LimitesMD v
-                      WHERE v.Proyecto LIKE N'%‹proyecto›%' AND v.Modelo LIKE N'%‹modelo›%' AND v.CompTipo = N'‹comp tipo›'
-                        AND v.Clave LIKE N'%,' + s.value + N',%' AND (v.ConLim = 1 OR '‹completo›' = '1'))
+                      WHERE v.Proyecto LIKE N'%' + @proy + N'%' AND v.Modelo LIKE N'%' + @mod + N'%' AND v.CompTipo = @comp
+                        AND v.Clave LIKE N'%,' + s.value + N',%' AND (v.ConLim = 1 OR @c = '1'))
 ) m
 ```
-Cada `‹x›` es una ficha de Contenido dinámico: `‹proyecto›`, `‹modelo›` y `‹completo›` del desencadenador; `‹comp tipo›`
-y `‹met›`, salidas de los Redactar. Es la misma consulta del BLOQUE 204.1 (allí cada ficha es una columna de `@casos`):
+Las 5 fichas (solo en el `DECLARE`): `‹proyecto›`, `‹modelo›` y `‹completo›` del desencadenador; `‹comp tipo›` y `‹met›`,
+salidas de los Redactar. Si el conector no aceptara el `DECLARE`, la versión con las fichas en línea es el 204.1. Es la misma consulta del BLOQUE 204.1 (allí cada ficha es una columna de `@casos`):
 probarla primero en SSMS. Salidas: `md` = `first(...)?['MD']`, `observados`, `recomendaciones` (NULL los dos).
 **Por qué el flujo arma la tabla:** el filtro por metales es una lista libre y una vista no recibe parámetros (crear
 funciones está denegado). Mismo patrón que `MD_ultmetalflota`. `vw_LimitesMD` trae una fila por parámetro.
